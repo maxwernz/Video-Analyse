@@ -6,7 +6,7 @@ from util import milliseconds_to_hhmmss
 
 class ClipHandler(QDialog, Ui_Dialog):
 
-    categories = {}
+    categories = {"Abwehr": None, "Angriff": None, "Tor": None}
 
     def __init__(self, clip_start, clip_stop, parent=None):
 
@@ -33,12 +33,10 @@ class ClipHandler(QDialog, Ui_Dialog):
 
     def save_entry(self):
         category = self.categoryBox.currentText()
-        if category != "":
-            self.category = category
-            if category not in ClipHandler.categories:
-                ClipHandler.categories.update({category: None})
+        if category == "":
+            category = None
         
-        self.clip = ClipItem(self.clipNameLine.text(), self.start_time, self.stop_time, self.notesText.toPlainText())
+        self.clip = ClipItem(self.clipNameLine.text(), self.start_time, self.stop_time, self.notesText.toPlainText(), category)
         self.accept()
 
 

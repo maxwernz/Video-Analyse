@@ -17,11 +17,12 @@ class ClipTreeItem(TreeItem):
 
 class ClipItem:
 
-    def __init__(self, name, start_position, end_position, notes):
+    def __init__(self, name, start_position, end_position, notes, category=None):
         self.start_position = start_position
         self.end_position = end_position
         self.notes = notes
         self.name = name
+        self.category = category
 
 
     def tree_values(self):

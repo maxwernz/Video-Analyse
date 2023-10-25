@@ -5,6 +5,7 @@ from PyQt5.QtGui import QKeySequence
 from Ui_main_window import Ui_MainWindow
 from clip_handler import ClipHandler
 from treewidget_item import TreeItem, ClipTreeItem
+import pickle
 
 class MainWindow(QMainWindow, Ui_MainWindow):
 
@@ -12,12 +13,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         QMainWindow.__init__(self, parent)
         self.setupUi(self)
 
-        self.menuFile.triggered.connect(self.load_video)
+        self.actionLoad_Video.triggered.connect(self.load_video)
+        self.actionAnalyse_speichern.triggered.connect(self.save_analysis)
+        self.actionAnalyse_laden.triggered.connect(self.load_analysis)
         
         self.setup_connections()
         self.setup_shortcuts()
 
         self.clip_start = None
+        self.file_name = None
+
+        self.tree_item_list = []
 
     def setup_connections(self):
         self.playPauseButton.clicked.connect(self.videoWidget.play_pause_video)
@@ -37,8 +43,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def load_video(self):
         file_name = QFileDialog.getOpenFileName(self, "Open file", "${HOME}", "Video files (*.mp4 *.mov)")[0]
         if file_name:
-            url = QUrl.fromLocalFile(file_name)
-            self.videoWidget.load_video(url)
+            self.file_name = file_name
+            self.treeWidget.clear()
+            self.videoWidget.load_video(QUrl.fromLocalFile(self.file_name))
 
     def change_speed_up(self):
         current_index = self.speedBox.currentIndex()
@@ -64,22 +71,30 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         try:
             if clip_handler.exec():
                 clip = clip_handler.clip
-                category = clip_handler.category
-                parent = self.treeWidget
-                if category is not None:
-                    if category in ClipHandler.categories:
-                        category_item = ClipHandler.categories[category]
-                        if category_item is None:
-                            category_item = TreeItem(parent)
-                            category_item.setText(0, category)
-                            ClipHandler.categories[category] = category_item
-                    parent = category_item
-
-                ClipTreeItem(clip, parent=parent)
+                self.add_clip(clip)
                 self.fit_tree()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"An error occurred: {e}")
+
+    def add_clip(self, clip):
+        self.tree_item_list.append(clip)
+        category = clip.category
+        parent = self.treeWidget
+        if category is not None:
+            if category in ClipHandler.categories:
+                category_item = ClipHandler.categories[category]
+                if category_item is None:
+                    category_item = TreeItem(parent)
+                    category_item.setText(0, category)
+                    ClipHandler.categories[category] = category_item
+            else:
+                category_item = TreeItem(parent)
+                category_item.setText(0, category)
+                ClipHandler.categories[category] = category_item
+            parent = category_item
+
+        ClipTreeItem(clip, parent=parent)
 
     def fit_tree(self):
         self.treeWidget.expandAll()
@@ -94,6 +109,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         
         self.videoWidget.set_position(selected_item.clip_item.jump_point())
 
+    
+    def save_analysis(self):
+
+        file_name = QFileDialog.getSaveFileName(self, "Save file", "Spielanalyse", "Analyse Dateien (*.analysis)")[0]
+        pickle.dump((self.file_name, self.tree_item_list), open(file_name, 'wb'))
+
+    def load_analysis(self):
+        file_name = QFileDialog.getOpenFileName(self, "Open file", "${HOME}", "Analyse Dateien (*.analysis)")[0]
+
+        self.file_name, tree_list = pickle.load(open(file_name, 'rb'))
+        self.treeWidget.clear()
+        for clip in tree_list:
+            self.add_clip(clip)
+        
+        self.fit_tree()
+
+        self.videoWidget.load_video(QUrl.fromLocalFile(self.file_name))
+
+
         
 
 
@@ -101,6 +135,6 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
-    window.videoWidget.load_video(QUrl.fromLocalFile("/Users/max/Downloads/Buchen.mp4"))
+    # window.videoWidget.load_video(QUrl.fromLocalFile("/Users/max/Downloads/Buchen.mp4"))
     sys.exit(app.exec())
 

@@ -16,6 +16,8 @@ class VideoWidget(QWidget):
         self.video_loaded = False
         self.current_speed = 1.0
 
+        self.content = None
+
         self.init_ui()
 
     def init_ui(self):
@@ -86,7 +88,14 @@ class VideoWidget(QWidget):
         self.media_player.setPlaybackRate(self.current_speed)
 
     def load_video(self, url):
-        self.media_player.setMedia(QMediaContent(url))
+        self.content = QMediaContent(url)
+        self.media_player.setMedia(self.content)
+        self.media_player.positionChanged.connect(self.position_changed)
+        self.media_player.durationChanged.connect(self.duration_changed)
+        self.video_loaded = True
+
+    def new_content(self):
+        self.media_player.setMedia(self.content)
         self.media_player.positionChanged.connect(self.position_changed)
         self.media_player.durationChanged.connect(self.duration_changed)
         self.video_loaded = True
