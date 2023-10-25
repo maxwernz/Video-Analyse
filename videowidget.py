@@ -1,9 +1,9 @@
-import sys
-from PyQt5.QtWidgets import QApplication, QFileDialog, QPushButton, QSlider, QComboBox, QVBoxLayout, QHBoxLayout, QWidget, QLabel
+from PyQt5.QtWidgets import QSlider, QVBoxLayout, QHBoxLayout, QWidget, QLabel
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtCore import QUrl, QTimer
 from PyQt5.QtCore import Qt
+
+from util import milliseconds_to_hhmmss
 
 class VideoWidget(QWidget):
     def __init__(self, parent=None):
@@ -14,6 +14,7 @@ class VideoWidget(QWidget):
 
         self.is_playing = False
         self.video_loaded = False
+        self.current_speed = 1.0
 
         self.init_ui()
 
@@ -23,61 +24,26 @@ class VideoWidget(QWidget):
         self.video_widget = QVideoWidget(self)
         self.media_player.setVideoOutput(self.video_widget)
 
-        # # Create buttons for play, pause, forward, and backward
-        # self.play_button = QPushButton("Play")
-        # self.play_button.clicked.connect(self.play_video)
-        # self.pause_button = QPushButton("Pause")
-        # self.pause_button.clicked.connect(self.pause_video)
-        # self.forward_button = QPushButton("Forward")
-        # self.forward_button.clicked.connect(self.forward_video)
-        # self.backward_button = QPushButton("Backward")
-        # self.backward_button.clicked.connect(self.backward_video)
-
-        # # Create a combo box for adjusting playback speed
-        # self.speed_combobox = QComboBox()
-        # self.speed_combobox.addItems(["0.5x", "1x", "2x", "4x", "8x"])
-        # self.speed_combobox.setCurrentText("1x")
-        # self.speed_combobox.activated.connect(self.change_speed)
-
-        # # Create a "Load Video" button
-        # self.load_button = QPushButton("Load Video")
-        # self.load_button.clicked.connect(self.load_video)
-
         # # Create labels for time information
-        # self.time_label = QLabel("Time: 00:00 / 00:00")
+        self.time_label = QLabel("00:00:00 / 00:00:00")
 
         # # Create a progress bar for video position
         self.position_slider = QSlider(Qt.Orientation.Horizontal)  # Horizontal orientation
         self.position_slider.sliderMoved.connect(self.set_position)
-
-        # # Create a layout for buttons and combo box
-        # control_layout = QHBoxLayout()
-        # control_layout.addWidget(self.load_button)
-        # control_layout.addWidget(self.play_button)
-        # control_layout.addWidget(self.pause_button)
-        # control_layout.addWidget(self.forward_button)
-        # control_layout.addWidget(self.backward_button)
-        # control_layout.addWidget(self.speed_combobox)
 
         # # Create a layout for time label and position slider
         time_layout = QHBoxLayout()
         time_layout.addWidget(self.time_label)
         time_layout.addWidget(self.position_slider)
 
-        # # Create a central widget and set the video widget as the central widget
-        # central_widget = QWidget(self)
-        # self.setCentralWidget(central_widget)
-
         # # Create the main layout for the central widget
         main_layout = QVBoxLayout(self.parent())
         main_layout.addWidget(self.video_widget)
-        # main_layout.addLayout(control_layout)
         main_layout.addLayout(time_layout)
         self.setLayout(main_layout)
 
-        # # Create a timer to update position and time label
-        # self.timer = QTimer(self)
-        # self.timer.timeout.connect(self.update_position_and_time)
+    def get_position(self):
+        return self.media_player.position()
 
     def play_pause_video(self):
         if not self.video_loaded:
@@ -91,42 +57,27 @@ class VideoWidget(QWidget):
             self.media_player.pause()
             # self.timer.stop()
 
-    # def forward_video(self):
-    #     self.media_player.setPosition(self.media_player.position() + 1000)  # Advance 1 second
+    def videoIsPlaying(self):
+        return self.is_playing
 
-    # def backward_video(self):
-    #     self.media_player.setPosition(self.media_player.position() - 1000)  # Rewind 1 second
+    def pause_video(self):
+        self.media_player.pause()
+        self.is_playing = False
 
-    # def change_speed(self):
-    #     speed_text = self.speed_combobox.currentText()
-    #     if speed_text == "0.5x":
-    #         speed = 0.5
-    #     elif speed_text == "1x":
-    #         speed = 1.0
-    #     elif speed_text == "2x":
-    #         speed = 2.0
-    #     elif speed_text == "4x":
-    #         speed = 4.0
-    #     elif speed_text == "8x":
-    #         speed = 8.0
+    def change_sound(self):
+        self.media_player.setMuted(not self.media_player.isMuted())
 
-    #     self.media_player.setPlaybackRate(speed)
+    def change_speed(self, speed_text):
+        if speed_text == "0.25x":
+            self.current_speed = 0.25
+        elif speed_text == "0.5x":
+            self.current_speed = 0.5
+        elif speed_text == "1x":
+            self.current_speed = 1.0
+        elif speed_text == "2x":
+            self.current_speed = 2.0
 
-    # def update_position_and_time(self):
-    #     position = self.media_player.position()
-    #     duration = self.media_player.duration()
-    #     print(duration)
-    #     position_str = self.format_time(position)
-    #     duration_str = self.format_time(duration)
-        # time_info = f"Time: {position_str} / {duration_str}"
-        # self.time_label.setText(time_info)
-    #     if duration > 0:
-    #         self.position_slider.setValue((position / duration) * 1000)
-
-    # def format_time(self, milliseconds):
-    #     seconds = int((milliseconds / 1000) % 60)
-    #     minutes = int((milliseconds / (1000 * 60)) % 60)
-    #     return f"{minutes:02d}:{seconds:02d}"
+        self.media_player.setPlaybackRate(self.current_speed)
 
     def load_video(self, url):
         self.media_player.setMedia(QMediaContent(url))
@@ -135,13 +86,52 @@ class VideoWidget(QWidget):
         self.video_loaded = True
 
     def set_position(self, position):
-        # position = self.position_slider.value()
-        # duration = self.media_player.duration()
-        # position_ms = (position / 1000) * duration
         self.media_player.setPosition(position)
 
     def position_changed(self, position):
         self.position_slider.setValue(position)
+        self.set_time_label(position=position)
 
     def duration_changed(self, duration):
         self.position_slider.setRange(0, duration)
+        self.set_time_label(duration=duration)
+
+    def set_time_label(self, position=None, duration=None):
+        if duration is None:
+            duration = self.media_player.duration()
+        str_duration = milliseconds_to_hhmmss(duration)
+        if position is None:
+            position = self.media_player.position()
+        str_position = milliseconds_to_hhmmss(position)
+
+        self.time_label.setText(f"{str_position} / {str_duration}")
+
+    def move_backward(self):
+        current_position = self.media_player.position()
+        new_position = current_position - 100 * self.current_speed
+        if new_position <= 0:
+            new_position = 0
+        self.set_position(new_position)
+
+    def move_forward(self):
+        current_position = self.media_player.position()
+        new_position = current_position + 100 * self.current_speed
+        if new_position >= self.media_player.duration():
+            new_position = self.media_player.duration()
+        self.set_position(new_position)
+
+    def jump_forward(self):
+        current_position = self.media_player.position()
+        new_position = current_position + 5000 * self.current_speed
+        if new_position >= self.media_player.duration():
+            new_position = self.media_player.duration()
+        
+        self.set_position(new_position)
+
+    def jump_backward(self):
+        current_position = self.media_player.position()
+        new_position = current_position - 5000 * self.current_speed
+        if new_position <= 0:
+            new_position = 0
+        
+        self.set_position(new_position)
