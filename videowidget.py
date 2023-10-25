@@ -25,7 +25,11 @@ class VideoWidget(QWidget):
         self.media_player.setVideoOutput(self.video_widget)
 
         # # Create labels for time information
-        self.time_label = QLabel("00:00:00 / 00:00:00")
+        self.position_label = QLabel("00:00:00")
+        self.position_label.setFixedWidth(65)
+        spacer_label = QLabel("/")
+        self.duration_label = QLabel("00:00:00")
+        self.duration_label.setFixedWidth(65)
 
         # # Create a progress bar for video position
         self.position_slider = QSlider(Qt.Orientation.Horizontal)  # Horizontal orientation
@@ -33,7 +37,9 @@ class VideoWidget(QWidget):
 
         # # Create a layout for time label and position slider
         time_layout = QHBoxLayout()
-        time_layout.addWidget(self.time_label)
+        time_layout.addWidget(self.position_label)
+        time_layout.addWidget(spacer_label)
+        time_layout.addWidget(self.duration_label)
         time_layout.addWidget(self.position_slider)
 
         # # Create the main layout for the central widget
@@ -89,24 +95,22 @@ class VideoWidget(QWidget):
         self.media_player.setPosition(position)
 
     def position_changed(self, position):
-        self.position_slider.setValue(position)
-        self.position_slider.update()
-        self.position_slider.repaint()
-        self.set_time_label(position=position)
+        with QSignalBlocker(self.position_slider):
+            self.position_slider.setTracking(True)
+            self.position_slider.setSliderPosition(position)
+            self.position_slider.update()
+            self.position_slider.repaint()
+        self.set_position_label(position)
 
     def duration_changed(self, duration):
         self.position_slider.setRange(0, duration)
-        self.set_time_label(duration=duration)
+        self.set_duration_label(duration)
 
-    def set_time_label(self, position=None, duration=None):
-        if duration is None:
-            duration = self.media_player.duration()
-        str_duration = milliseconds_to_hhmmss(duration)
-        if position is None:
-            position = self.media_player.position()
-        str_position = milliseconds_to_hhmmss(position)
-
-        self.time_label.setText(f"{str_position} / {str_duration}")
+    def set_position_label(self, position):
+        self.position_label.setText(f"{milliseconds_to_hhmmss(position)}")
+    
+    def set_duration_label(self, duration):
+        self.duration_label.setText(f"{milliseconds_to_hhmmss(duration)}")
 
     def move_backward(self):
         current_position = self.media_player.position()
