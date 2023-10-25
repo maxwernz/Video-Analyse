@@ -6,7 +6,7 @@ from util import milliseconds_to_hhmmss
 
 class ClipHandler(QDialog, Ui_Dialog):
 
-    categories = []
+    categories = {}
 
     def __init__(self, clip_start, clip_stop, parent=None):
 
@@ -36,7 +36,7 @@ class ClipHandler(QDialog, Ui_Dialog):
         if category != "":
             self.category = category
             if category not in ClipHandler.categories:
-                ClipHandler.categories.append(category)
+                ClipHandler.categories.update({category: None})
         
         self.clip = ClipItem(self.clipNameLine.text(), self.start_time, self.stop_time, self.notesText.toPlainText())
         self.accept()

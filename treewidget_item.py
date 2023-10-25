@@ -26,3 +26,6 @@ class ClipItem:
 
     def tree_values(self):
         return self.name, milliseconds_to_hhmmss(self.start_position), milliseconds_to_hhmmss(self.end_position)
+    
+    def jump_point(self):
+        return self.start_position

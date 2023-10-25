@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import QSlider, QVBoxLayout, QHBoxLayout, QWidget, QLabel
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSignalBlocker
 
 from util import milliseconds_to_hhmmss
 
@@ -90,6 +90,8 @@ class VideoWidget(QWidget):
 
     def position_changed(self, position):
         self.position_slider.setValue(position)
+        self.position_slider.update()
+        self.position_slider.repaint()
         self.set_time_label(position=position)
 
     def duration_changed(self, duration):

@@ -26,6 +26,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.backwardButton.clicked.connect(self.videoWidget.jump_backward)
         self.clipButton.toggled.connect(lambda recording: self.clip_started() if recording else self.clip_stopped())
         self.speedBox.currentIndexChanged.connect(lambda: self.videoWidget.change_speed(self.speedBox.currentText()))
+        self.treeWidget.itemSelectionChanged.connect(self.jump_to_clip)
 
     def setup_shortcuts(self):
         QShortcut(QKeySequence(Qt.Key_Right), self).activated.connect(self.videoWidget.move_forward)
@@ -62,19 +63,36 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         clip_handler = ClipHandler(self.clip_start, clip_stop)
         try:
             if clip_handler.exec():
-                print(True)
                 clip = clip_handler.clip
                 category = clip_handler.category
                 parent = self.treeWidget
                 if category is not None:
-                    category_item = TreeItem(parent)
-                    category_item.setText(0, category)
+                    if category in ClipHandler.categories:
+                        category_item = ClipHandler.categories[category]
+                        if category_item is None:
+                            category_item = TreeItem(parent)
+                            category_item.setText(0, category)
+                            ClipHandler.categories[category] = category_item
                     parent = category_item
 
-                clip_item = ClipTreeItem(clip, parent=parent)
+                ClipTreeItem(clip, parent=parent)
+                self.fit_tree()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"An error occurred: {e}")
+
+    def fit_tree(self):
+        self.treeWidget.expandAll()
+        for col in range(self.treeWidget.columnCount()):
+            self.treeWidget.resizeColumnToContents(col)
+
+    
+    def jump_to_clip(self):
+        selected_item = self.treeWidget.currentItem()
+        if not isinstance(selected_item, ClipTreeItem):
+            return
+        
+        self.videoWidget.set_position(selected_item.clip_item.jump_point())
 
         
 
