@@ -306,6 +306,7 @@
     <addaction name="actionLoad_Video"/>
     <addaction name="actionAnalyse_laden"/>
     <addaction name="actionAnalyse_speichern"/>
+    <addaction name="actionClips_Exportieren"/>
    </widget>
    <addaction name="menuFile"/>
   </widget>
@@ -323,6 +324,11 @@
   <action name="actionAnalyse_speichern">
    <property name="text">
     <string>Analyse speichern</string>
+   </property>
+  </action>
+  <action name="actionClips_Exportieren">
+   <property name="text">
+    <string>Clips Exportieren</string>
    </property>
   </action>
  </widget>

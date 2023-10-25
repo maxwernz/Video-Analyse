@@ -6,6 +6,7 @@ from Ui_main_window import Ui_MainWindow
 from clip_handler import ClipHandler
 from treewidget_item import TreeItem, ClipTreeItem
 import pickle
+from moviepy.editor import VideoFileClip, concatenate_videoclips
 
 class MainWindow(QMainWindow, Ui_MainWindow):
 
@@ -16,6 +17,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionLoad_Video.triggered.connect(self.load_video)
         self.actionAnalyse_speichern.triggered.connect(self.save_analysis)
         self.actionAnalyse_laden.triggered.connect(self.load_analysis)
+        self.actionClips_Exportieren.triggered.connect(self.export_selected_clips)
         
         self.setup_connections()
         self.setup_shortcuts()
@@ -113,10 +115,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def save_analysis(self):
 
         file_name = QFileDialog.getSaveFileName(self, "Save file", "Spielanalyse", "Analyse Dateien (*.analysis)")[0]
+        if not file_name:
+            return
         pickle.dump((self.file_name, self.tree_item_list), open(file_name, 'wb'))
 
     def load_analysis(self):
         file_name = QFileDialog.getOpenFileName(self, "Open file", "${HOME}", "Analyse Dateien (*.analysis)")[0]
+        if not file_name:
+            return
 
         self.file_name, tree_list = pickle.load(open(file_name, 'rb'))
         self.treeWidget.clear()
@@ -126,6 +132,29 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.fit_tree()
 
         self.videoWidget.load_video(QUrl.fromLocalFile(self.file_name))
+
+    def export_selected_clips(self):
+
+        file_name = file_name = QFileDialog.getSaveFileName(self, "Save file", "Clips", "Video Datei (*.mp4)")[0]
+        if not file_name:
+            return
+        selected_clips = self.treeWidget.selectedItems()
+
+        clip_segments = []
+
+        for item in selected_clips:
+            if item.parent() is None:
+                for child in item.children():
+                    clip = child.clip_item
+                    clip_segments.append(clip.clip_times_s())
+            else:
+                clip = item.clip_item
+                clip_segments.append(clip.clip_times_s())
+
+        video = VideoFileClip(self.file_name)
+        clips = [video.subclip(start_time, end_time) for start_time, end_time in clip_segments]
+        combined_clip = concatenate_videoclips(clips)
+        combined_clip.write_videofile(file_name)
 
 
         

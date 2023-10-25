@@ -6,6 +6,10 @@ class TreeItem(QTreeWidgetItem):
     def __init__(self, parent=None):
         QTreeWidgetItem.__init__(self, parent)
 
+    def children(self):
+        return [self.child(i) for i in range(self.childCount())]
+            
+
 class ClipTreeItem(TreeItem):
 
     def __init__(self, clip_item, parent=None):
@@ -24,6 +28,8 @@ class ClipItem:
         self.name = name
         self.category = category
 
+    def clip_times_s(self):
+        return self.start_position/1000, self.end_position/1000
 
     def tree_values(self):
         return self.name, milliseconds_to_hhmmss(self.start_position), milliseconds_to_hhmmss(self.end_position)

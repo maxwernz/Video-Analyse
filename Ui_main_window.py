@@ -30,6 +30,7 @@ class Ui_MainWindow(object):
         sizePolicy.setHeightForWidth(self.treeWidget.sizePolicy().hasHeightForWidth())
         self.treeWidget.setSizePolicy(sizePolicy)
         self.treeWidget.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustIgnored)
+        self.treeWidget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.treeWidget.setObjectName("treeWidget")
         self.treeWidget.header().setCascadingSectionResizes(False)
         self.verticalLayoutWidget = QtWidgets.QWidget(self.splitter)
@@ -143,9 +144,12 @@ class Ui_MainWindow(object):
         self.actionAnalyse_laden.setObjectName("actionAnalyse_laden")
         self.actionAnalyse_speichern = QtWidgets.QAction(MainWindow)
         self.actionAnalyse_speichern.setObjectName("actionAnalyse_speichern")
+        self.actionClips_Exportieren = QtWidgets.QAction(MainWindow)
+        self.actionClips_Exportieren.setObjectName("actionClips_Exportieren")
         self.menuFile.addAction(self.actionLoad_Video)
         self.menuFile.addAction(self.actionAnalyse_laden)
         self.menuFile.addAction(self.actionAnalyse_speichern)
+        self.menuFile.addAction(self.actionClips_Exportieren)
         self.menubar.addAction(self.menuFile.menuAction())
 
         self.retranslateUi(MainWindow)
@@ -173,4 +177,5 @@ class Ui_MainWindow(object):
         self.actionLoad_Video.setText(_translate("MainWindow", "Video laden"))
         self.actionAnalyse_laden.setText(_translate("MainWindow", "Analyse laden"))
         self.actionAnalyse_speichern.setText(_translate("MainWindow", "Analyse speichern"))
+        self.actionClips_Exportieren.setText(_translate("MainWindow", "Clips Exportieren"))
 from videowidget import VideoWidget
