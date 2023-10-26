@@ -165,5 +165,5 @@ if __name__ == '__main__':
     window = MainWindow()
     window.show()
     # window.videoWidget.load_video(QUrl.fromLocalFile("/Users/max/Downloads/Buchen.mp4"))
-    sys.exit(app.exec())
+    app.exec()
 
