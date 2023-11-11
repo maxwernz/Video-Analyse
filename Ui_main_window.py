@@ -145,7 +145,7 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "Video Analyse"))
         self.treeWidget.setSortingEnabled(True)
         self.treeWidget.headerItem().setText(0, _translate("MainWindow", "Clip"))
         self.treeWidget.headerItem().setText(1, _translate("MainWindow", "Start"))
