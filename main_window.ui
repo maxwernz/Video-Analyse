@@ -290,14 +290,21 @@
    </property>
    <widget class="QMenu" name="menuFile">
     <property name="title">
-     <string>File</string>
+     <string>Datei</string>
     </property>
     <addaction name="actionLoad_Video"/>
     <addaction name="actionAnalyse_laden"/>
     <addaction name="actionAnalyse_speichern"/>
     <addaction name="actionClips_Exportieren"/>
    </widget>
+   <widget class="QMenu" name="menuBearbeiten">
+    <property name="title">
+     <string>Bearbeiten</string>
+    </property>
+    <addaction name="actionAnalyse_entfernen"/>
+   </widget>
    <addaction name="menuFile"/>
+   <addaction name="menuBearbeiten"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="actionLoad_Video">
@@ -318,6 +325,14 @@
   <action name="actionClips_Exportieren">
    <property name="text">
     <string>Clips Exportieren</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+E</string>
+   </property>
+  </action>
+  <action name="actionAnalyse_entfernen">
+   <property name="text">
+    <string>Analyse entfernen</string>
    </property>
   </action>
  </widget>

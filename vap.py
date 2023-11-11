@@ -24,6 +24,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionAnalyse_speichern.triggered.connect(self.save_analysis)
         self.actionAnalyse_laden.triggered.connect(self.open_analysis)
         self.actionClips_Exportieren.triggered.connect(self.export_selected_clips)
+        self.actionAnalyse_entfernen.triggered.connect(self.remove_analysis)
         
         self.setup_connections()
         self.setup_shortcuts()
@@ -178,9 +179,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             QMessageBox.critical(self, "Error", f"Video URL not found")
             return
         
-        self.treeWidget.clear()
-        self.tree_item_list = []
-        ClipHandler.categories = {"Abwehr": None, "Angriff": None, "Tor": None}
+        self.remove_analysis()
         for clip in tree_list:
             self.add_clip(clip)
         
@@ -223,6 +222,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         video_thread = threading.Thread(target=process_video)
         video_thread.start()
         # process_video()
+
+    def remove_analysis(self):
+        self.treeWidget.clear()
+        self.tree_item_list = []
+        ClipHandler.categories = {"Abwehr": None, "Angriff": None, "Tor": None}
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls:
