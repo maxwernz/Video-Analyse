@@ -23,7 +23,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='VAP',
+    name='Video Analyse',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -43,7 +43,7 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='VAP',
+    name='Video Analyse',
 )
 app = BUNDLE(
     coll,
