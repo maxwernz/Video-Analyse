@@ -5,8 +5,11 @@ a = Analysis(
     ['vap.py'],
     pathex=[],
     binaries=[],
-    datas=[('icons', 'icons')],
-    hiddenimports=[],
+    datas=[
+        ('icons/*', 'icons'),
+        ('icons/forward.svg', 'icons')
+        ],
+    hiddenimports=['moviepy'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -44,7 +47,7 @@ coll = COLLECT(
 )
 app = BUNDLE(
     coll,
-    name='VAP.app',
+    name='Video Analyse.app',
     icon='icons/app_icon.icns',
     bundle_identifier=None,
 )
