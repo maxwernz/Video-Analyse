@@ -10,6 +10,9 @@
     <height>814</height>
    </rect>
   </property>
+  <property name="acceptDrops">
+   <bool>true</bool>
+  </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
@@ -29,6 +32,9 @@
          <horstretch>0</horstretch>
          <verstretch>0</verstretch>
         </sizepolicy>
+       </property>
+       <property name="acceptDrops">
+        <bool>true</bool>
        </property>
        <property name="sizeAdjustPolicy">
         <enum>QAbstractScrollArea::AdjustIgnored</enum>
@@ -67,6 +73,9 @@
             <horstretch>0</horstretch>
             <verstretch>0</verstretch>
            </sizepolicy>
+          </property>
+          <property name="acceptDrops">
+           <bool>true</bool>
           </property>
          </widget>
         </item>
@@ -135,8 +144,7 @@
             </property>
             <property name="icon">
              <iconset>
-              <normaloff>icons/play.svg</normaloff>
-              <normalon>icons/pause.svg</normalon>icons/play.svg</iconset>
+              <normaloff>icons/play.png</normaloff>icons/play.png</iconset>
             </property>
             <property name="iconSize">
              <size>

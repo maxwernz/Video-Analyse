@@ -1,4 +1,5 @@
 import sys
+from PyQt5 import QtCore
 from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QShortcut, QMessageBox
 from PyQt5.QtCore import QUrl, Qt
 from PyQt5.QtGui import QKeySequence
@@ -6,6 +7,7 @@ from Ui_main_window import Ui_MainWindow
 from clip_handler import ClipHandler
 from treewidget_item import TreeItem, ClipTreeItem
 import pickle
+import threading
 from moviepy.editor import VideoFileClip, concatenate_videoclips
 
 class MainWindow(QMainWindow, Ui_MainWindow):
@@ -14,18 +16,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         QMainWindow.__init__(self, parent)
         self.setupUi(self)
 
-        self.actionLoad_Video.triggered.connect(self.load_video)
+        self.actionLoad_Video.triggered.connect(self.open_video)
         self.actionAnalyse_speichern.triggered.connect(self.save_analysis)
-        self.actionAnalyse_laden.triggered.connect(self.load_analysis)
+        self.actionAnalyse_laden.triggered.connect(self.open_analysis)
         self.actionClips_Exportieren.triggered.connect(self.export_selected_clips)
         
         self.setup_connections()
         self.setup_shortcuts()
 
+        self.setAcceptDrops(True)
+
         self.clip_start = None
         self.file_name = None
 
         self.tree_item_list = []
+
+        self.treeWidget.sortByColumn(1, 0)
 
     def setup_connections(self):
         self.playPauseButton.clicked.connect(self.videoWidget.play_pause_video)
@@ -42,8 +48,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         QShortcut(QKeySequence(Qt.Key_Up), self).activated.connect(self.change_speed_up)
         QShortcut(QKeySequence(Qt.Key_Down), self).activated.connect(self.change_speed_down)
 
-    def load_video(self):
+    def open_video(self):
         file_name = QFileDialog.getOpenFileName(self, "Open file", "${HOME}", "Video files (*.mp4 *.mov)")[0]
+        self.load_video(file_name)
+
+    def load_video(self, file_name):
         if file_name:
             self.file_name = file_name
             self.treeWidget.clear()
@@ -119,8 +128,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return
         pickle.dump((self.file_name, self.tree_item_list), open(file_name, 'wb'))
 
-    def load_analysis(self):
+    def open_analysis(self):
         file_name = QFileDialog.getOpenFileName(self, "Open file", "${HOME}", "Analyse Dateien (*.analysis)")[0]
+        self.load_analysis(file_name)
+
+    def load_analysis(self, file_name):
+        
         if not file_name:
             return
 
@@ -151,11 +164,46 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 clip = item.clip_item
                 clip_segments.append(clip.clip_times_s())
 
-        video = VideoFileClip(self.file_name)
-        clips = [video.subclip(start_time, end_time) for start_time, end_time in clip_segments]
-        combined_clip = concatenate_videoclips(clips)
-        combined_clip.write_videofile(file_name)
+        # Funktion, um die Videoverarbeitung in einem separaten Thread auszuführen
+        def process_video():
+            video = VideoFileClip(self.file_name)
+            clip_segments.sort(key=lambda t: t[0])
+            clips = [video.subclip(start_time, end_time) for start_time, end_time in clip_segments]
+            print(clip_segments)
+            combined_clip = concatenate_videoclips(clips)
+            combined_clip.write_videofile(file_name, logger=None, audio=False, threads=4)
 
+        # # Einen separaten Thread erstellen und starten
+        video_thread = threading.Thread(target=process_video)
+        video_thread.start()
+        # process_video()
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls:
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls:
+            event.setDropAction(QtCore.Qt.MoveAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls:
+            event.setDropAction(QtCore.Qt.CopyAction)
+            event.accept()
+            
+            url = str(event.mimeData().urls()[0].toLocalFile())
+
+            if url.endswith(".mp4"):
+                self.load_video(url)
+            elif url.endswith(".analysis"):
+                self.load_analysis(url)
+        else:
+            event.ignore()
 
         
 
@@ -166,4 +214,6 @@ if __name__ == '__main__':
     window.show()
     # window.videoWidget.load_video(QUrl.fromLocalFile("/Users/max/Downloads/Buchen.mp4"))
     app.exec()
+
+
 

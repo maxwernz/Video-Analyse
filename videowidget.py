@@ -17,6 +17,7 @@ class VideoWidget(QWidget):
         self.current_speed = 1.0
 
         self.content = None
+        self.setAcceptDrops(True)
 
         self.init_ui()
 
