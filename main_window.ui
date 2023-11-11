@@ -169,10 +169,6 @@
             <property name="text">
              <string/>
             </property>
-            <property name="icon">
-             <iconset>
-              <normaloff>icons/forward.svg</normaloff>icons/forward.svg</iconset>
-            </property>
             <property name="iconSize">
              <size>
               <width>20</width>

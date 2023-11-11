@@ -1,5 +1,6 @@
 import sys
-from PyQt5 import QtCore
+import os
+from PyQt5 import QtCore, QtGui
 from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QShortcut, QMessageBox
 from PyQt5.QtCore import QUrl, Qt
 from PyQt5.QtGui import QKeySequence
@@ -10,11 +11,14 @@ import pickle
 import threading
 from moviepy.editor import VideoFileClip, concatenate_videoclips
 
+basedir = os.path.dirname(__file__)
+
 class MainWindow(QMainWindow, Ui_MainWindow):
 
     def __init__(self, parent=None):
         QMainWindow.__init__(self, parent)
         self.setupUi(self)
+        self.add_icons()
 
         self.actionLoad_Video.triggered.connect(self.open_video)
         self.actionAnalyse_speichern.triggered.connect(self.save_analysis)
@@ -32,6 +36,35 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.tree_item_list = []
 
         self.treeWidget.sortByColumn(1, 0)
+
+    def add_icons(self):
+        icon = QtGui.QIcon()
+        icon.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/mute.svg")), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        icon.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/sound.svg")), QtGui.QIcon.Normal, QtGui.QIcon.On)
+        self.soundButton.setIcon(icon)
+        self.soundButton.setIconSize(QtCore.QSize(20, 20))
+
+        icon1 = QtGui.QIcon()
+        icon1.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/backward.svg")), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.backwardButton.setIcon(icon1)
+        self.backwardButton.setIconSize(QtCore.QSize(20, 20))
+
+        icon2 = QtGui.QIcon()
+        icon2.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/play.svg")), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        icon2.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/pause.svg")), QtGui.QIcon.Normal, QtGui.QIcon.On)
+        self.playPauseButton.setIcon(icon2)
+        self.playPauseButton.setIconSize(QtCore.QSize(20, 20))
+
+        icon3 = QtGui.QIcon()
+        icon3.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/forward.svg")), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.forwardButton.setIcon(icon3)
+        self.forwardButton.setIconSize(QtCore.QSize(20, 20))
+
+        icon4 = QtGui.QIcon()
+        icon4.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/record.svg")), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        icon4.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/record_action.svg")), QtGui.QIcon.Normal, QtGui.QIcon.On)
+        self.clipButton.setIcon(icon4)
+        self.clipButton.setIconSize(QtCore.QSize(20, 20))
 
     def setup_connections(self):
         self.playPauseButton.clicked.connect(self.videoWidget.play_pause_video)
@@ -137,8 +170,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not file_name:
             return
 
-        self.file_name, tree_list = pickle.load(open(file_name, 'rb'))
+        file_name, tree_list = pickle.load(open(file_name, 'rb'))
+
+        if os.path.exists(file_name):
+            self.file_name = file_name
+        else:
+            QMessageBox.critical(self, "Error", f"Video URL not found")
+            return
+        
         self.treeWidget.clear()
+        self.tree_item_list = []
+        ClipHandler.categories = {"Abwehr": None, "Angriff": None, "Tor": None}
         for clip in tree_list:
             self.add_clip(clip)
         
@@ -148,10 +190,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def export_selected_clips(self):
 
+        selected_clips = self.treeWidget.selectedItems()
+        if not selected_clips:
+            QMessageBox.information(self, "Info", f"No Clips selected")
+            return
+
         file_name = file_name = QFileDialog.getSaveFileName(self, "Save file", "Clips", "Video Datei (*.mp4)")[0]
         if not file_name:
             return
-        selected_clips = self.treeWidget.selectedItems()
 
         clip_segments = []
 
