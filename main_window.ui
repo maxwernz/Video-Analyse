@@ -93,8 +93,8 @@
             </property>
             <property name="iconSize">
              <size>
-              <width>32</width>
-              <height>32</height>
+              <width>20</width>
+              <height>20</height>
              </size>
             </property>
             <property name="shortcut">
@@ -128,8 +128,8 @@
             </property>
             <property name="iconSize">
              <size>
-              <width>32</width>
-              <height>32</height>
+              <width>20</width>
+              <height>20</height>
              </size>
             </property>
             <property name="shortcut">
@@ -144,12 +144,13 @@
             </property>
             <property name="icon">
              <iconset>
-              <normaloff>icons/play.png</normaloff>icons/play.png</iconset>
+              <normaloff>icons/play.svg</normaloff>
+              <normalon>icons/pause.svg</normalon>icons/play.svg</iconset>
             </property>
             <property name="iconSize">
              <size>
-              <width>32</width>
-              <height>32</height>
+              <width>20</width>
+              <height>20</height>
              </size>
             </property>
             <property name="shortcut">
@@ -174,8 +175,8 @@
             </property>
             <property name="iconSize">
              <size>
-              <width>32</width>
-              <height>32</height>
+              <width>20</width>
+              <height>20</height>
              </size>
             </property>
             <property name="shortcut">
@@ -196,7 +197,7 @@
           <item>
            <widget class="QComboBox" name="speedBox">
             <property name="currentIndex">
-             <number>2</number>
+             <number>0</number>
             </property>
             <property name="sizeAdjustPolicy">
              <enum>QComboBox::AdjustToContentsOnFirstShow</enum>
@@ -211,36 +212,20 @@
              <property name="text">
               <string>0.25x</string>
              </property>
-             <property name="icon">
-              <iconset>
-               <normaloff>icons/tortoise_025.svg</normaloff>icons/tortoise_025.svg</iconset>
-             </property>
             </item>
             <item>
              <property name="text">
               <string>0.5x</string>
-             </property>
-             <property name="icon">
-              <iconset>
-               <normaloff>icons/tortoise_05.svg</normaloff>icons/tortoise_05.svg</iconset>
              </property>
             </item>
             <item>
              <property name="text">
               <string>1x</string>
              </property>
-             <property name="icon">
-              <iconset>
-               <normaloff>icons/video.svg</normaloff>icons/video.svg</iconset>
-             </property>
             </item>
             <item>
              <property name="text">
               <string>2x</string>
-             </property>
-             <property name="icon">
-              <iconset>
-               <normaloff>icons/rabbit.svg</normaloff>icons/rabbit.svg</iconset>
              </property>
             </item>
            </widget>
@@ -275,8 +260,8 @@
             </property>
             <property name="iconSize">
              <size>
-              <width>32</width>
-              <height>32</height>
+              <width>20</width>
+              <height>20</height>
              </size>
             </property>
             <property name="shortcut">
