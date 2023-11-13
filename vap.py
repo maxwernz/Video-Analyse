@@ -74,7 +74,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.backwardButton.clicked.connect(self.videoWidget.jump_backward)
         self.clipButton.toggled.connect(lambda recording: self.clip_started() if recording else self.clip_stopped())
         self.speedBox.currentIndexChanged.connect(lambda: self.videoWidget.change_speed(self.speedBox.currentText()))
-        self.treeWidget.itemSelectionChanged.connect(self.jump_to_clip)
+        self.treeWidget.itemClicked.connect(self.jump_to_clip)
 
     def setup_shortcuts(self):
         QShortcut(QKeySequence(Qt.Key_Right), self).activated.connect(self.videoWidget.move_forward)
@@ -89,9 +89,42 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def load_video(self, file_name):
         if file_name:
             self.file_name = file_name
-            self.treeWidget.clear()
+            self.remove_analysis()
             self.videoWidget.load_video(QUrl.fromLocalFile(self.file_name))
             self.titleLabel.setText(os.path.basename(file_name).removesuffix('.mp4'))
+
+    def save_analysis(self):
+
+        file_name = QFileDialog.getSaveFileName(self, "Save file", "Spielanalyse", "Analyse Dateien (*.analysis)")[0]
+        if not file_name:
+            return
+        pickle.dump((self.file_name, self.tree_item_list), open(file_name, 'wb'))
+
+    def open_analysis(self):
+        file_name = QFileDialog.getOpenFileName(self, "Open file", "${HOME}", "Analyse Dateien (*.analysis)")[0]
+        self.load_analysis(file_name)
+
+    def load_analysis(self, file_name):
+        
+        if not file_name:
+            return
+
+        file_name, tree_list = pickle.load(open(file_name, 'rb'))
+
+        if os.path.exists(file_name):
+            self.file_name = file_name
+        else:
+            QMessageBox.critical(self, "Error", f"Video URL not found")
+            return
+        
+        self.load_video(self.file_name)
+        
+        for clip in tree_list:
+            self.add_clip(clip)
+        
+        self.fit_tree()
+
+
 
     def change_speed_up(self):
         current_index = self.speedBox.currentIndex()
@@ -155,39 +188,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         
         self.videoWidget.set_position(selected_item.clip_item.jump_point())
 
-    
-    def save_analysis(self):
-
-        file_name = QFileDialog.getSaveFileName(self, "Save file", "Spielanalyse", "Analyse Dateien (*.analysis)")[0]
-        if not file_name:
-            return
-        pickle.dump((self.file_name, self.tree_item_list), open(file_name, 'wb'))
-
-    def open_analysis(self):
-        file_name = QFileDialog.getOpenFileName(self, "Open file", "${HOME}", "Analyse Dateien (*.analysis)")[0]
-        self.load_analysis(file_name)
-
-    def load_analysis(self, file_name):
-        
-        if not file_name:
-            return
-
-        file_name, tree_list = pickle.load(open(file_name, 'rb'))
-
-        if os.path.exists(file_name):
-            self.file_name = file_name
-        else:
-            QMessageBox.critical(self, "Error", f"Video URL not found")
-            return
-        
-        self.remove_analysis()
-        for clip in tree_list:
-            self.add_clip(clip)
-        
-        self.fit_tree()
-
-        self.videoWidget.load_video(QUrl.fromLocalFile(self.file_name))
-
     def export_selected_clips(self):
 
         selected_clips = self.treeWidget.selectedItems()
@@ -219,10 +219,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             combined_clip = concatenate_videoclips(clips)
             combined_clip.write_videofile(file_name, logger=None, audio=False, threads=4)
 
-        # # Einen separaten Thread erstellen und starten
+        # Einen separaten Thread erstellen und starten
         video_thread = threading.Thread(target=process_video)
         video_thread.start()
-        # process_video()
 
     def remove_analysis(self):
         self.treeWidget.clear()
@@ -264,6 +263,7 @@ if __name__ == '__main__':
     window = MainWindow()
     window.show()
     # window.load_video("/Users/max/Downloads/Buchen.mp4")
+    window.load_analysis("/Users/max/Downloads/Buchen.analysis")
     app.exec()
 
 
