@@ -91,6 +91,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.file_name = file_name
             self.treeWidget.clear()
             self.videoWidget.load_video(QUrl.fromLocalFile(self.file_name))
+            self.titleLabel.setText(os.path.basename(file_name).removesuffix('.mp4'))
 
     def change_speed_up(self):
         current_index = self.speedBox.currentIndex()
@@ -262,7 +263,7 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
-    # window.videoWidget.load_video(QUrl.fromLocalFile("/Users/max/Downloads/Buchen.mp4"))
+    # window.load_video("/Users/max/Downloads/Buchen.mp4")
     app.exec()
 
 
