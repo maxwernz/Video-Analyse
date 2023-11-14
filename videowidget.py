@@ -1,11 +1,14 @@
-from PyQt5.QtWidgets import QSlider, QVBoxLayout, QHBoxLayout, QWidget, QLabel
+from PyQt5.QtWidgets import QSlider, QVBoxLayout, QHBoxLayout, QWidget, QLabel, QShortcut
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtCore import Qt, QSignalBlocker
+from PyQt5.QtCore import Qt, QSignalBlocker, pyqtSignal
 
 from util import milliseconds_to_hhmmss
 
 class VideoWidget(QWidget):
+
+    video_paused = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__()
 
@@ -60,18 +63,21 @@ class VideoWidget(QWidget):
         if not self.is_playing:
             self.media_player.play()
             self.is_playing = True
-            # self.timer.start(1000)  # Update every second
         else:
             self.is_playing = False
             self.media_player.pause()
-            # self.timer.stop()
 
     def videoIsPlaying(self):
         return self.is_playing
 
     def pause_video(self):
-        self.media_player.pause()
         self.is_playing = False
+        self.media_player.pause()
+        self.video_paused.emit()
+
+    def play_video(self):
+        self.media_player.play()
+        self.is_playing = True
 
     def change_sound(self):
         self.media_player.setMuted(not self.media_player.isMuted())
@@ -123,13 +129,18 @@ class VideoWidget(QWidget):
         self.duration_label.setText(f"{milliseconds_to_hhmmss(duration)}")
 
     def move_backward(self):
+        if self.is_playing:
+            self.pause_video()
         current_position = self.media_player.position()
         new_position = current_position - 100 * self.current_speed
         if new_position <= 0:
             new_position = 0
         self.set_position(new_position)
 
+
     def move_forward(self):
+        if self.is_playing:
+            self.pause_video()
         current_position = self.media_player.position()
         new_position = current_position + 100 * self.current_speed
         if new_position >= self.media_player.duration():

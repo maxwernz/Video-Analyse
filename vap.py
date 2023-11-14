@@ -2,7 +2,7 @@ import sys
 import os
 from PyQt5 import QtCore, QtGui
 from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QShortcut, QMessageBox
-from PyQt5.QtCore import QUrl, Qt
+from PyQt5.QtCore import QUrl, Qt, QSignalBlocker
 from PyQt5.QtGui import QKeySequence
 from Ui_main_window import Ui_MainWindow
 from clip_handler import ClipHandler
@@ -69,6 +69,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def setup_connections(self):
         self.playPauseButton.clicked.connect(self.videoWidget.play_pause_video)
+        self.videoWidget.video_paused.connect(self.toggle_play_button)
         self.soundButton.clicked.connect(self.videoWidget.change_sound)
         self.forwardButton.clicked.connect(self.videoWidget.jump_forward)
         self.backwardButton.clicked.connect(self.videoWidget.jump_backward)
@@ -81,6 +82,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         QShortcut(QKeySequence(Qt.Key_Left), self).activated.connect(self.videoWidget.move_backward)
         QShortcut(QKeySequence(Qt.Key_Up), self).activated.connect(self.change_speed_up)
         QShortcut(QKeySequence(Qt.Key_Down), self).activated.connect(self.change_speed_down)
+
+    def toggle_play_button(self):
+        with QSignalBlocker(self.playPauseButton): 
+            self.playPauseButton.click()
 
     def open_video(self):
         file_name = QFileDialog.getOpenFileName(self, "Open file", "${HOME}", "Video files (*.mp4 *.mov)")[0]
@@ -123,8 +128,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.add_clip(clip)
         
         self.fit_tree()
-
-
 
     def change_speed_up(self):
         current_index = self.speedBox.currentIndex()
