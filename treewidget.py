@@ -121,4 +121,10 @@ class TreeWidget(QTreeWidget):
         self.expandAll()
         for col in range(self.columnCount()):
             self.resizeColumnToContents(col)
+
+    def get_top_level_items(self):
+        top_level_items = []
+        for i in range(self.topLevelItemCount()):
+            top_level_items.append(self.topLevelItem(i))
+        return top_level_items
     

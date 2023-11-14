@@ -141,10 +141,13 @@ class Ui_MainWindow(object):
         self.actionClips_Exportieren.setObjectName("actionClips_Exportieren")
         self.actionAnalyse_entfernen = QtWidgets.QAction(MainWindow)
         self.actionAnalyse_entfernen.setObjectName("actionAnalyse_entfernen")
+        self.actionVideo_Exportieren = QtWidgets.QAction(MainWindow)
+        self.actionVideo_Exportieren.setObjectName("actionVideo_Exportieren")
         self.menuFile.addAction(self.actionLoad_Video)
         self.menuFile.addAction(self.actionAnalyse_laden)
         self.menuFile.addAction(self.actionAnalyse_speichern)
         self.menuFile.addAction(self.actionClips_Exportieren)
+        self.menuFile.addAction(self.actionVideo_Exportieren)
         self.menuBearbeiten.addAction(self.actionAnalyse_entfernen)
         self.menubar.addAction(self.menuFile.menuAction())
         self.menubar.addAction(self.menuBearbeiten.menuAction())
@@ -182,5 +185,7 @@ class Ui_MainWindow(object):
         self.actionClips_Exportieren.setText(_translate("MainWindow", "Clips Exportieren"))
         self.actionClips_Exportieren.setShortcut(_translate("MainWindow", "Ctrl+E"))
         self.actionAnalyse_entfernen.setText(_translate("MainWindow", "Analyse entfernen"))
+        self.actionVideo_Exportieren.setText(_translate("MainWindow", "Video Exportieren"))
+        self.actionVideo_Exportieren.setShortcut(_translate("MainWindow", "Ctrl+Shift+E"))
 from treewidget import TreeWidget
 from videowidget import VideoWidget

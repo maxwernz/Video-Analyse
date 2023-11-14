@@ -302,6 +302,7 @@
     <addaction name="actionAnalyse_laden"/>
     <addaction name="actionAnalyse_speichern"/>
     <addaction name="actionClips_Exportieren"/>
+    <addaction name="actionVideo_Exportieren"/>
    </widget>
    <widget class="QMenu" name="menuBearbeiten">
     <property name="title">
@@ -348,6 +349,14 @@
   <action name="actionAnalyse_entfernen">
    <property name="text">
     <string>Analyse entfernen</string>
+   </property>
+  </action>
+  <action name="actionVideo_Exportieren">
+   <property name="text">
+    <string>Video Exportieren</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+E</string>
    </property>
   </action>
  </widget>

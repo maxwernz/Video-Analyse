@@ -24,7 +24,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionLoad_Video.triggered.connect(self.open_video)
         self.actionAnalyse_speichern.triggered.connect(self.save_analysis)
         self.actionAnalyse_laden.triggered.connect(self.open_analysis)
-        self.actionClips_Exportieren.triggered.connect(self.export_selected_clips)
+        self.actionClips_Exportieren.triggered.connect(self.export)
+        self.actionVideo_Exportieren.triggered.connect(lambda: self.export(full_video=True))
         self.actionAnalyse_entfernen.triggered.connect(self.remove_analysis)
         
         self.setup_connections()
@@ -73,7 +74,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.clipButton.toggled.connect(lambda recording: self.clip_started() if recording else self.clip_stopped())
         self.speedBox.currentIndexChanged.connect(lambda: self.videoWidget.change_speed(self.speedBox.currentText()))
         self.treeWidget.itemClicked.connect(self.jump_to_clip)
-        self.treeWidget.export_clips.connect(self.export_selected_clips)
+        self.treeWidget.export_clips.connect(self.export)
 
     def setup_shortcuts(self):
         QShortcut(QKeySequence(Qt.Key_Right), self).activated.connect(self.videoWidget.move_forward)
@@ -164,9 +165,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         
         self.videoWidget.set_position(selected_item.clip_item.jump_point())
 
-    def export_selected_clips(self):
+    def export(self, full_video=False):
 
-        selected_clips = self.treeWidget.selectedItems()
+        if full_video:
+            selected_clips = self.treeWidget.get_top_level_items()
+        else:
+            selected_clips = self.treeWidget.selectedItems()
         if not selected_clips:
             QMessageBox.information(self, "Info", f"No Clips selected")
             return
@@ -199,7 +203,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             size = video.size
 
             category = clips[0].category
-            subclips = [create_category_clip(category, size)]
+            if full_video:
+                video_title = os.path.basename(file_name).removesuffix('.mp4')
+                subclips = [create_category_clip(video_title, size), create_category_clip(category, size)]
+            else:
+                subclips = [create_category_clip(category, size)]
             for i, clip in enumerate(clips):
                 clip_category = clip.category
                 if clip_category != category:
@@ -217,9 +225,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Einen separaten Thread erstellen und starten
         video_thread = threading.Thread(target=process_video)
         video_thread.start()
-
-    def export_video(self):
-        
 
     def remove_analysis(self):
         self.treeWidget.remove_analysis()
