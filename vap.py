@@ -10,6 +10,7 @@ from treewidget_item import TreeItem, ClipTreeItem
 import pickle
 import threading
 from moviepy.editor import VideoFileClip, concatenate_videoclips
+from treewidget import TreeWidget
 
 basedir = os.path.dirname(__file__)
 
@@ -33,10 +34,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self.clip_start = None
         self.file_name = None
-
-        self.tree_item_list = []
-
-        self.treeWidget.sortByColumn(1, 0)
 
     def add_icons(self):
         icon = QtGui.QIcon()
@@ -104,7 +101,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         file_name = QFileDialog.getSaveFileName(self, "Save file", "Spielanalyse", "Analyse Dateien (*.analysis)")[0]
         if not file_name:
             return
-        pickle.dump((self.file_name, self.tree_item_list), open(file_name, 'wb'))
+        pickle.dump((self.file_name, TreeWidget.tree_item_list), open(file_name, 'wb'))
 
     def open_analysis(self):
         file_name = QFileDialog.getOpenFileName(self, "Open file", "${HOME}", "Analyse Dateien (*.analysis)")[0]
@@ -128,7 +125,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         for clip in tree_list:
             self.add_clip(clip)
         
-        self.fit_tree()
+        self.treeWidget.fit_tree()
 
     def change_speed_up(self):
         current_index = self.speedBox.currentIndex()
@@ -155,13 +152,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if clip_handler.exec():
                 clip = clip_handler.clip
                 self.add_clip(clip)
-                self.fit_tree()
+                self.treeWidget.fit_tree()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"An error occurred: {e}")
 
     def add_clip(self, clip):
-        self.tree_item_list.append(clip)
+        TreeWidget.tree_item_list.append(clip)
         category = clip.category
         parent = self.treeWidget
         if category is not None:
@@ -179,12 +176,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         ClipTreeItem(clip, parent=parent)
 
-    def fit_tree(self):
-        self.treeWidget.expandAll()
-        for col in range(self.treeWidget.columnCount()):
-            self.treeWidget.resizeColumnToContents(col)
-
-    
     def jump_to_clip(self):
         selected_item = self.treeWidget.currentItem()
         if not isinstance(selected_item, ClipTreeItem):
@@ -228,9 +219,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         video_thread.start()
 
     def remove_analysis(self):
-        self.treeWidget.clear()
-        self.tree_item_list = []
-        ClipHandler.categories = {"Abwehr": None, "Angriff": None, "Tor": None}
+        self.treeWidget.remove_analysis()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls:

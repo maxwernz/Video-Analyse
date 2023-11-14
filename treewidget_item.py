@@ -19,6 +19,9 @@ class ClipTreeItem(TreeItem):
         for i, val in enumerate(self.clip_item.tree_values()):
             self.setText(i, val)
 
+    def clip(self):
+        return self.clip_item
+
 class ClipItem:
 
     def __init__(self, name, start_position, end_position, notes, category=None):
