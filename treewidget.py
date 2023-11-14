@@ -7,6 +7,7 @@ class TreeWidget(QTreeWidget):
 
     tree_item_list = []
     export_clips = pyqtSignal()
+    item_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -76,7 +77,8 @@ class TreeWidget(QTreeWidget):
 
                 self.check_empty_parent(old_parent)
 
-        self.fit_tree()
+            self.fit_tree()
+            self.item_changed.emit(False)
 
     def get_category_item(self, category):
         category_item = ClipHandler.categories[category]
@@ -100,6 +102,7 @@ class TreeWidget(QTreeWidget):
 
 
             self.check_empty_parent(parent)
+        self.item_changed.emit(False)
 
     def check_empty_parent(self, parent):
         if parent.childCount() == 0:

@@ -1,8 +1,8 @@
 import sys
 import os
 from PyQt5 import QtCore, QtGui
-from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QShortcut, QMessageBox
-from PyQt5.QtCore import QUrl, Qt, QSignalBlocker
+from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QShortcut, QMessageBox, QLabel
+from PyQt5.QtCore import QUrl, Qt, QSignalBlocker, pyqtSignal, pyqtProperty, QTranslator
 from PyQt5.QtGui import QKeySequence
 from Ui_main_window import Ui_MainWindow
 from clip_handler import CreateClip
@@ -16,8 +16,12 @@ basedir = os.path.dirname(__file__)
 
 class MainWindow(QMainWindow, Ui_MainWindow):
 
+    file_changed = pyqtSignal(str)
+    file_changes_made = pyqtSignal(bool)
+
     def __init__(self, parent=None):
         QMainWindow.__init__(self, parent)
+        # self.set_language('de')
         self.setupUi(self)
         self.add_icons()
 
@@ -31,10 +35,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setup_connections()
         self.setup_shortcuts()
 
+        self.statusbar = self.statusBar()
+
+        self.statusBarLabel = QLabel()
+        self.statusbar.addWidget(self.statusBarLabel)
+
         self.setAcceptDrops(True)
 
         self.clip_start = None
         self.file_name = None
+        self._current_file = None
+        self.file_changed.emit(None)
+        self._is_saved = True
+
+    def set_language(self, lang_code):
+        translator = QTranslator()
+        translator.load('qtbase_' + lang_code, ':/translations')
+        QApplication.instance().installTranslator(translator)
 
     def add_icons(self):
         icon = QtGui.QIcon()
@@ -75,6 +92,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.speedBox.currentIndexChanged.connect(lambda: self.videoWidget.change_speed(self.speedBox.currentText()))
         self.treeWidget.itemClicked.connect(self.jump_to_clip)
         self.treeWidget.export_clips.connect(self.export)
+        self.treeWidget.item_changed.connect(self.set_saved_status)
+
+        self.file_changed.connect(self.on_file_changed)
+        self.file_changes_made.connect(self.on_changes_made)
 
     def setup_shortcuts(self):
         QShortcut(QKeySequence(Qt.Key_Right), self).activated.connect(self.videoWidget.move_forward)
@@ -82,6 +103,64 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         QShortcut(QKeySequence(Qt.Key_Up), self).activated.connect(self.change_speed_up)
         QShortcut(QKeySequence(Qt.Key_Down), self).activated.connect(self.change_speed_down)
         QShortcut(QKeySequence.Close, self).activated.connect(self.close)
+
+    def closeEvent(self, event):
+        if self.is_saved or self.confirm_close():
+            event.accept()
+        else:
+            event.ignore()
+
+    def confirm_close(self):
+        reply = QMessageBox.question(
+            self,
+            "Ungespeicherte Änderungen",
+            "Es gibt ungespeicherte Änderungen. Möchten sie speichern?",
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel
+        )
+        
+        if reply == QMessageBox.Save:
+            self.save_analysis()
+            return True
+        elif reply == QMessageBox.Discard:
+            return True
+        else:
+            return False
+
+    @pyqtProperty(str, notify=file_changed)
+    def current_file(self):
+        return self._current_file
+    
+    @current_file.setter
+    def current_file(self, value):
+        if self._current_file != value:
+            self._current_file = value
+            self.file_changed.emit(value)
+
+    def on_file_changed(self, file_path):
+        if not file_path:
+            self.statusBarLabel.setText(" Untitled")
+        else:
+            self.statusBarLabel.setText(" " + file_path)
+
+    @pyqtProperty(bool, notify=file_changes_made)
+    def is_saved(self):
+        return self._is_saved
+    
+    @is_saved.setter
+    def is_saved(self, value):
+        if self._is_saved != value:
+            self._is_saved = value
+            self.file_changes_made.emit(value)
+
+    def on_changes_made(self, value):
+        message = self.statusBarLabel.text()
+        if not value:
+            self.statusBarLabel.setText(message + " *")
+        else:
+            self.statusBarLabel.setText(message.removesuffix(" *"))
+
+    def set_saved_status(self, value):
+        self.is_saved = value
 
     def toggle_play_button(self):
         with QSignalBlocker(self.playPauseButton): 
@@ -100,10 +179,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def save_analysis(self):
 
-        file_name = QFileDialog.getSaveFileName(self, "Save file", "Spielanalyse", "Analyse Dateien (*.analysis)")[0]
-        if not file_name:
-            return
+        if self.current_file is None:
+            file_name = QFileDialog.getSaveFileName(self, "Save file", self.titleLabel.text(), "Analyse Dateien (*.analysis)")[0]
+            if not file_name:
+                return
+            self.current_file = file_name
+        else:
+            file_name = self.current_file
+
         pickle.dump((self.file_name, TreeWidget.tree_item_list), open(file_name, 'wb'))
+        self.is_saved = True
 
     def open_analysis(self):
         file_name = QFileDialog.getOpenFileName(self, "Open file", "${HOME}", "Analyse Dateien (*.analysis)")[0]
@@ -114,15 +199,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not file_name:
             return
 
-        file_name, tree_list = pickle.load(open(file_name, 'rb'))
+        video_file, tree_list = pickle.load(open(file_name, 'rb'))
 
-        if os.path.exists(file_name):
-            self.file_name = file_name
+        if os.path.exists(video_file):
+            self.file_name = video_file
         else:
             QMessageBox.critical(self, "Error", f"Video URL not found")
             return
         
         self.load_video(self.file_name)
+
+        self.current_file = file_name
         
         self.treeWidget.add_clips(tree_list)
         
@@ -154,6 +241,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 clip = clip_handler.clip
                 self.treeWidget.add_clip(clip)
                 self.treeWidget.fit_tree()
+                self.is_saved = False
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"An error occurred: {e}")
@@ -228,6 +316,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def remove_analysis(self):
         self.treeWidget.remove_analysis()
+        self.current_file = None
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls:
@@ -264,7 +353,7 @@ if __name__ == '__main__':
     window = MainWindow()
     window.show()
     # window.load_video("/Users/max/Downloads/Buchen.mp4")
-    window.load_analysis("/Users/max/Downloads/Buchen.analysis")
+    # window.load_analysis("/Users/max/Downloads/Buchen.analysis")
     app.exec()
 
 
