@@ -82,6 +82,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         QShortcut(QKeySequence(Qt.Key_Left), self).activated.connect(self.videoWidget.move_backward)
         QShortcut(QKeySequence(Qt.Key_Up), self).activated.connect(self.change_speed_up)
         QShortcut(QKeySequence(Qt.Key_Down), self).activated.connect(self.change_speed_down)
+        QShortcut(QKeySequence.Close, self).activated.connect(self.close)
 
     def toggle_play_button(self):
         with QSignalBlocker(self.playPauseButton): 

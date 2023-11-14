@@ -16,6 +16,7 @@ class Ui_MainWindow(object):
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(1558, 814)
         MainWindow.setAcceptDrops(True)
+        MainWindow.setUnifiedTitleAndToolBarOnMac(False)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.centralwidget.setMouseTracking(True)
         self.centralwidget.setObjectName("centralwidget")

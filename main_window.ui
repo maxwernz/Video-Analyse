@@ -16,6 +16,9 @@
   <property name="windowTitle">
    <string>Video Analyse</string>
   </property>
+  <property name="unifiedTitleAndToolBarOnMac">
+   <bool>false</bool>
+  </property>
   <widget class="QWidget" name="centralwidget">
    <property name="mouseTracking">
     <bool>true</bool>
