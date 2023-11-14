@@ -73,6 +73,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.clipButton.toggled.connect(lambda recording: self.clip_started() if recording else self.clip_stopped())
         self.speedBox.currentIndexChanged.connect(lambda: self.videoWidget.change_speed(self.speedBox.currentText()))
         self.treeWidget.itemClicked.connect(self.jump_to_clip)
+        self.treeWidget.export_clips.connect(self.export_selected_clips)
 
     def setup_shortcuts(self):
         QShortcut(QKeySequence(Qt.Key_Right), self).activated.connect(self.videoWidget.move_forward)
@@ -174,31 +175,51 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not file_name:
             return
 
-        clip_segments = []
+        clips = []
 
         for item in selected_clips:
-            if item.parent() is None:
+            if item.is_category_item():
                 for child in item.children():
                     clip = child.clip_item
-                    clip_segments.append(clip.clip_times_s())
+                    if clip not in clips:
+                        clips.append(clip)
             else:
                 clip = item.clip_item
-                clip_segments.append(clip.clip_times_s())
+                if clip not in clips:
+                    clips.append(clip)
+
+        def create_category_clip(category, size=(640, 480)):
+            text_clip = TextClip(category, fontsize=150, color="white", size=size).set_duration(1.5)
+            return CompositeVideoClip([text_clip])
 
         # Funktion, um die Videoverarbeitung in einem separaten Thread auszuführen
         def process_video():
             video = VideoFileClip(self.file_name)
-            clip_segments.sort(key=lambda t: t[0])
-            clips = [video.subclip(start_time, end_time) for start_time, end_time in clip_segments]
-            texts = [TextClip(f"{i+1}", fontsize=100, color="white").set_position((50, 50)).set_duration(end_time - start_time)
-                      for i, (start_time, end_time) in enumerate(clip_segments)]
-            text_clips = [CompositeVideoClip([clip, text]) for clip, text in zip(clips, texts)]
-            combined_clip = concatenate_videoclips(text_clips)
-            combined_clip.write_videofile(file_name, logger=None, audio=False, threads=4)
+            # clip_segments.sort(key=lambda t: t[0])
+            size = video.size
+
+            category = clips[0].category
+            subclips = [create_category_clip(category, size)]
+            for i, clip in enumerate(clips):
+                clip_category = clip.category
+                if clip_category != category:
+                    category = clip_category
+                    subclips.append(create_category_clip(category, size))
+                
+                start_time, end_time = clip.clip_times_s()
+                video_clip = video.subclip(start_time, end_time)
+                text_clip = TextClip(f"{i+1}", fontsize=100, color="white").set_position((50, 50)).set_duration(end_time - start_time)
+                subclips.append(CompositeVideoClip([video_clip, text_clip]))
+
+            combined_video = concatenate_videoclips(subclips)
+            combined_video.write_videofile(file_name, logger=None, audio=False, threads=4)
 
         # Einen separaten Thread erstellen und starten
         video_thread = threading.Thread(target=process_video)
         video_thread.start()
+
+    def export_video(self):
+        
 
     def remove_analysis(self):
         self.treeWidget.remove_analysis()

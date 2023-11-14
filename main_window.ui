@@ -317,15 +317,24 @@
    <property name="text">
     <string>Video laden</string>
    </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
+   </property>
   </action>
   <action name="actionAnalyse_laden">
    <property name="text">
     <string>Analyse laden</string>
    </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+O</string>
+   </property>
   </action>
   <action name="actionAnalyse_speichern">
    <property name="text">
     <string>Analyse speichern</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+S</string>
    </property>
   </action>
   <action name="actionClips_Exportieren">

@@ -1,11 +1,12 @@
 from PyQt5.QtWidgets import QTreeWidget, QMenu, QAction
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from clip_handler import ClipHandler, EditClip
 from treewidget_item import TreeItem, ClipTreeItem
 
 class TreeWidget(QTreeWidget):
 
     tree_item_list = []
+    export_clips = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -21,9 +22,18 @@ class TreeWidget(QTreeWidget):
         if item:
             menu = QMenu(self)
 
-            remove_action = QAction("Remove", self)
+            remove_action = QAction("Löschen", self)
             remove_action.triggered.connect(lambda: self.remove_item(item))
             menu.addAction(remove_action)
+            
+            if item.parent() is not None:
+                edit_action = QAction("Bearbeiten", self)
+                edit_action.triggered.connect(lambda: self.edit_item(item))
+                menu.addAction(edit_action)
+
+            export_action = QAction("Clips exportieren", self)
+            export_action.triggered.connect(lambda: self.export_clips.emit())
+            menu.addAction(export_action)
 
             menu.exec(self.mapToGlobal(event))
 
@@ -46,7 +56,7 @@ class TreeWidget(QTreeWidget):
         
         ClipTreeItem(clip, parent=parent)
 
-    def edit_item(self, item, _):
+    def edit_item(self, item, _=None):
         if item is None:
             return
         

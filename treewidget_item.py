@@ -8,6 +8,9 @@ class TreeItem(QTreeWidgetItem):
 
     def children(self):
         return [self.child(i) for i in range(self.childCount())]
+    
+    def is_category_item(self):
+        return self.parent() is None
             
 
 class ClipTreeItem(TreeItem):
