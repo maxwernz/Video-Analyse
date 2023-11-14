@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QShortcut, Q
 from PyQt5.QtCore import QUrl, Qt, QSignalBlocker
 from PyQt5.QtGui import QKeySequence
 from Ui_main_window import Ui_MainWindow
-from clip_handler import ClipHandler
+from clip_handler import ClipHandler, CreateClip
 from treewidget_item import TreeItem, ClipTreeItem
 import pickle
 import threading
@@ -122,8 +122,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         
         self.load_video(self.file_name)
         
-        for clip in tree_list:
-            self.add_clip(clip)
+        self.treeWidget.add_clips(tree_list)
         
         self.treeWidget.fit_tree()
 
@@ -147,34 +146,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.videoWidget.videoIsPlaying():
             self.playPauseButton.click()
         clip_stop = self.videoWidget.get_position()
-        clip_handler = ClipHandler(self.clip_start, clip_stop)
+        clip_handler = CreateClip(self.clip_start, clip_stop)
         try:
             if clip_handler.exec():
                 clip = clip_handler.clip
-                self.add_clip(clip)
+                self.treeWidget.add_clip(clip)
                 self.treeWidget.fit_tree()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"An error occurred: {e}")
-
-    def add_clip(self, clip):
-        TreeWidget.tree_item_list.append(clip)
-        category = clip.category
-        parent = self.treeWidget
-        if category is not None:
-            if category in ClipHandler.categories:
-                category_item = ClipHandler.categories[category]
-                if category_item is None:
-                    category_item = TreeItem(parent)
-                    category_item.setText(0, category)
-                    ClipHandler.categories[category] = category_item
-            else:
-                category_item = TreeItem(parent)
-                category_item.setText(0, category)
-                ClipHandler.categories[category] = category_item
-            parent = category_item
-
-        ClipTreeItem(clip, parent=parent)
 
     def jump_to_clip(self):
         selected_item = self.treeWidget.currentItem()
