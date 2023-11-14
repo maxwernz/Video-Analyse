@@ -5,11 +5,11 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QShortcut, Q
 from PyQt5.QtCore import QUrl, Qt, QSignalBlocker
 from PyQt5.QtGui import QKeySequence
 from Ui_main_window import Ui_MainWindow
-from clip_handler import ClipHandler, CreateClip
-from treewidget_item import TreeItem, ClipTreeItem
+from clip_handler import CreateClip
+from treewidget_item import ClipTreeItem
 import pickle
 import threading
-from moviepy.editor import VideoFileClip, concatenate_videoclips
+from moviepy.editor import VideoFileClip, concatenate_videoclips, TextClip, CompositeVideoClip
 from treewidget import TreeWidget
 
 basedir = os.path.dirname(__file__)
@@ -190,8 +190,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             video = VideoFileClip(self.file_name)
             clip_segments.sort(key=lambda t: t[0])
             clips = [video.subclip(start_time, end_time) for start_time, end_time in clip_segments]
-            print(clip_segments)
-            combined_clip = concatenate_videoclips(clips)
+            texts = [TextClip(f"{i+1}", fontsize=100, color="white").set_position((50, 50)).set_duration(end_time - start_time)
+                      for i, (start_time, end_time) in enumerate(clip_segments)]
+            text_clips = [CompositeVideoClip([clip, text]) for clip, text in zip(clips, texts)]
+            combined_clip = concatenate_videoclips(text_clips)
             combined_clip.write_videofile(file_name, logger=None, audio=False, threads=4)
 
         # Einen separaten Thread erstellen und starten
