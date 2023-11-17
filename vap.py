@@ -10,6 +10,7 @@ from treewidget_item import ClipTreeItem
 import pickle
 from treewidget import TreeWidget
 from video_creator import VideoCreator
+from progress_dialog import ProgressDialog
 
 basedir = os.path.dirname(__file__)
 
@@ -279,8 +280,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if clip not in clips:
                     clips.append(clip)
 
+        
+
         video_creator = VideoCreator(clips, self.file_name, file_name, full_video)
+        progress_dialog = ProgressDialog(self)
+        video_creator.progress_changed.connect(progress_dialog.set_progress)
+
         video_creator.start()
+        progress_dialog.show()
 
     def remove_analysis(self):
         self.treeWidget.remove_analysis()

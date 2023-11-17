@@ -2,12 +2,16 @@ from PIL import Image, ImageDraw, ImageFont
 from threading import Thread
 from moviepy.editor import VideoFileClip, concatenate_videoclips, TextClip, CompositeVideoClip
 import os
+from PyQt5.QtCore import QObject, pyqtSignal
 
 
-class VideoCreator(Thread):
+class VideoCreator(Thread, QObject):
+
+    progress_changed = pyqtSignal(int)
 
     def __init__(self, clips, video_filename, save_filename, full_video):
-        super().__init__()
+        Thread.__init__(self)
+        QObject.__init__(self)
 
         self.clips = clips
         self.video = VideoFileClip(video_filename)
@@ -38,8 +42,13 @@ class VideoCreator(Thread):
             text_clip = TextClip("", tempfilename=self.tempfilename).set_duration(end_time - start_time)
             subclips.append(CompositeVideoClip([video_clip, text_clip]))
 
+            progress = int(i / len(self.clips) * 100)
+            self.progress_changed.emit(progress)
+
         combined_video = concatenate_videoclips(subclips)
         combined_video.write_videofile(self.filename, logger=None, audio=False, threads=4)
+
+        self.progress_changed.emit(100)
 
     def create_category_clip(self, category):
         self.create_image(category, number_clip=False)
