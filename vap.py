@@ -8,9 +8,8 @@ from Ui_main_window import Ui_MainWindow
 from clip_handler import CreateClip
 from treewidget_item import ClipTreeItem
 import pickle
-import threading
-from moviepy.editor import VideoFileClip, concatenate_videoclips, TextClip, CompositeVideoClip
 from treewidget import TreeWidget
+from video_creator import VideoCreator
 
 basedir = os.path.dirname(__file__)
 
@@ -280,39 +279,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if clip not in clips:
                     clips.append(clip)
 
-        def create_category_clip(category, size=(640, 480)):
-            text_clip = TextClip(category, fontsize=150, color="white", size=size).set_duration(1.5)
-            return CompositeVideoClip([text_clip])
-
-        # Funktion, um die Videoverarbeitung in einem separaten Thread auszuführen
-        def process_video():
-            video = VideoFileClip(self.file_name)
-            # clip_segments.sort(key=lambda t: t[0])
-            size = video.size
-
-            category = clips[0].category
-            if full_video:
-                video_title = os.path.basename(file_name).removesuffix('.mp4')
-                subclips = [create_category_clip(video_title, size), create_category_clip(category, size)]
-            else:
-                subclips = [create_category_clip(category, size)]
-            for i, clip in enumerate(clips):
-                clip_category = clip.category
-                if clip_category != category:
-                    category = clip_category
-                    subclips.append(create_category_clip(category, size))
-                
-                start_time, end_time = clip.clip_times_s()
-                video_clip = video.subclip(start_time, end_time)
-                text_clip = TextClip(f"{i+1}", fontsize=100, color="white").set_position((50, 50)).set_duration(end_time - start_time)
-                subclips.append(CompositeVideoClip([video_clip, text_clip]))
-
-            combined_video = concatenate_videoclips(subclips)
-            combined_video.write_videofile(file_name, logger=None, audio=False, threads=4)
-
-        # Einen separaten Thread erstellen und starten
-        video_thread = threading.Thread(target=process_video)
-        video_thread.start()
+        video_creator = VideoCreator(clips, self.file_name, file_name, full_video)
+        video_creator.start()
 
     def remove_analysis(self):
         self.treeWidget.remove_analysis()
@@ -345,7 +313,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             event.ignore()
 
-        
+
+
 
 
 if __name__ == '__main__':
