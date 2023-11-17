@@ -26,6 +26,18 @@ class ProgressDialog(QDialog):
 
         self.setModal(False)
 
+    def center_on_main_window(self, main_window):
+        # Die Mitte des Hauptfensters berechnen
+        main_window_rect = main_window.frameGeometry()
+        center_point = main_window_rect.center()
+
+        # Die Mitte des Dialogfensters berechnen
+        dialog_rect = self.frameGeometry()
+        dialog_rect.moveCenter(center_point)
+
+        # Den Dialog in die Mitte des Hauptfensters verschieben
+        self.move(dialog_rect.topLeft())
+
     def set_progress(self, value):
         self.progress_bar.setValue(value)
         self.progress_label.setText(f"{value}%")

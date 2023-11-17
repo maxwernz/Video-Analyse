@@ -287,6 +287,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         video_creator.progress_changed.connect(progress_dialog.set_progress)
 
         video_creator.start()
+        progress_dialog.center_on_main_window(self)
         progress_dialog.show()
 
     def remove_analysis(self):
