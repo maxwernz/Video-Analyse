@@ -5,8 +5,11 @@ a = Analysis(
     ['vap.py'],
     pathex=[],
     binaries=[],
-    datas=[],
-    hiddenimports=[],
+    datas=[
+        ('icons/*', 'icons'),
+        ('icons/forward.svg', 'icons')
+        ],
+    hiddenimports=['moviepy'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -20,7 +23,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='vap',
+    name='Video Analyse',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -31,6 +34,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['icons/app_icon.icns'],
 )
 coll = COLLECT(
     exe,
@@ -39,11 +43,11 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='vap',
+    name='Video Analyse',
 )
 app = BUNDLE(
     coll,
-    name='vap.app',
-    icon=None,
+    name='Video Analyse.app',
+    icon='icons/app_icon.icns',
     bundle_identifier=None,
 )
