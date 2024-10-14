@@ -1,18 +1,19 @@
-from PyQt5.QtWidgets import QTreeWidget, QMenu, QAction
-from PyQt5.QtCore import Qt, pyqtSignal
+from PySide6.QtWidgets import QTreeWidget, QMenu
+from PySide6.QtGui import QAction
+from PySide6.QtCore import Qt, Signal
 from clip_handler import ClipHandler, EditClip
 from treewidget_item import TreeItem, ClipTreeItem
 
 class TreeWidget(QTreeWidget):
 
     tree_item_list = []
-    export_clips = pyqtSignal()
-    item_changed = pyqtSignal(bool)
+    export_clips = Signal()
+    item_changed = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.sortByColumn(1, 0)
+        self.sortByColumn(1, Qt.AscendingOrder)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.context_menu)
 
@@ -61,7 +62,7 @@ class TreeWidget(QTreeWidget):
         if item is None:
             return
         
-        if item.parent() is None: # TopLevelItem
+        if item.parent() is None:  # TopLevelItem
             return
         
         dialog = EditClip(item.clip())
@@ -81,7 +82,7 @@ class TreeWidget(QTreeWidget):
             self.item_changed.emit(False)
 
     def get_category_item(self, category):
-        category_item = ClipHandler.categories[category]
+        category_item = ClipHandler.categories.get(category)
         if category_item is None:
             category_item = TreeItem(self)
             category_item.setText(0, category)
@@ -99,7 +100,6 @@ class TreeWidget(QTreeWidget):
         else:
             parent.removeChild(item)
             self.remove_clip_from_list(item)
-
 
             self.check_empty_parent(parent)
         self.item_changed.emit(False)
@@ -130,4 +130,28 @@ class TreeWidget(QTreeWidget):
         for i in range(self.topLevelItemCount()):
             top_level_items.append(self.topLevelItem(i))
         return top_level_items
+
+
+if __name__ == "__main__":
+    import sys
+    from PySide6.QtWidgets import QApplication, QMainWindow
+
+    app = QApplication(sys.argv)
     
+    main_window = QMainWindow()
+    tree_widget = TreeWidget()
+    
+    # Add some example items for testing
+    # example_clips = [
+    #     ClipHandler.create_clip("Clip 1", "Category A"),
+    #     ClipHandler.create_clip("Clip 2", "Category B"),
+    #     ClipHandler.create_clip("Clip 3", "Category A")
+    # ]
+    
+    # tree_widget.add_clips(example_clips)
+    
+    main_window.setCentralWidget(tree_widget)
+    main_window.resize(400, 300)
+    main_window.show()
+
+    sys.exit(app.exec())

@@ -1,9 +1,9 @@
 import sys
 import os
-from PyQt5 import QtCore, QtGui
-from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QShortcut, QMessageBox, QLabel
-from PyQt5.QtCore import QUrl, Qt, QSignalBlocker, pyqtSignal, pyqtProperty, QTranslator
-from PyQt5.QtGui import QKeySequence
+from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMessageBox, QLabel
+from PySide6 import QtCore, QtGui
+from PySide6.QtCore import QUrl, Qt, QSignalBlocker, Signal, Property, QTranslator
+from PySide6.QtGui import QKeySequence, QShortcut
 from Ui_main_window import Ui_MainWindow
 from clip_handler import CreateClip
 from treewidget_item import ClipTreeItem
@@ -16,8 +16,8 @@ basedir = os.path.dirname(__file__)
 
 class MainWindow(QMainWindow, Ui_MainWindow):
 
-    file_changed = pyqtSignal(str)
-    file_changes_made = pyqtSignal(bool)
+    file_changed = Signal(str)
+    file_changes_made = Signal(bool)
 
     def __init__(self, parent=None):
         QMainWindow.__init__(self, parent)
@@ -126,7 +126,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             return False
 
-    @pyqtProperty(str, notify=file_changed)
+    @Property(str, notify=file_changed)
     def current_file(self):
         return self._current_file
     
@@ -142,7 +142,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             self.statusBarLabel.setText(" " + file_path)
 
-    @pyqtProperty(bool, notify=file_changes_made)
+    @Property(bool, notify=file_changes_made)
     def is_saved(self):
         return self._is_saved
     

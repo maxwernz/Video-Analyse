@@ -1,13 +1,13 @@
-from PyQt5.QtWidgets import QSlider, QVBoxLayout, QHBoxLayout, QWidget, QLabel, QShortcut
-from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
-from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtCore import Qt, QSignalBlocker, pyqtSignal
+from PySide6.QtWidgets import QSlider, QVBoxLayout, QHBoxLayout, QWidget, QLabel
+from PySide6.QtMultimedia import QMediaPlayer
+from PySide6.QtMultimediaWidgets import QVideoWidget
+from PySide6.QtCore import Qt, QSignalBlocker, Signal, QUrl
 
 from util import milliseconds_to_hhmmss
 
 class VideoWidget(QWidget):
 
-    video_paused = pyqtSignal()
+    video_paused = Signal()
 
     def __init__(self, parent=None):
         super().__init__()
@@ -25,30 +25,30 @@ class VideoWidget(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        # # Create a media player and video widget
+        # Create a media player and video widget
         self.media_player = QMediaPlayer(self)
         self.video_widget = QVideoWidget(self)
         self.media_player.setVideoOutput(self.video_widget)
 
-        # # Create labels for time information
+        # Create labels for time information
         self.position_label = QLabel("00:00:00")
         self.position_label.setFixedWidth(65)
         spacer_label = QLabel("/")
         self.duration_label = QLabel("00:00:00")
         self.duration_label.setFixedWidth(65)
 
-        # # Create a progress bar for video position
+        # Create a progress bar for video position
         self.position_slider = QSlider(Qt.Orientation.Horizontal)  # Horizontal orientation
         self.position_slider.sliderMoved.connect(self.set_position)
 
-        # # Create a layout for time label and position slider
+        # Create a layout for time label and position slider
         time_layout = QHBoxLayout()
         time_layout.addWidget(self.position_label)
         time_layout.addWidget(spacer_label)
         time_layout.addWidget(self.duration_label)
         time_layout.addWidget(self.position_slider)
 
-        # # Create the main layout for the central widget
+        # Create the main layout for the central widget
         main_layout = QVBoxLayout(self.parent())
         main_layout.addWidget(self.video_widget)
         main_layout.addLayout(time_layout)
@@ -95,14 +95,14 @@ class VideoWidget(QWidget):
         self.media_player.setPlaybackRate(self.current_speed)
 
     def load_video(self, url):
-        self.content = QMediaContent(url)
-        self.media_player.setMedia(self.content)
+        self.content = QUrl.fromLocalFile(url)
+        self.media_player.setSource(self.content)  # Updated for PySide6
         self.media_player.positionChanged.connect(self.position_changed)
         self.media_player.durationChanged.connect(self.duration_changed)
         self.video_loaded = True
 
     def new_content(self):
-        self.media_player.setMedia(self.content)
+        self.media_player.setSource(self.content)  # Updated for PySide6
         self.media_player.positionChanged.connect(self.position_changed)
         self.media_player.durationChanged.connect(self.duration_changed)
         self.video_loaded = True
@@ -137,7 +137,6 @@ class VideoWidget(QWidget):
             new_position = 0
         self.set_position(new_position)
 
-
     def move_forward(self):
         if self.is_playing:
             self.pause_video()
@@ -162,3 +161,24 @@ class VideoWidget(QWidget):
             new_position = 0
         
         self.set_position(new_position)
+
+
+if __name__ == "__main__":
+    import sys
+    from PySide6.QtWidgets import QApplication, QMainWindow
+    from PySide6.QtCore import QUrl
+
+    app = QApplication(sys.argv)
+
+    main_window = QMainWindow()
+    video_widget = VideoWidget()
+
+    # Load a video from a URL (replace with a valid file URL for testing)
+    # video_url = QUrl.fromLocalFile("/path/to/video.mp4")
+    # video_widget.load_video(video_url)
+
+    main_window.setCentralWidget(video_widget)
+    main_window.resize(800, 600)
+    main_window.show()
+
+    sys.exit(app.exec())
