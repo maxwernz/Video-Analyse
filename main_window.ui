@@ -10,8 +10,14 @@
     <height>814</height>
    </rect>
   </property>
+  <property name="acceptDrops">
+   <bool>true</bool>
+  </property>
   <property name="windowTitle">
-   <string>MainWindow</string>
+   <string>Video Analyse</string>
+  </property>
+  <property name="unifiedTitleAndToolBarOnMac">
+   <bool>false</bool>
   </property>
   <widget class="QWidget" name="centralwidget">
    <property name="mouseTracking">
@@ -23,12 +29,15 @@
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
       </property>
-      <widget class="QTreeWidget" name="treeWidget">
+      <widget class="TreeWidget" name="treeWidget">
        <property name="sizePolicy">
         <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
          <horstretch>0</horstretch>
          <verstretch>0</verstretch>
         </sizepolicy>
+       </property>
+       <property name="acceptDrops">
+        <bool>true</bool>
        </property>
        <property name="sizeAdjustPolicy">
         <enum>QAbstractScrollArea::AdjustIgnored</enum>
@@ -61,12 +70,32 @@
       <widget class="QWidget" name="verticalLayoutWidget">
        <layout class="QVBoxLayout" name="verticalLayout">
         <item>
+         <widget class="QLabel" name="titleLabel">
+          <property name="font">
+           <font>
+            <pointsize>20</pointsize>
+            <weight>75</weight>
+            <bold>true</bold>
+           </font>
+          </property>
+          <property name="text">
+           <string>No Video</string>
+          </property>
+          <property name="indent">
+           <number>10</number>
+          </property>
+         </widget>
+        </item>
+        <item>
          <widget class="VideoWidget" name="videoWidget" native="true">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
             <horstretch>0</horstretch>
             <verstretch>0</verstretch>
            </sizepolicy>
+          </property>
+          <property name="acceptDrops">
+           <bool>true</bool>
           </property>
          </widget>
         </item>
@@ -77,15 +106,10 @@
             <property name="text">
              <string/>
             </property>
-            <property name="icon">
-             <iconset>
-              <normaloff>icons/mute.svg</normaloff>
-              <normalon>icons/sound.svg</normalon>icons/mute.svg</iconset>
-            </property>
             <property name="iconSize">
              <size>
-              <width>32</width>
-              <height>32</height>
+              <width>20</width>
+              <height>20</height>
              </size>
             </property>
             <property name="shortcut">
@@ -113,14 +137,10 @@
             <property name="text">
              <string/>
             </property>
-            <property name="icon">
-             <iconset>
-              <normaloff>icons/backward.svg</normaloff>icons/backward.svg</iconset>
-            </property>
             <property name="iconSize">
              <size>
-              <width>32</width>
-              <height>32</height>
+              <width>20</width>
+              <height>20</height>
              </size>
             </property>
             <property name="shortcut">
@@ -133,15 +153,10 @@
             <property name="text">
              <string/>
             </property>
-            <property name="icon">
-             <iconset>
-              <normaloff>icons/play.svg</normaloff>
-              <normalon>icons/pause.svg</normalon>icons/play.svg</iconset>
-            </property>
             <property name="iconSize">
              <size>
-              <width>32</width>
-              <height>32</height>
+              <width>20</width>
+              <height>20</height>
              </size>
             </property>
             <property name="shortcut">
@@ -160,14 +175,10 @@
             <property name="text">
              <string/>
             </property>
-            <property name="icon">
-             <iconset>
-              <normaloff>icons/forward.svg</normaloff>icons/forward.svg</iconset>
-            </property>
             <property name="iconSize">
              <size>
-              <width>32</width>
-              <height>32</height>
+              <width>20</width>
+              <height>20</height>
              </size>
             </property>
             <property name="shortcut">
@@ -203,36 +214,20 @@
              <property name="text">
               <string>0.25x</string>
              </property>
-             <property name="icon">
-              <iconset>
-               <normaloff>icons/tortoise_025.svg</normaloff>icons/tortoise_025.svg</iconset>
-             </property>
             </item>
             <item>
              <property name="text">
               <string>0.5x</string>
-             </property>
-             <property name="icon">
-              <iconset>
-               <normaloff>icons/tortoise_05.svg</normaloff>icons/tortoise_05.svg</iconset>
              </property>
             </item>
             <item>
              <property name="text">
               <string>1x</string>
              </property>
-             <property name="icon">
-              <iconset>
-               <normaloff>icons/video.svg</normaloff>icons/video.svg</iconset>
-             </property>
             </item>
             <item>
              <property name="text">
               <string>2x</string>
-             </property>
-             <property name="icon">
-              <iconset>
-               <normaloff>icons/rabbit.svg</normaloff>icons/rabbit.svg</iconset>
              </property>
             </item>
            </widget>
@@ -267,8 +262,8 @@
             </property>
             <property name="iconSize">
              <size>
-              <width>32</width>
-              <height>32</height>
+              <width>20</width>
+              <height>20</height>
              </size>
             </property>
             <property name="shortcut">
@@ -301,34 +296,67 @@
    </property>
    <widget class="QMenu" name="menuFile">
     <property name="title">
-     <string>File</string>
+     <string>Datei</string>
     </property>
     <addaction name="actionLoad_Video"/>
     <addaction name="actionAnalyse_laden"/>
     <addaction name="actionAnalyse_speichern"/>
     <addaction name="actionClips_Exportieren"/>
+    <addaction name="actionVideo_Exportieren"/>
+   </widget>
+   <widget class="QMenu" name="menuBearbeiten">
+    <property name="title">
+     <string>Bearbeiten</string>
+    </property>
+    <addaction name="actionAnalyse_entfernen"/>
    </widget>
    <addaction name="menuFile"/>
+   <addaction name="menuBearbeiten"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="actionLoad_Video">
    <property name="text">
     <string>Video laden</string>
    </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
+   </property>
   </action>
   <action name="actionAnalyse_laden">
    <property name="text">
     <string>Analyse laden</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+O</string>
    </property>
   </action>
   <action name="actionAnalyse_speichern">
    <property name="text">
     <string>Analyse speichern</string>
    </property>
+   <property name="shortcut">
+    <string>Ctrl+S</string>
+   </property>
   </action>
   <action name="actionClips_Exportieren">
    <property name="text">
     <string>Clips Exportieren</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+E</string>
+   </property>
+  </action>
+  <action name="actionAnalyse_entfernen">
+   <property name="text">
+    <string>Analyse entfernen</string>
+   </property>
+  </action>
+  <action name="actionVideo_Exportieren">
+   <property name="text">
+    <string>Video Exportieren</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+E</string>
    </property>
   </action>
  </widget>
@@ -338,6 +366,11 @@
    <extends>QWidget</extends>
    <header>videowidget.h</header>
    <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>TreeWidget</class>
+   <extends>QTreeWidget</extends>
+   <header>treewidget.h</header>
   </customwidget>
  </customwidgets>
  <resources/>
