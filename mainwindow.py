@@ -20,10 +20,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     file_changes_made = Signal(bool)
 
     def __init__(self, parent=None):
-        QMainWindow.__init__(self, parent)
+        super().__init__()
         # self.set_language('de')
         self.setupUi(self)
-        self.add_icons()
 
         self.actionLoad_Video.triggered.connect(self.open_video)
         self.actionAnalyse_speichern.triggered.connect(self.save_analysis)
@@ -52,35 +51,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         translator = QTranslator()
         translator.load('qtbase_' + lang_code, ':/translations')
         QApplication.instance().installTranslator(translator)
-
-    def add_icons(self):
-        icon = QtGui.QIcon()
-        icon.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/mute.svg")), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        icon.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/sound.svg")), QtGui.QIcon.Normal, QtGui.QIcon.On)
-        self.soundButton.setIcon(icon)
-        self.soundButton.setIconSize(QtCore.QSize(20, 20))
-
-        icon1 = QtGui.QIcon()
-        icon1.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/backward.svg")), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.backwardButton.setIcon(icon1)
-        self.backwardButton.setIconSize(QtCore.QSize(20, 20))
-
-        icon2 = QtGui.QIcon()
-        icon2.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/play.svg")), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        icon2.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/pause.svg")), QtGui.QIcon.Normal, QtGui.QIcon.On)
-        self.playPauseButton.setIcon(icon2)
-        self.playPauseButton.setIconSize(QtCore.QSize(20, 20))
-
-        icon3 = QtGui.QIcon()
-        icon3.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/forward.svg")), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.forwardButton.setIcon(icon3)
-        self.forwardButton.setIconSize(QtCore.QSize(20, 20))
-
-        icon4 = QtGui.QIcon()
-        icon4.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/record.svg")), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        icon4.addPixmap(QtGui.QPixmap(os.path.join(basedir, "icons/record_action.svg")), QtGui.QIcon.Normal, QtGui.QIcon.On)
-        self.clipButton.setIcon(icon4)
-        self.clipButton.setIconSize(QtCore.QSize(20, 20))
 
     def setup_connections(self):
         self.playPauseButton.clicked.connect(self.videoWidget.play_pause_video)
@@ -321,17 +291,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             event.ignore()
 
-
-
-
-
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    # window.load_video("/Users/max/Downloads/Buchen.mp4")
-    # window.load_analysis("/Users/max/Downloads/Buchen.analysis")
-    app.exec()
 
 
 

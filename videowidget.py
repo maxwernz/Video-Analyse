@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QSlider, QVBoxLayout, QHBoxLayout, QWidget, QLabel
-from PySide6.QtMultimedia import QMediaPlayer
+from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtCore import Qt, QSignalBlocker, Signal, QUrl
 
@@ -28,6 +28,8 @@ class VideoWidget(QWidget):
         # Create a media player and video widget
         self.media_player = QMediaPlayer(self)
         self.video_widget = QVideoWidget(self)
+        self.audio_output = QAudioOutput(self)
+        self.media_player.setAudioOutput(self.audio_output)
         self.media_player.setVideoOutput(self.video_widget)
 
         # Create labels for time information
@@ -80,7 +82,7 @@ class VideoWidget(QWidget):
         self.is_playing = True
 
     def change_sound(self):
-        self.media_player.setMuted(not self.media_player.isMuted())
+        self.audio_output.setMuted(not self.audio_output.isMuted())
 
     def change_speed(self, speed_text):
         if speed_text == "0.25x":
@@ -95,7 +97,7 @@ class VideoWidget(QWidget):
         self.media_player.setPlaybackRate(self.current_speed)
 
     def load_video(self, url):
-        self.content = QUrl.fromLocalFile(url)
+        self.content = QUrl(url)
         self.media_player.setSource(self.content)  # Updated for PySide6
         self.media_player.positionChanged.connect(self.position_changed)
         self.media_player.durationChanged.connect(self.duration_changed)
@@ -132,7 +134,7 @@ class VideoWidget(QWidget):
         if self.is_playing:
             self.pause_video()
         current_position = self.media_player.position()
-        new_position = current_position - 100 * self.current_speed
+        new_position = int(current_position - 100 * self.current_speed)
         if new_position <= 0:
             new_position = 0
         self.set_position(new_position)
@@ -141,22 +143,23 @@ class VideoWidget(QWidget):
         if self.is_playing:
             self.pause_video()
         current_position = self.media_player.position()
-        new_position = current_position + 100 * self.current_speed
+        new_position = int(current_position + 100 * self.current_speed)
         if new_position >= self.media_player.duration():
             new_position = self.media_player.duration()
         self.set_position(new_position)
 
     def jump_forward(self):
         current_position = self.media_player.position()
-        new_position = current_position + 5000 * self.current_speed
+        new_position = int(current_position + 5000 * self.current_speed)
         if new_position >= self.media_player.duration():
             new_position = self.media_player.duration()
-        
+
         self.set_position(new_position)
+        
 
     def jump_backward(self):
         current_position = self.media_player.position()
-        new_position = current_position - 5000 * self.current_speed
+        new_position = int(current_position - 5000 * self.current_speed)
         if new_position <= 0:
             new_position = 0
         
