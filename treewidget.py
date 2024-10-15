@@ -70,6 +70,11 @@ class TreeWidget(QTreeWidget):
             clip_item = dialog.clip_item
             item.edit_item(clip_item.clip_name())
             category = clip_item.category
+            if category not in ClipHandler.categories:
+                parent = self
+                category_item = TreeItem(parent)
+                category_item.setText(0, category)
+                ClipHandler.categories[category] = category_item
             if item.parent() != ClipHandler.categories[category]:
                 old_parent = item.parent()
                 old_parent.removeChild(item)

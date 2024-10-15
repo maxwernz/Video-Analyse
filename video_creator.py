@@ -2,12 +2,17 @@ from PIL import Image, ImageDraw, ImageFont
 from threading import Thread
 from moviepy.editor import VideoFileClip, concatenate_videoclips, TextClip, CompositeVideoClip
 import os
-from PyQt5.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
+
+from moviepy.config import change_settings
+
+# change_settings({"IMAGEMAGICK_BINARY": "magick"})
+
 
 
 class VideoCreator(Thread, QObject):
 
-    progress_changed = pyqtSignal(int)
+    progress_changed = Signal(int)
 
     def __init__(self, clips, video_filename, save_filename, full_video):
         Thread.__init__(self)

@@ -1,5 +1,5 @@
 
-from PyQt5.QtWidgets import QDialog
+from PySide6.QtWidgets import QDialog
 from Ui_clip_handler import Ui_Dialog
 from treewidget_item import ClipItem
 from util import milliseconds_to_hhmmss

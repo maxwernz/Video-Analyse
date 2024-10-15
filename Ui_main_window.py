@@ -160,9 +160,9 @@ class Ui_MainWindow(object):
 
         self.verticalLayout.addLayout(self.horizontalLayout_3)
 
-        self.horizontalSlider = QSlider(self.verticalLayoutWidget)
-        self.horizontalSlider.setObjectName(u"horizontalSlider")
-        self.horizontalSlider.setStyleSheet(u"QSlider {\n"
+        self.position_slider = QSlider(self.verticalLayoutWidget)
+        self.position_slider.setObjectName(u"position_slider")
+        self.position_slider.setStyleSheet(u"QSlider {\n"
 "    background: transparent;  /* Transparent background for the slider */\n"
 "    padding: 5px;         /* Adds some space around the slider */\n"
 "}\n"
@@ -200,10 +200,10 @@ class Ui_MainWindow(object):
 "}\n"
 "\n"
 "")
-        self.horizontalSlider.setSliderPosition(10)
-        self.horizontalSlider.setOrientation(Qt.Horizontal)
+        self.position_slider.setSliderPosition(0)
+        self.position_slider.setOrientation(Qt.Horizontal)
 
-        self.verticalLayout.addWidget(self.horizontalSlider)
+        self.verticalLayout.addWidget(self.position_slider)
 
         self.horizontalLayout_2 = QHBoxLayout()
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")

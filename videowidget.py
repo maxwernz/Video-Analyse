@@ -32,28 +32,9 @@ class VideoWidget(QWidget):
         self.media_player.setAudioOutput(self.audio_output)
         self.media_player.setVideoOutput(self.video_widget)
 
-        # Create labels for time information
-        # self.position_label = QLabel("00:00:00")
-        # self.position_label.setFixedWidth(65)
-        # spacer_label = QLabel("/")
-        # self.duration_label = QLabel("00:00:00")
-        # self.duration_label.setFixedWidth(65)
-
-        # Create a progress bar for video position
-        # self.position_slider = QSlider(Qt.Orientation.Horizontal)  # Horizontal orientation
-        # self.position_slider.sliderMoved.connect(self.set_position)
-
-        # Create a layout for time label and position slider
-        # time_layout = QHBoxLayout()
-        # time_layout.addWidget(self.position_label)
-        # time_layout.addWidget(spacer_label)
-        # time_layout.addWidget(self.duration_label)
-        # time_layout.addWidget(self.position_slider)
-
         # Create the main layout for the central widget
         main_layout = QVBoxLayout(self.parent())
         main_layout.addWidget(self.video_widget)
-        # main_layout.addLayout(time_layout)
         self.setLayout(main_layout)
 
     def get_position(self):
@@ -99,36 +80,10 @@ class VideoWidget(QWidget):
     def load_video(self, url):
         self.content = QUrl(url)
         self.media_player.setSource(self.content)  # Updated for PySide6
-        self.media_player.positionChanged.connect(self.position_changed)
-        self.media_player.durationChanged.connect(self.duration_changed)
-        self.video_loaded = True
-
-    def new_content(self):
-        self.media_player.setSource(self.content)  # Updated for PySide6
-        self.media_player.positionChanged.connect(self.position_changed)
-        self.media_player.durationChanged.connect(self.duration_changed)
         self.video_loaded = True
 
     def set_position(self, position):
         self.media_player.setPosition(position)
-
-    def position_changed(self, position):
-        with QSignalBlocker(self.position_slider):
-            self.position_slider.setTracking(True)
-            self.position_slider.setSliderPosition(position)
-            self.position_slider.update()
-            self.position_slider.repaint()
-        self.set_position_label(position)
-
-    def duration_changed(self, duration):
-        self.position_slider.setRange(0, duration)
-        self.set_duration_label(duration)
-
-    def set_position_label(self, position):
-        self.position_label.setText(f"{milliseconds_to_hhmmss(position)}")
-    
-    def set_duration_label(self, duration):
-        self.duration_label.setText(f"{milliseconds_to_hhmmss(duration)}")
 
     def move_backward(self):
         if self.is_playing:
@@ -155,7 +110,6 @@ class VideoWidget(QWidget):
             new_position = self.media_player.duration()
 
         self.set_position(new_position)
-        
 
     def jump_backward(self):
         current_position = self.media_player.position()

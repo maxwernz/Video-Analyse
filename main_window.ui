@@ -264,7 +264,7 @@ font: 15px &quot;SF Pro&quot;;
          </layout>
         </item>
         <item>
-         <widget class="QSlider" name="horizontalSlider">
+         <widget class="QSlider" name="position_slider">
           <property name="styleSheet">
            <string notr="true">QSlider {
     background: transparent;  /* Transparent background for the slider */
@@ -305,7 +305,7 @@ QSlider::add-page:horizontal {
 </string>
           </property>
           <property name="sliderPosition">
-           <number>10</number>
+           <number>0</number>
           </property>
           <property name="orientation">
            <enum>Qt::Horizontal</enum>

@@ -11,6 +11,7 @@ import pickle
 from treewidget import TreeWidget
 from video_creator import VideoCreator
 from progress_dialog import ProgressDialog
+from util import milliseconds_to_hhmmss
 
 basedir = os.path.dirname(__file__)
 
@@ -30,6 +31,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionClips_Exportieren.triggered.connect(self.export)
         self.actionVideo_Exportieren.triggered.connect(lambda: self.export(full_video=True))
         self.actionAnalyse_entfernen.triggered.connect(self.remove_analysis)
+        self.position_slider.sliderMoved.connect(self.videoWidget.set_position)
         
         self.setup_connections()
         self.setup_shortcuts()
@@ -144,6 +146,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if file_name:
             self.file_name = file_name
             self.remove_analysis()
+            self.videoWidget.media_player.positionChanged.connect(self.position_changed)
+            self.videoWidget.media_player.durationChanged.connect(self.duration_changed)
             self.videoWidget.load_video(QUrl.fromLocalFile(self.file_name))
             self.titleLabel.setText(os.path.basename(file_name).removesuffix('.mp4'))
 
@@ -290,6 +294,24 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.load_analysis(url)
         else:
             event.ignore()
+
+    def position_changed(self, position):
+        with QSignalBlocker(self.position_slider):
+            self.position_slider.setTracking(True)
+            self.position_slider.setSliderPosition(position)
+            self.position_slider.update()
+            self.position_slider.repaint()
+        self.set_position_label(position)
+
+    def duration_changed(self, duration):
+        self.position_slider.setRange(0, duration)
+        self.set_duration_label(duration)
+
+    def set_position_label(self, position):
+        self.position_label.setText(f"{milliseconds_to_hhmmss(position)}")
+    
+    def set_duration_label(self, duration):
+        self.duration_label.setText(f"{milliseconds_to_hhmmss(duration)}")
 
 
 

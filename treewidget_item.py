@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QTreeWidgetItem
+from PySide6.QtWidgets import QTreeWidgetItem
 from util import milliseconds_to_hhmmss
 
 class TreeItem(QTreeWidgetItem):
