@@ -19,8 +19,8 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
 from PySide6.QtWidgets import (QAbstractItemView, QAbstractScrollArea, QApplication, QComboBox,
     QFrame, QHBoxLayout, QHeaderView, QLabel,
     QMainWindow, QMenu, QMenuBar, QPushButton,
-    QSizePolicy, QSpacerItem, QSplitter, QStatusBar,
-    QTreeWidgetItem, QVBoxLayout, QWidget)
+    QSizePolicy, QSlider, QSpacerItem, QSplitter,
+    QStatusBar, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from treewidget import TreeWidget
 from videowidget import VideoWidget
@@ -95,7 +95,8 @@ class Ui_MainWindow(object):
         self.titleLabel = QLabel(self.verticalLayoutWidget)
         self.titleLabel.setObjectName(u"titleLabel")
         font = QFont()
-        font.setPointSize(20)
+        font.setFamilies([u"SF Pro"])
+        font.setPointSize(24)
         font.setBold(False)
         font.setItalic(False)
         self.titleLabel.setFont(font)
@@ -110,9 +111,99 @@ class Ui_MainWindow(object):
         sizePolicy1.setVerticalStretch(0)
         sizePolicy1.setHeightForWidth(self.videoWidget.sizePolicy().hasHeightForWidth())
         self.videoWidget.setSizePolicy(sizePolicy1)
+        self.videoWidget.setMinimumSize(QSize(0, 0))
+        self.videoWidget.setMaximumSize(QSize(16777215, 16777215))
         self.videoWidget.setAcceptDrops(True)
 
         self.verticalLayout.addWidget(self.videoWidget)
+
+        self.horizontalLayout_3 = QHBoxLayout()
+        self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
+        self.horizontalSpacer_3 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_3.addItem(self.horizontalSpacer_3)
+
+        self.position_label = QLabel(self.verticalLayoutWidget)
+        self.position_label.setObjectName(u"position_label")
+        self.position_label.setMinimumSize(QSize(70, 0))
+        self.position_label.setMaximumSize(QSize(70, 16777215))
+        font1 = QFont()
+        font1.setFamilies([u"SF Pro"])
+        font1.setPointSize(16)
+        font1.setBold(False)
+        font1.setItalic(False)
+        self.position_label.setFont(font1)
+        self.position_label.setStyleSheet(u"QLabels {\n"
+"font: 15px \"SF Pro\";\n"
+"}")
+
+        self.horizontalLayout_3.addWidget(self.position_label)
+
+        self.label_3 = QLabel(self.verticalLayoutWidget)
+        self.label_3.setObjectName(u"label_3")
+        self.label_3.setFont(font1)
+
+        self.horizontalLayout_3.addWidget(self.label_3)
+
+        self.duration_label = QLabel(self.verticalLayoutWidget)
+        self.duration_label.setObjectName(u"duration_label")
+        self.duration_label.setMinimumSize(QSize(70, 0))
+        self.duration_label.setMaximumSize(QSize(70, 16777215))
+        self.duration_label.setFont(font1)
+
+        self.horizontalLayout_3.addWidget(self.duration_label)
+
+        self.horizontalSpacer_4 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_3.addItem(self.horizontalSpacer_4)
+
+
+        self.verticalLayout.addLayout(self.horizontalLayout_3)
+
+        self.horizontalSlider = QSlider(self.verticalLayoutWidget)
+        self.horizontalSlider.setObjectName(u"horizontalSlider")
+        self.horizontalSlider.setStyleSheet(u"QSlider {\n"
+"    background: transparent;  /* Transparent background for the slider */\n"
+"    padding: 5px;         /* Adds some space around the slider */\n"
+"}\n"
+"\n"
+"\n"
+"QSlider::groove:horizontal {\n"
+"    border: 1px solid rgb(70, 70, 70);   /* Subtle border for the groove */\n"
+"    height: 8px;                        /* Increased thickness for the groove */\n"
+"	background-color: rgb(55, 55, 55);\n"
+"    border-radius: 4px;                 /* Rounded edges for the groove */\n"
+"}\n"
+"\n"
+"QSlider::handle:horizontal {\n"
+"    background: rgb(255, 255, 255);     /* White handle for a clean contrast */\n"
+"	border: 2px solid rgb(255, 255, 255);\n"
+"    width: 12px;                        /* Handle width */\n"
+"    height: 12px;                       /* Handle height */\n"
+"    border-radius: 7px;                 /* Fully rounded handle */\n"
+"    margin: -4px 0px;                   /* Adjusts handle positioning relative to the groove */\n"
+"}\n"
+"\n"
+"QSlider::handle:horizontal:hover {\n"
+"    border:"
+                        " 2px solid rgb(65, 65, 65);\n"
+"}\n"
+"\n"
+"QSlider::sub-page:horizontal {\n"
+"	background-color: rgb(81, 113, 186);\n"
+"    border-radius: 4px;                 /* Rounded edges for the filled section */\n"
+"}\n"
+"\n"
+"QSlider::add-page:horizontal {\n"
+"    background: rgb(55, 55, 55);        /* Same color as the groove for the unfilled portion */\n"
+"    border-radius: 4px;                 /* Rounded edges for the unfilled section */\n"
+"}\n"
+"\n"
+"")
+        self.horizontalSlider.setSliderPosition(10)
+        self.horizontalSlider.setOrientation(Qt.Horizontal)
+
+        self.verticalLayout.addWidget(self.horizontalSlider)
 
         self.horizontalLayout_2 = QHBoxLayout()
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
@@ -148,11 +239,11 @@ class Ui_MainWindow(object):
 
         self.playPauseButton = QPushButton(self.verticalLayoutWidget)
         self.playPauseButton.setObjectName(u"playPauseButton")
-        font1 = QFont()
-        font1.setFamilies([u"SF Pro Rounded"])
-        font1.setBold(False)
-        font1.setItalic(False)
-        self.playPauseButton.setFont(font1)
+        font2 = QFont()
+        font2.setFamilies([u"SF Pro Rounded"])
+        font2.setBold(False)
+        font2.setItalic(False)
+        self.playPauseButton.setFont(font2)
         self.playPauseButton.setAutoFillBackground(False)
         icon2 = QIcon()
         icon2.addFile(u":/icons/custom.play.fill.png", QSize(), QIcon.Mode.Normal, QIcon.State.Off)
@@ -188,6 +279,52 @@ class Ui_MainWindow(object):
         self.speedBox.addItem("")
         self.speedBox.addItem("")
         self.speedBox.setObjectName(u"speedBox")
+        self.speedBox.setStyleSheet(u"QComboBox {\n"
+"    border: 2px solid rgb(31, 31, 31); /* Light gray border */\n"
+"    border-radius: 5px;\n"
+"    padding: 5px;              /* Padding inside the combo box */\n"
+"    background-color: rgb(31, 31, 31);\n"
+"    font: 14px;\n"
+"    color: white;\n"
+"}\n"
+"\n"
+"QComboBox::drop-down {\n"
+"    border: none;\n"
+"    width: 30px;                    /* Width of the drop-down button */\n"
+"}\n"
+"\n"
+"QComboBox::down-arrow {\n"
+"    image: url(:/icons/gauge.with.needle.fill.png);\n"
+"    width: 20px;\n"
+"    height: 20px;\n"
+"}\n"
+"\n"
+"QComboBox QAbstractItemView {\n"
+"    background-color: rgb(31, 31, 31); /* Black background for the drop-down */\n"
+"    selection-background-color: rgb(255, 0, 0); /* Red background for selected item */\n"
+"    color: white;\n"
+"}\n"
+"\n"
+"QComboBox QAbstractItemView::item {\n"
+"    background-color: rgb(31, 31, 31); /* Default background for items */\n"
+"    color: white;                      /* White text for items */\n"
+"}\n"
+"\n"
+"QComboBox QAbstractItemView::item"
+                        ":hover {\n"
+"    background-color: rgb(66, 65, 64); /* Same hover background as !editable:on */\n"
+"    color: white;                      /* White text on hover */\n"
+"}\n"
+"\n"
+"QComboBox::hover {\n"
+"    border: 2px solid rgb(65, 65, 65); /* Light blue border on hover */\n"
+"}\n"
+"\n"
+"/* QComboBox gets the \"on\" state when the popup is open */\n"
+"QComboBox:!editable:on, QComboBox::drop-down:editable:on {\n"
+"    background-color: rgb(66, 65, 64);  /* Background for when popup is open */\n"
+"}\n"
+"")
         self.speedBox.setSizeAdjustPolicy(QComboBox.AdjustToContentsOnFirstShow)
         self.speedBox.setIconSize(QSize(16, 16))
         self.speedBox.setFrame(True)
@@ -201,12 +338,12 @@ class Ui_MainWindow(object):
         self.clipButton = QPushButton(self.verticalLayoutWidget)
         self.clipButton.setObjectName(u"clipButton")
         self.clipButton.setEnabled(True)
-        font2 = QFont()
-        font2.setFamilies([u"SF Pro Text"])
-        font2.setPointSize(20)
-        font2.setBold(False)
-        font2.setItalic(False)
-        self.clipButton.setFont(font2)
+        font3 = QFont()
+        font3.setFamilies([u"SF Pro Text"])
+        font3.setPointSize(20)
+        font3.setBold(False)
+        font3.setItalic(False)
+        self.clipButton.setFont(font3)
         self.clipButton.setStyleSheet(u"padding-right: 5px")
         icon4 = QIcon()
         icon4.addFile(u":/icons/record.circle.png", QSize(), QIcon.Mode.Normal, QIcon.State.Off)
@@ -232,17 +369,17 @@ class Ui_MainWindow(object):
         self.menubar.setGeometry(QRect(0, 0, 1841, 24))
         self.menuFile = QMenu(self.menubar)
         self.menuFile.setObjectName(u"menuFile")
-        font3 = QFont()
-        font3.setFamilies([u"SF Pro"])
-        font3.setPointSize(14)
-        font3.setBold(False)
-        font3.setItalic(False)
-        self.menuFile.setFont(font3)
+        font4 = QFont()
+        font4.setFamilies([u"SF Pro"])
+        font4.setPointSize(14)
+        font4.setBold(False)
+        font4.setItalic(False)
+        self.menuFile.setFont(font4)
         self.menuFile.setTearOffEnabled(False)
         self.menuFile.setSeparatorsCollapsible(False)
         self.menuBearbeiten = QMenu(self.menubar)
         self.menuBearbeiten.setObjectName(u"menuBearbeiten")
-        self.menuBearbeiten.setFont(font3)
+        self.menuBearbeiten.setFont(font4)
         MainWindow.setMenuBar(self.menubar)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
@@ -295,6 +432,9 @@ class Ui_MainWindow(object):
         ___qtreewidgetitem.setText(1, QCoreApplication.translate("MainWindow", u"Start", None));
         ___qtreewidgetitem.setText(0, QCoreApplication.translate("MainWindow", u"Clip", None));
         self.titleLabel.setText(QCoreApplication.translate("MainWindow", u"No Video", None))
+        self.position_label.setText(QCoreApplication.translate("MainWindow", u"00:00:00", None))
+        self.label_3.setText(QCoreApplication.translate("MainWindow", u"/", None))
+        self.duration_label.setText(QCoreApplication.translate("MainWindow", u"00:00:00", None))
         self.soundButton.setText("")
 #if QT_CONFIG(shortcut)
         self.soundButton.setShortcut(QCoreApplication.translate("MainWindow", u"M", None))

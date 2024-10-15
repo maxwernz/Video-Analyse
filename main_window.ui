@@ -116,7 +116,8 @@ font: 15px;
          <widget class="QLabel" name="titleLabel">
           <property name="font">
            <font>
-            <pointsize>20</pointsize>
+            <family>SF Pro</family>
+            <pointsize>24</pointsize>
             <weight>50</weight>
             <italic>false</italic>
             <bold>false</bold>
@@ -138,8 +139,176 @@ font: 15px;
             <verstretch>0</verstretch>
            </sizepolicy>
           </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>16777215</width>
+            <height>16777215</height>
+           </size>
+          </property>
           <property name="acceptDrops">
            <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_3">
+          <item>
+           <spacer name="horizontalSpacer_3">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="position_label">
+            <property name="minimumSize">
+             <size>
+              <width>70</width>
+              <height>0</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>70</width>
+              <height>16777215</height>
+             </size>
+            </property>
+            <property name="font">
+             <font>
+              <family>SF Pro</family>
+              <pointsize>16</pointsize>
+              <weight>50</weight>
+              <italic>false</italic>
+              <bold>false</bold>
+             </font>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">QLabels {
+font: 15px &quot;SF Pro&quot;;
+}</string>
+            </property>
+            <property name="text">
+             <string>00:00:00</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_3">
+            <property name="font">
+             <font>
+              <family>SF Pro</family>
+              <pointsize>16</pointsize>
+              <weight>50</weight>
+              <italic>false</italic>
+              <bold>false</bold>
+             </font>
+            </property>
+            <property name="text">
+             <string>/</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="duration_label">
+            <property name="minimumSize">
+             <size>
+              <width>70</width>
+              <height>0</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>70</width>
+              <height>16777215</height>
+             </size>
+            </property>
+            <property name="font">
+             <font>
+              <family>SF Pro</family>
+              <pointsize>16</pointsize>
+              <weight>50</weight>
+              <italic>false</italic>
+              <bold>false</bold>
+             </font>
+            </property>
+            <property name="text">
+             <string>00:00:00</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="horizontalSpacer_4">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QSlider" name="horizontalSlider">
+          <property name="styleSheet">
+           <string notr="true">QSlider {
+    background: transparent;  /* Transparent background for the slider */
+    padding: 5px;         /* Adds some space around the slider */
+}
+
+
+QSlider::groove:horizontal {
+    border: 1px solid rgb(70, 70, 70);   /* Subtle border for the groove */
+    height: 8px;                        /* Increased thickness for the groove */
+	background-color: rgb(55, 55, 55);
+    border-radius: 4px;                 /* Rounded edges for the groove */
+}
+
+QSlider::handle:horizontal {
+    background: rgb(255, 255, 255);     /* White handle for a clean contrast */
+	border: 2px solid rgb(255, 255, 255);
+    width: 12px;                        /* Handle width */
+    height: 12px;                       /* Handle height */
+    border-radius: 7px;                 /* Fully rounded handle */
+    margin: -4px 0px;                   /* Adjusts handle positioning relative to the groove */
+}
+
+QSlider::handle:horizontal:hover {
+    border: 2px solid rgb(65, 65, 65);
+}
+
+QSlider::sub-page:horizontal {
+	background-color: rgb(81, 113, 186);
+    border-radius: 4px;                 /* Rounded edges for the filled section */
+}
+
+QSlider::add-page:horizontal {
+    background: rgb(55, 55, 55);        /* Same color as the groove for the unfilled portion */
+    border-radius: 4px;                 /* Rounded edges for the unfilled section */
+}
+
+</string>
+          </property>
+          <property name="sliderPosition">
+           <number>10</number>
+          </property>
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
           </property>
          </widget>
         </item>
@@ -302,6 +471,53 @@ font: 15px;
           </item>
           <item>
            <widget class="QComboBox" name="speedBox">
+            <property name="styleSheet">
+             <string notr="true">QComboBox {
+    border: 2px solid rgb(31, 31, 31); /* Light gray border */
+    border-radius: 5px;
+    padding: 5px;              /* Padding inside the combo box */
+    background-color: rgb(31, 31, 31);
+    font: 14px;
+    color: white;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 30px;                    /* Width of the drop-down button */
+}
+
+QComboBox::down-arrow {
+    image: url(:/icons/gauge.with.needle.fill.png);
+    width: 20px;
+    height: 20px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: rgb(31, 31, 31); /* Black background for the drop-down */
+    selection-background-color: rgb(255, 0, 0); /* Red background for selected item */
+    color: white;
+}
+
+QComboBox QAbstractItemView::item {
+    background-color: rgb(31, 31, 31); /* Default background for items */
+    color: white;                      /* White text for items */
+}
+
+QComboBox QAbstractItemView::item:hover {
+    background-color: rgb(66, 65, 64); /* Same hover background as !editable:on */
+    color: white;                      /* White text on hover */
+}
+
+QComboBox::hover {
+    border: 2px solid rgb(65, 65, 65); /* Light blue border on hover */
+}
+
+/* QComboBox gets the &quot;on&quot; state when the popup is open */
+QComboBox:!editable:on, QComboBox::drop-down:editable:on {
+    background-color: rgb(66, 65, 64);  /* Background for when popup is open */
+}
+</string>
+            </property>
             <property name="currentIndex">
              <number>2</number>
             </property>

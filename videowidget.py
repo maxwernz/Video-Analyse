@@ -33,27 +33,27 @@ class VideoWidget(QWidget):
         self.media_player.setVideoOutput(self.video_widget)
 
         # Create labels for time information
-        self.position_label = QLabel("00:00:00")
-        self.position_label.setFixedWidth(65)
-        spacer_label = QLabel("/")
-        self.duration_label = QLabel("00:00:00")
-        self.duration_label.setFixedWidth(65)
+        # self.position_label = QLabel("00:00:00")
+        # self.position_label.setFixedWidth(65)
+        # spacer_label = QLabel("/")
+        # self.duration_label = QLabel("00:00:00")
+        # self.duration_label.setFixedWidth(65)
 
         # Create a progress bar for video position
-        self.position_slider = QSlider(Qt.Orientation.Horizontal)  # Horizontal orientation
-        self.position_slider.sliderMoved.connect(self.set_position)
+        # self.position_slider = QSlider(Qt.Orientation.Horizontal)  # Horizontal orientation
+        # self.position_slider.sliderMoved.connect(self.set_position)
 
         # Create a layout for time label and position slider
-        time_layout = QHBoxLayout()
-        time_layout.addWidget(self.position_label)
-        time_layout.addWidget(spacer_label)
-        time_layout.addWidget(self.duration_label)
-        time_layout.addWidget(self.position_slider)
+        # time_layout = QHBoxLayout()
+        # time_layout.addWidget(self.position_label)
+        # time_layout.addWidget(spacer_label)
+        # time_layout.addWidget(self.duration_label)
+        # time_layout.addWidget(self.position_slider)
 
         # Create the main layout for the central widget
         main_layout = QVBoxLayout(self.parent())
         main_layout.addWidget(self.video_widget)
-        main_layout.addLayout(time_layout)
+        # main_layout.addLayout(time_layout)
         self.setLayout(main_layout)
 
     def get_position(self):

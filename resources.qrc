@@ -1,5 +1,7 @@
 <RCC>
   <qresource>
+    <file>icons/chevron.down.square.png</file>
+    <file>icons/gauge.with.needle.fill.png</file>
     <file>icons/filemenu.and.selection.png</file>
     <file>icons/pencil.png</file>
     <file>icons/app_icon.icns</file>
