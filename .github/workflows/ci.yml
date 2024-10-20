@@ -28,7 +28,7 @@ jobs:
 
       - name: Build app
         run: |
-          pyinstaller vap.spec -y
+          pyinstaller build.spec -y
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
