@@ -260,9 +260,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         progress_dialog = ProgressDialog(self)
         video_creator.progress_changed.connect(progress_dialog.set_progress)
 
-        video_creator.start()
-        progress_dialog.center_on_main_window(self)
-        progress_dialog.show()
+        try:
+            video_creator.start()
+            progress_dialog.center_on_main_window(self)
+            progress_dialog.show()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"An error occurred: {e}")
 
     def remove_analysis(self):
         self.treeWidget.remove_analysis()

@@ -2,18 +2,20 @@
 
 
 a = Analysis(
-    ['vap.py'],
+    ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('icons/*', 'icons'),
-        ('icons/forward.svg', 'icons')
-        ],
+#    datas=[
+#       ('icons/*', 'icons'),
+#        ('icons/forward.svg', 'icons')
+#        ],
+    datas=[],
     hiddenimports=['moviepy'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
+#    excludes=['PySide6.QtMultimedia', 'PySide6.QtSensors', 'PySide6.QtPrintSupport'],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

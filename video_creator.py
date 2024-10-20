@@ -1,12 +1,9 @@
-# from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 from threading import Thread
-from moviepy.editor import VideoFileClip, concatenate_videoclips, TextClip, CompositeVideoClip, ColorClip
+from moviepy.editor import VideoFileClip, concatenate_videoclips, TextClip, CompositeVideoClip, ColorClip, ImageClip
 import os
 from PySide6.QtCore import QObject, Signal
-
-from moviepy.config import change_settings
-
-# change_settings({"IMAGEMAGICK_BINARY": "magick"})
+import numpy as np
 
 
 
@@ -43,9 +40,8 @@ class VideoCreator(Thread, QObject):
             start_time, end_time = clip.clip_times_s()
             video_clip = self.video.subclip(start_time, end_time)
 
-            # self.create_image(f"{i+1}")
-            # text_clip = TextClip("", tempfilename=self.tempfilename).set_duration(end_time - start_time)
-            text_clip = TextClip(f"{i+1}", fontsize=70, color='white').set_position(("left", "top")).set_duration(video_clip.duration)
+            text_img = self.create_image(f"{i+1}")
+            text_clip = ImageClip(text_img, duration=video_clip.duration)
             subclips.append(CompositeVideoClip([video_clip, text_clip]))
 
             progress = int(i / len(self.clips) * 100)
@@ -57,37 +53,32 @@ class VideoCreator(Thread, QObject):
         self.progress_changed.emit(100)
 
     def create_category_clip(self, category):
-        # self.create_image(category, number_clip=False)
-        # # text_clip = TextClip("", tempfilename=self.tempfilename).set_duration(1.5)
-        # text_clip = TextClip("")
-        # return CompositeVideoClip([text_clip])
-        
-        black_clip = ColorClip(size=self.size, color=(0, 0, 0), duration=2)  # Black background
-        text_clip = TextClip(f"{category}", fontsize=70, color='white').set_position("center").set_duration(2)
-        return CompositeVideoClip([black_clip, text_clip])
+        category_img = self.create_image(category, number_clip=False)
+        text_clip = ImageClip(category_img, duration=1.5)
+        return CompositeVideoClip([text_clip])
 
-    # def create_image(self, text, number_clip=True):
-    #     if number_clip:
-    #         font_size = 100
-    #         background = (0, 0, 0, 0) # transparent
-    #         position = (50, 50)
-    #     else:
-    #         font_size = 150
-    #         background = (0, 0, 0) # black
-    #         position = None
+    def create_image(self, text, number_clip=True):
+        if number_clip:
+            font_size = 100
+            background = (0, 0, 0, 0) # transparent
+            position = (50, 50)
+        else:
+            font_size = 150
+            background = (0, 0, 0, 255) # black
+            position = None
 
-    #     image = Image.new("RGBA", self.size, background)
-    #     draw = ImageDraw.Draw(image)
-    #     font = ImageFont.truetype("Arial.ttf", font_size)
+        image = Image.new("RGBA", self.size, background)
+        draw = ImageDraw.Draw(image)
+        font = ImageFont.truetype("Arial.ttf", font_size)
 
-    #     if position is None:
-    #         _, _, w, h = draw.textbbox((0, 0), text, font=font)
-    #         textsize = (w, h)
-    #         position = tuple([(self.size[i] - textsize[i]) / 2 for i in range(2)])
+        if position is None:
+            _, _, w, h = draw.textbbox((0, 0), text, font=font)
+            textsize = (w, h)
+            position = tuple([(self.size[i] - textsize[i]) / 2 for i in range(2)])
 
-    #     draw.text(position, text, font=font, fill=(255, 255, 255, 255))
+        draw.text(position, text, font=font, fill=(255, 255, 255, 255))
 
-    #     image.save(self.tempfilename)
+        return np.array(image)
 
 
 
