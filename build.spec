@@ -10,7 +10,17 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['PySide6.QtCharts', 
+            'PySide6.QtDataVisualization', 
+            'PySide6.QtWebEngineWidgets', 
+            'PySide6.QtWebEngineCore', 
+            'PySide6.QtWebChannel', 
+            'PySide6.QtQml', 
+            'PySide6.QtQuick', 
+            'PySide6.QtQuickControls2', 
+            'PySide6.QtQuickTemplates2', 
+            'PySide6.QtSvg', 
+            'PySide6.QtTest'],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
@@ -28,10 +38,10 @@ exe = EXE(
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
-    target_arch=None,
+    target_arch='universal2',
     codesign_identity=None,
     entitlements_file=None,
-    icon=['icons/app_icon.icns'],
+    icon=['icons/app_icon.icns']
 )
 coll = COLLECT(
     exe,
