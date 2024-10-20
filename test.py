@@ -1,10 +1,10 @@
 from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, ColorClip
 
 # Load the video file from the given path
-video = VideoFileClip("/Volumes/T7/Handball/Videos/Handschuhsheim/TSV vs. S3L.mp4")
+video = VideoFileClip("/Users/max/Downloads/IMG_0031.MOV")
 
 # Extract the subclip from 10 seconds to 17 seconds
-subclip = video.subclip(10, 17)
+subclip = video.subclip(3, 8)
 
 # Create a TextClip with the number "1" in the top-left corner
 text = TextClip("1", fontsize=70, color='white').set_position(("left", "top")).set_duration(subclip.duration)

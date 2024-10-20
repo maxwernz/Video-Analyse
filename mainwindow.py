@@ -286,9 +286,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             event.setDropAction(QtCore.Qt.CopyAction)
             event.accept()
             
-            url = str(event.mimeData().urls()[0].toLocalFile())
+            url = str(event.mimeData().urls()[0].toLocalFile()).lower()
 
-            if url.endswith(".mp4"):
+            if url.endswith(".mp4") or url.endswith(".mov"):
                 self.load_video(url)
             elif url.endswith(".analysis"):
                 self.load_analysis(url)
