@@ -10,7 +10,7 @@ on:
 
 jobs:
   build_x86_64:
-    runs-on: macos-latest
+    runs-on: macos-13
 
     steps:
       - name: Checkout code
@@ -61,6 +61,8 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: arm64-app
+          path: dist/
+
 
 
   
