@@ -29,12 +29,14 @@ jobs:
       - name: Build app
         run: |
           arch -x86_64 pyinstaller build.spec -y
+          npx create-dmg dist/Video\ Analyse.app dist/
+          mv dist/Video\ Analyse.dmg dist/Video\ Analyse.dmg
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
           name: x86_64-app
-          path: dist/
+          path: dist/Video\ Analyse.dmg
 
   build_arm64:
     runs-on: macos-latest
@@ -56,12 +58,15 @@ jobs:
       - name: Build app
         run: |
           arch -arm64 pyinstaller build.spec -y
+          npx create-dmg dist/Video\ Analyse.app dist/
+          mv dist/Video\ Analyse.dmg dist/Video\ Analyse.dmg
+
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
           name: arm64-app
-          path: dist/
+          path: dist/Video\ Analyse.dmg
 
 
 
