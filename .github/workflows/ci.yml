@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  build:
+  build_x86_64:
     runs-on: macos-latest
 
     steps:
@@ -28,13 +28,39 @@ jobs:
 
       - name: Build app
         run: |
-          pyinstaller build.spec -y
+          arch -x86_64 pyinstaller build.spec -y
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: Video-Analyse
+          name: x86_64-app
           path: dist/
+
+  build_arm64:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+    
+      - name: Set up python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build app
+        run: |
+          arch -arm64 pyinstaller build.spec -y
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: arm64-app
 
 
   
