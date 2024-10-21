@@ -37,6 +37,11 @@ class VideoCreator(Thread, QObject):
                 category = clip_category
                 subclips.append(self.create_category_clip(category))
 
+            if clip.notes:
+                text_img = self.create_image(clip.notes, number_clip=False)
+                text_clip = ImageClip(text_img, duration=2)
+                subclips.append(text_clip)
+
             start_time, end_time = clip.clip_times_s()
             video_clip = self.video.subclip(start_time, end_time)
 
@@ -63,8 +68,8 @@ class VideoCreator(Thread, QObject):
             background = (0, 0, 0, 0) # transparent
             position = (50, 50)
         else:
-            font_size = 150
-            background = (0, 0, 0, 255) # black
+            font_size = 120
+            background = (53, 51, 51, 255) # black
             position = None
 
         image = Image.new("RGBA", self.size, background)
