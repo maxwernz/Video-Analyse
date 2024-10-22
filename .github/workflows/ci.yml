@@ -88,15 +88,11 @@ jobs:
       - name: Build Windows app
         run: pyinstaller build.spec --noconfirm
 
-      - name: Create ZIP
-        run: |
-          Compress-Archive -Path dist\Video\ Analyse\* -DestinationPath dist\Video\Analyse.zip
-
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
           name: windows-app
-          path: dist/Video\Analyse.zip
+          path: dist/Video\Analyse.exe
 
 
 
