@@ -4,6 +4,12 @@ from moviepy.editor import VideoFileClip, concatenate_videoclips, TextClip, Comp
 import os
 from PySide6.QtCore import QObject, Signal
 import numpy as np
+from enum import Enum
+
+class ImageType(Enum):
+    CATEGORY = 1
+    NOTES = 2
+    NUMBER = 3
 
 
 
@@ -38,7 +44,7 @@ class VideoCreator(Thread, QObject):
                 subclips.append(self.create_category_clip(category))
 
             if clip.notes:
-                text_img = self.create_image(clip.notes, number_clip=False)
+                text_img = self.create_image(clip.notes, image_type=ImageType.NOTES)
                 text_clip = ImageClip(text_img, duration=2)
                 subclips.append(text_clip)
 
@@ -58,18 +64,22 @@ class VideoCreator(Thread, QObject):
         self.progress_changed.emit(100)
 
     def create_category_clip(self, category):
-        category_img = self.create_image(category, number_clip=False)
+        category_img = self.create_image(category, image_type=ImageType.CATEGORY)
         text_clip = ImageClip(category_img, duration=1.5)
         return CompositeVideoClip([text_clip])
 
-    def create_image(self, text, number_clip=True):
-        if number_clip:
+    def create_image(self, text, image_type=ImageType.NUMBER):
+        if image_type == ImageType.NUMBER:
             font_size = 100
             background = (0, 0, 0, 0) # transparent
             position = (50, 50)
-        else:
+        elif image_type == ImageType.CATEGORY:
             font_size = 120
             background = (53, 51, 51, 255) # black
+            position = None
+        elif image_type == ImageType.NOTES:
+            font_size = 40
+            background = (53, 51, 51, 255)
             position = None
 
         image = Image.new("RGBA", self.size, background)
