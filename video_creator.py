@@ -85,7 +85,7 @@ class VideoCreator(Thread, QObject):
 
         image = Image.new("RGBA", self.size, background)
         draw = ImageDraw.Draw(image)
-        font = ImageFont.truetype("Arial.ttf", font_size)
+        font = ImageFont.truetype("arial.ttf", font_size)
 
         lines = text.splitlines()
         text = []
