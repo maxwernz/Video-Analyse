@@ -5,6 +5,7 @@ import os
 from PySide6.QtCore import QObject, Signal
 import numpy as np
 from enum import Enum
+import textwrap
 
 class ImageType(Enum):
     CATEGORY = 1
@@ -45,7 +46,7 @@ class VideoCreator(Thread, QObject):
 
             if clip.notes:
                 text_img = self.create_image(clip.notes, image_type=ImageType.NOTES)
-                text_clip = ImageClip(text_img, duration=2)
+                text_clip = ImageClip(text_img, duration=2).set_position(("center", 0.9), relative=True)
                 subclips.append(text_clip)
 
             start_time, end_time = clip.clip_times_s()
@@ -84,13 +85,21 @@ class VideoCreator(Thread, QObject):
 
         image = Image.new("RGBA", self.size, background)
         draw = ImageDraw.Draw(image)
-        font = ImageFont.truetype("Arial.ttf", font_size)
+        font = ImageFont.truetype("arial.ttf", font_size)
+
+        lines = text.splitlines()
+        text = []
+        for line in lines:
+            text.append(textwrap.fill(line, width=45))
+        text = "\n".join(text)
+
 
         if position is None:
             _, _, w, h = draw.textbbox((0, 0), text, font=font)
             textsize = (w, h)
             position = tuple([(self.size[i] - textsize[i]) / 2 for i in range(2)])
 
+        
         draw.text(position, text, font=font, fill=(255, 255, 255, 255))
 
         return np.array(image)

@@ -29,6 +29,22 @@ jobs:
       - name: Build app
         run: |
           arch -x86_64 pyinstaller build.spec -y
+
+      - name: Decode and use code signing certificate
+        env:
+          CODE_SIGNING_PASSWORD: ${{ secrets.CODE_SIGNING_PASSWORD }}
+          CODE_SIGNING_CERTIFICATE: ${{ secrets.CODE_SIGNING_CERTIFICATE }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          echo $CODE_SIGNING_CERTIFICATE | base64 --decode > certificate.p12
+          security create-keychain -p $KEYCHAIN_PASSWORD build.keychain
+          security import certificate.p12 -k build.keychain -P $CODE_SIGNING_PASSWORD -T /usr/bin/codesign 
+          security find-identity -v
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k $KEYCHAIN_PASSWORD build.keychain
+          codesign --force -s "Your Code Signing Identity" dist/Video\ Analyse.app
+
+      - name: Create DMG
+        run: |
           npx create-dmg dist/Video\ Analyse.app dist/
           mv dist/Video\ Analyse.dmg dist/Video\ Analyse.dmg
 
@@ -38,36 +54,70 @@ jobs:
           name: x86_64-app
           path: dist/Video\ Analyse.dmg
 
-  build_arm64:
-    runs-on: macos-latest
+  # build_arm64:
+  #   runs-on: macos-latest
+
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v2
+    
+  #     - name: Set up python
+  #       uses: actions/setup-python@v2
+  #       with:
+  #         python-version: '3.12'
+      
+  #     - name: Install dependencies
+  #       run: |
+  #         python -m pip install --upgrade pip
+  #         pip install -r requirements.txt
+
+  #     - name: Build app
+  #       run: |
+  #         arch -arm64 pyinstaller build.spec -y
+
+  #     - name: Decode and use code signing certificate
+  #       run: |
+  #         echo "${{ secrets.CODE_SIGNING_CERTIFICATE }}" | base64 --decode > certificate.p12
+  #         security import certificate.p12 -P "${{ secrets.CODE_SIGNING_PASSWORD }}" -T /usr/bin/codesign
+  #         codesign --deep --force --verify --verbose --sign "Your Code Signing Identity" dist/Video\ Analyse.app
+
+  #     - name: Create DMG
+  #       run: |
+  #         npx create-dmg dist/Video\ Analyse.app dist/
+  #         mv dist/Video\ Analyse.dmg dist/Video\ Analyse.dmg
+
+  #     - name: Upload artifact
+  #       uses: actions/upload-artifact@v3
+  #       with:
+  #         name: arm64-app
+  #         path: dist/Video\ Analyse.dmg
+
+  build_windows:
+    runs-on: windows-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-    
+
       - name: Set up python
         uses: actions/setup-python@v2
         with:
           python-version: '3.12'
-      
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Build app
-        run: |
-          arch -arm64 pyinstaller build.spec -y
-          npx create-dmg dist/Video\ Analyse.app dist/
-          mv dist/Video\ Analyse.dmg dist/Video\ Analyse.dmg
+      - name: Build Windows app
+        run: pyinstaller build.spec --noconfirm
 
+      - name: Create ZIP
+        run: |
+          Compress-Archive -Path "dist/Video Analyse/*" -DestinationPath "dist/VideoAnalyse.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: arm64-app
-          path: dist/Video\ Analyse.dmg
-
-
-
-  
+          name: windows-app
+          path: dist/

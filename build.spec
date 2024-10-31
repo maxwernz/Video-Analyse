@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+exclude_modules = ['QtDBus', 'QtNetwork', 'QtOpenGL', 'QtPdf', 'QtQml', 'QtQmlMeta', 'QtQmlModels', 'QtQmlWorkerScript', 'QtQuick', 'QtSvg', 'QtVirtualKeyboard', 'PySide6.QtDBus', 'PySide6.QtNetwork']
 
 a = Analysis(
     ['main.py'],
@@ -10,18 +11,8 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['PySide6.QtCharts', 
-            'PySide6.QtDataVisualization', 
-            'PySide6.QtWebEngineWidgets', 
-            'PySide6.QtWebEngineCore', 
-            'PySide6.QtWebChannel', 
-            'PySide6.QtQml', 
-            'PySide6.QtQuick', 
-            'PySide6.QtQuickControls2', 
-            'PySide6.QtQuickTemplates2', 
-            'PySide6.QtSvg', 
-            'PySide6.QtTest'],
-    noarchive=False,
+    excludes=exclude_modules,
+    noarchive=True,
 )
 pyz = PYZ(a.pure)
 
@@ -36,6 +27,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    onedir=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
