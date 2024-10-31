@@ -57,18 +57,49 @@ border: none;
         <bool>true</bool>
        </property>
        <property name="styleSheet">
-        <string notr="true">background-color: rgb(55, 55, 55);
-gridline-color: rgb(255, 126, 227);
-color: rgb(255, 255, 255);
-border-color: rgb(40, 40, 40);
-font: 15px;
+        <string notr="true">QTreeView {
+	background-color: rgb(55, 55, 55);
+	/*gridline-color: rgb(255, 126, 227);*/
+	border-color: rgb(40, 40, 40);
+}
+
+QHeaderView {
+	min-height: 30px;
+}
+
+QHeaderView::section {
+    background-color: rgb(55, 55, 55);
+    color: rgb(255, 255, 255);
+    font-weight: normal;
+    text-align: center;
+	min-height: 30px;
+}
+
+
+QHeaderView::section:hover {
+    background-color: #f7f7f7;
+    color: #111111;
+}
+
+QTreeView::branch:has-children:!has-siblings:closed,
+QTreeView::branch:closed:has-children:has-siblings {
+        border-image: none;
+        image: url(:/icons/arrowtriangle.down.fill.png);
+}
+
+QTreeView::branch:open:has-children:!has-siblings,
+QTreeView::branch:open:has-children:has-siblings  {
+        border-image: none;
+        image: url(:/icons/arrowtriangle.down.fill.png);
+}
+
 </string>
        </property>
        <property name="frameShape">
         <enum>QFrame::StyledPanel</enum>
        </property>
        <property name="frameShadow">
-        <enum>QFrame::Sunken</enum>
+        <enum>QFrame::Plain</enum>
        </property>
        <property name="lineWidth">
         <number>4</number>
@@ -85,11 +116,17 @@ font: 15px;
        <property name="sortingEnabled">
         <bool>true</bool>
        </property>
+       <property name="headerHidden">
+        <bool>false</bool>
+       </property>
        <attribute name="headerVisible">
         <bool>true</bool>
        </attribute>
        <attribute name="headerCascadingSectionResizes">
         <bool>false</bool>
+       </attribute>
+       <attribute name="headerMinimumSectionSize">
+        <number>100</number>
        </attribute>
        <attribute name="headerHighlightSections">
         <bool>false</bool>
@@ -118,7 +155,6 @@ font: 15px;
            <font>
             <family>SF Pro</family>
             <pointsize>24</pointsize>
-            <weight>50</weight>
             <italic>false</italic>
             <bold>false</bold>
            </font>
@@ -189,7 +225,6 @@ font: 15px;
              <font>
               <family>SF Pro</family>
               <pointsize>16</pointsize>
-              <weight>50</weight>
               <italic>false</italic>
               <bold>false</bold>
              </font>
@@ -210,7 +245,6 @@ font: 15px &quot;SF Pro&quot;;
              <font>
               <family>SF Pro</family>
               <pointsize>16</pointsize>
-              <weight>50</weight>
               <italic>false</italic>
               <bold>false</bold>
              </font>
@@ -238,7 +272,6 @@ font: 15px &quot;SF Pro&quot;;
              <font>
               <family>SF Pro</family>
               <pointsize>16</pointsize>
-              <weight>50</weight>
               <italic>false</italic>
               <bold>false</bold>
              </font>
@@ -397,7 +430,6 @@ QSlider::add-page:horizontal {
             <property name="font">
              <font>
               <family>SF Pro Rounded</family>
-              <weight>50</weight>
               <italic>false</italic>
               <bold>false</bold>
              </font>
@@ -577,7 +609,6 @@ QComboBox:!editable:on, QComboBox::drop-down:editable:on {
              <font>
               <family>SF Pro Text</family>
               <pointsize>20</pointsize>
-              <weight>50</weight>
               <italic>false</italic>
               <bold>false</bold>
              </font>
@@ -638,7 +669,6 @@ QComboBox:!editable:on, QComboBox::drop-down:editable:on {
      <font>
       <family>SF Pro</family>
       <pointsize>14</pointsize>
-      <weight>50</weight>
       <italic>false</italic>
       <bold>false</bold>
      </font>
@@ -663,7 +693,6 @@ QComboBox:!editable:on, QComboBox::drop-down:editable:on {
      <font>
       <family>SF Pro</family>
       <pointsize>14</pointsize>
-      <weight>50</weight>
       <italic>false</italic>
       <bold>false</bold>
      </font>
