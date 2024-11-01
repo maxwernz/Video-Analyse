@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QAbstractScrollArea, QApplicat
     QSplitter, QTabWidget, QTreeWidgetItem, QVBoxLayout,
     QWidget)
 
+from clip_handler import (CreateClip, EditClip)
 from treewidget import TreeWidget
 from videowidget import VideoWidget
 import resources_rc
@@ -66,13 +67,17 @@ class Ui_MainWindow(object):
         self.horizontalLayout.setObjectName(u"horizontalLayout")
         self.splitter = QSplitter(self.centralwidget)
         self.splitter.setObjectName(u"splitter")
-        self.splitter.setStyleSheet(u"border-color: rgb(0, 0, 0);")
         self.splitter.setOrientation(Qt.Horizontal)
-        self.treeWidget = TreeWidget(self.splitter)
+        self.verticalLayoutWidget_2 = QWidget(self.splitter)
+        self.verticalLayoutWidget_2.setObjectName(u"verticalLayoutWidget_2")
+        self.verticalLayout_6 = QVBoxLayout(self.verticalLayoutWidget_2)
+        self.verticalLayout_6.setObjectName(u"verticalLayout_6")
+        self.verticalLayout_6.setContentsMargins(0, 0, 0, 0)
+        self.treeWidget = TreeWidget(self.verticalLayoutWidget_2)
         __qtreewidgetitem = QTreeWidgetItem(self.treeWidget)
         QTreeWidgetItem(__qtreewidgetitem)
         self.treeWidget.setObjectName(u"treeWidget")
-        sizePolicy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.treeWidget.sizePolicy().hasHeightForWidth())
@@ -179,11 +184,31 @@ class Ui_MainWindow(object):
         self.treeWidget.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.treeWidget.setSortingEnabled(True)
         self.treeWidget.setHeaderHidden(False)
-        self.splitter.addWidget(self.treeWidget)
         self.treeWidget.header().setVisible(True)
         self.treeWidget.header().setCascadingSectionResizes(False)
         self.treeWidget.header().setMinimumSectionSize(100)
         self.treeWidget.header().setHighlightSections(False)
+
+        self.verticalLayout_6.addWidget(self.treeWidget)
+
+        self.clipHandler = CreateClip(self.verticalLayoutWidget_2)
+        self.clipHandler.setObjectName(u"clipHandler")
+        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        sizePolicy1.setHorizontalStretch(0)
+        sizePolicy1.setVerticalStretch(0)
+        sizePolicy1.setHeightForWidth(self.clipHandler.sizePolicy().hasHeightForWidth())
+        self.clipHandler.setSizePolicy(sizePolicy1)
+        self.clipHandler.setMinimumSize(QSize(0, 100))
+
+        self.verticalLayout_6.addWidget(self.clipHandler)
+
+        self.editHandler = EditClip(self.verticalLayoutWidget_2)
+        self.editHandler.setObjectName(u"editHandler")
+        self.editHandler.setMinimumSize(QSize(0, 100))
+
+        self.verticalLayout_6.addWidget(self.editHandler)
+
+        self.splitter.addWidget(self.verticalLayoutWidget_2)
         self.verticalLayoutWidget = QWidget(self.splitter)
         self.verticalLayoutWidget.setObjectName(u"verticalLayoutWidget")
         self.verticalLayout = QVBoxLayout(self.verticalLayoutWidget)
@@ -237,13 +262,17 @@ class Ui_MainWindow(object):
 
         self.verticalLayout.addLayout(self.horizontalLayout_4)
 
+        self.line = QFrame(self.verticalLayoutWidget)
+        self.line.setObjectName(u"line")
+        self.line.setFrameShape(QFrame.Shape.HLine)
+        self.line.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.verticalLayout.addWidget(self.line)
+
         self.videoWidget = VideoWidget(self.verticalLayoutWidget)
         self.videoWidget.setObjectName(u"videoWidget")
-        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        sizePolicy1.setHorizontalStretch(0)
-        sizePolicy1.setVerticalStretch(0)
-        sizePolicy1.setHeightForWidth(self.videoWidget.sizePolicy().hasHeightForWidth())
-        self.videoWidget.setSizePolicy(sizePolicy1)
+        sizePolicy.setHeightForWidth(self.videoWidget.sizePolicy().hasHeightForWidth())
+        self.videoWidget.setSizePolicy(sizePolicy)
         self.videoWidget.setMinimumSize(QSize(900, 600))
         self.videoWidget.setMaximumSize(QSize(16777215, 16777215))
         self.videoWidget.setAcceptDrops(True)

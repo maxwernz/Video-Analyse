@@ -24,7 +24,13 @@ class Ui_Dialog(object):
     def setupUi(self, Dialog):
         if not Dialog.objectName():
             Dialog.setObjectName(u"Dialog")
-        Dialog.resize(400, 351)
+        Dialog.setEnabled(True)
+        Dialog.resize(392, 460)
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(Dialog.sizePolicy().hasHeightForWidth())
+        Dialog.setSizePolicy(sizePolicy)
         Dialog.setStyleSheet(u"/* Style for the QDialog */\n"
 "QDialog {\n"
 "    background-color: rgb(31, 31, 31); /* Dark background */\n"
@@ -112,6 +118,43 @@ class Ui_Dialog(object):
 "    background-color: rgb(100, 100, 100); /* Darker background on press */\n"
 "    border: 2px solid rgb(80, 80, 80);\n"
 "}\n"
+"\n"
+"QPushButton:disabled {\n"
+"    background-color: rgb(60, 60, 60); /* Darker background when disabled */\n"
+"    color: rgb(100, 100, 100); /* Lig"
+                        "ht gray text for disabled state */\n"
+"    border: 2px solid rgb(80, 80, 80); /* Lighter border when disabled */\n"
+"}\n"
+"\n"
+"QMenu {\n"
+"	background-color: rgb(178, 178, 178); /* Background color of the menu */\n"
+"	border: 1px solid #C0C0C0; /* Light gray border */\n"
+"	padding: 5px; /* Padding around menu */\n"
+"	border-radius: 8px; /* Large border radius */\n"
+"	font: 14px;\n"
+"}\n"
+"\n"
+"QMenu::item:disabled {\n"
+"	color: rgb(120, 120, 120);\n"
+"}\n"
+"\n"
+"QMenu::item {\n"
+"	padding: 2px 4px; /* Padding for menu items */\n"
+"	color: #333; /* Text color */\n"
+"}\n"
+"\n"
+"QMenu::item:selected {\n"
+"    	background-color: #007AFF; /* Selected item background color */\n"
+"    	color: white; /* Selected item text color */\n"
+" 	border-radius: 4px; /* Large border radius for selected items */\n"
+"}\n"
+"\n"
+"QMenu::separator {\n"
+"	height: 1px; /* Height of the separator */\n"
+"   	background-color: #C0C0C0; /* Color of the separator */\n"
+"    	margin: 5px 0; /* Margin around separator */\n"
+" }\n"
+"        \n"
 "")
         self.verticalLayout = QVBoxLayout(Dialog)
         self.verticalLayout.setObjectName(u"verticalLayout")
@@ -146,6 +189,9 @@ class Ui_Dialog(object):
 
         self.notesText = QTextEdit(Dialog)
         self.notesText.setObjectName(u"notesText")
+        sizePolicy.setHeightForWidth(self.notesText.sizePolicy().hasHeightForWidth())
+        self.notesText.setSizePolicy(sizePolicy)
+        self.notesText.setMinimumSize(QSize(0, 50))
 
         self.verticalLayout.addWidget(self.notesText)
 
@@ -173,6 +219,7 @@ class Ui_Dialog(object):
 
         self.acceptButton = QPushButton(Dialog)
         self.acceptButton.setObjectName(u"acceptButton")
+        self.acceptButton.setEnabled(True)
 
         self.horizontalLayout_2.addWidget(self.acceptButton)
 
@@ -196,5 +243,8 @@ class Ui_Dialog(object):
         self.label.setText(QCoreApplication.translate("Dialog", u"Kategorie", None))
         self.cancelButton.setText(QCoreApplication.translate("Dialog", u"Cancel", None))
         self.acceptButton.setText(QCoreApplication.translate("Dialog", u"OK", None))
+#if QT_CONFIG(shortcut)
+        self.acceptButton.setShortcut(QCoreApplication.translate("Dialog", u"Ctrl+Return", None))
+#endif // QT_CONFIG(shortcut)
     # retranslateUi
 

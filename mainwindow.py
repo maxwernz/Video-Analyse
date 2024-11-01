@@ -36,6 +36,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setup_shortcuts()
 
         self.progressBar.setVisible(False)
+        self.clipHandler.setVisible(False)
+        self.editHandler.setVisible(False)
+
+        self.treeWidget.set_edit_handler(self.editHandler)
 
 
         self.setAcceptDrops(True)
@@ -62,6 +66,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.treeWidget.itemClicked.connect(self.jump_to_clip)
         self.treeWidget.export_clips.connect(self.export)
         self.treeWidget.item_changed.connect(self.set_saved_status)
+        self.treeWidget.clip_handler_opened.connect(self.disable_clip_handler)
 
 
     def setup_shortcuts(self):
@@ -78,12 +83,43 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             event.ignore()
 
     def confirm_close(self):
-        reply = QMessageBox.question(
-            self,
-            "Ungespeicherte Änderungen",
-            "Es gibt ungespeicherte Änderungen. Möchten sie speichern?",
-            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel
-        )
+        message_box = QMessageBox()
+        message_box.setWindowTitle("Ungespeicherte Änderungen")
+        message_box.setText("Es gibt ungespeicherte Änderungen. Möchten sie speichern?")
+        message_box.setStandardButtons(QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+        message_box.setStyleSheet("""
+    QMessageBox {
+        background-color: rgb(31, 31, 31); /* Dark background for the message box */
+        border: 2px solid rgb(65, 65, 65); /* Border around the message box */
+        border-radius: 10px; /* Rounded corners */
+        color: white; /* Text color */
+    }
+
+    /* Style the QLabel (main text in the box) */
+    QMessageBox QLabel {
+        color: white; /* Main text color */
+        font: 14px "Segoe UI", sans-serif;
+    }
+
+    /* Style for the QPushButton within the QMessageBox */
+    QMessageBox QPushButton {
+        background-color: rgb(45, 45, 45); /* Button background */
+        color: white; /* Button text color */
+        border: 2px solid rgb(65, 65, 65); /* Button border */
+        border-radius: 5px;
+        padding: 5px 10px;
+        font: 14px "Segoe UI", sans-serif;
+    }
+
+    QMessageBox QPushButton:hover {
+        background-color: rgb(66, 65, 64); /* Background color on hover */
+    }
+
+    QMessageBox QPushButton:pressed {
+        background-color: rgb(80, 80, 80); /* Darker color when pressed */
+    }
+""")
+        reply = message_box.exec()
         
         if reply == QMessageBox.Save:
             self.save_analysis()
@@ -191,16 +227,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.videoWidget.videoIsPlaying():
             self.playPauseButton.click()
         clip_stop = self.videoWidget.get_position()
-        clip_handler = CreateClip(self.clip_start, clip_stop)
-        try:
-            if clip_handler.exec():
-                clip = clip_handler.clip
-                self.treeWidget.add_clip(clip)
-                self.treeWidget.fit_tree()
-                self.is_saved = False
 
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"An error occurred: {e}")
+        self.clipHandler.new_clip(self.clip_start, clip_stop)
+        self.treeWidget.disable_clip_handler()
+        self.clipHandler.setVisible(True)
+        self.clipHandler.acceptButton.clicked.connect(lambda: self.add_clip(clip=self.clipHandler.clip))
+        self.clipHandler.cancelButton.clicked.connect(self.disable_clip_handler)
+
+
+    def add_clip(self, clip):
+        self.treeWidget.add_clip(clip)
+        self.treeWidget.fit_tree()
+        self.is_saved = False
+        self.disable_clip_handler()
+
+
+    def disable_clip_handler(self):
+        self.clipHandler.setVisible(False)
+        self.clipHandler.acceptButton.clicked.disconnect()
+        self.clipHandler.cancelButton.clicked.disconnect()
 
     def jump_to_clip(self):
         selected_item = self.treeWidget.currentItem()

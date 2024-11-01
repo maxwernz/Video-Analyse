@@ -9,6 +9,7 @@ class TreeWidget(QTreeWidget):
     tree_item_list = []
     export_clips = Signal()
     item_changed = Signal(bool)
+    clip_handler_opened = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -18,6 +19,9 @@ class TreeWidget(QTreeWidget):
         self.customContextMenuRequested.connect(self.context_menu)
 
         self.itemDoubleClicked.connect(self.edit_item)
+
+    def set_edit_handler(self, edit_handler):
+        self.edit_handler = edit_handler
 
     def context_menu(self, event):
         item = self.itemAt(event)
@@ -92,27 +96,39 @@ class TreeWidget(QTreeWidget):
         if item.parent() is None:  # TopLevelItem
             return
         
-        dialog = EditClip(item.clip())
-        if dialog.exec():
-            clip_item = dialog.clip_item
-            item.edit_item(clip_item.clip_name())
-            category = clip_item.category
-            if category not in ClipHandler.categories:
-                parent = self
-                category_item = TreeItem(parent)
-                category_item.setText(0, category)
-                ClipHandler.categories[category] = category_item
-            if item.parent() != ClipHandler.categories[category]:
-                old_parent = item.parent()
-                old_parent.removeChild(item)
-                new_parent = self.get_category_item(category)
-                new_parent.addChild(item)
+        self.edit_handler.new_clip(item.clip())
+        self.clip_handler_opened.emit()
+        self.edit_handler.setVisible(True)
+        self.edit_handler.acceptButton.clicked.connect(lambda: self.edit_clip(self.edit_handler.clip_item, item))
+        self.edit_handler.cancelButton.clicked.connect(self.disable_clip_handler)
+        
 
-                self.check_empty_parent(old_parent)
+    def edit_clip(self, clip_item, item):
+        clip_item = clip_item
+        item.edit_item(clip_item.clip_name())
+        category = clip_item.category
+        if category not in ClipHandler.categories:
+            parent = self
+            category_item = TreeItem(parent)
+            category_item.setText(0, category)
+            ClipHandler.categories[category] = category_item
+        if item.parent() != ClipHandler.categories[category]:
+            old_parent = item.parent()
+            old_parent.removeChild(item)
+            new_parent = self.get_category_item(category)
+            new_parent.addChild(item)
 
-            self.fit_tree()
-            self.item_changed.emit(False)
+            self.check_empty_parent(old_parent)
 
+        self.fit_tree()
+        self.item_changed.emit(False)
+        self.disable_clip_handler()
+
+    def disable_clip_handler(self):
+        self.edit_handler.setVisible(False)
+        self.edit_handler.acceptButton.clicked.disconnect()
+        self.edit_handler.cancelButton.clicked.disconnect()
+        
     def get_category_item(self, category):
         category_item = ClipHandler.categories.get(category)
         if category_item is None:

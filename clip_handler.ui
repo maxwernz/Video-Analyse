@@ -2,13 +2,22 @@
 <ui version="4.0">
  <class>Dialog</class>
  <widget class="QDialog" name="Dialog">
+  <property name="enabled">
+   <bool>true</bool>
+  </property>
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>400</width>
-    <height>351</height>
+    <width>392</width>
+    <height>460</height>
    </rect>
+  </property>
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+    <horstretch>0</horstretch>
+    <verstretch>0</verstretch>
+   </sizepolicy>
   </property>
   <property name="windowTitle">
    <string>Dialog</string>
@@ -99,6 +108,42 @@ QPushButton:pressed {
     background-color: rgb(100, 100, 100); /* Darker background on press */
     border: 2px solid rgb(80, 80, 80);
 }
+
+QPushButton:disabled {
+    background-color: rgb(60, 60, 60); /* Darker background when disabled */
+    color: rgb(100, 100, 100); /* Light gray text for disabled state */
+    border: 2px solid rgb(80, 80, 80); /* Lighter border when disabled */
+}
+
+QMenu {
+	background-color: rgb(178, 178, 178); /* Background color of the menu */
+	border: 1px solid #C0C0C0; /* Light gray border */
+	padding: 5px; /* Padding around menu */
+	border-radius: 8px; /* Large border radius */
+	font: 14px;
+}
+
+QMenu::item:disabled {
+	color: rgb(120, 120, 120);
+}
+
+QMenu::item {
+	padding: 2px 4px; /* Padding for menu items */
+	color: #333; /* Text color */
+}
+
+QMenu::item:selected {
+    	background-color: #007AFF; /* Selected item background color */
+    	color: white; /* Selected item text color */
+ 	border-radius: 4px; /* Large border radius for selected items */
+}
+
+QMenu::separator {
+	height: 1px; /* Height of the separator */
+   	background-color: #C0C0C0; /* Color of the separator */
+    	margin: 5px 0; /* Margin around separator */
+ }
+        
 </string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
@@ -144,7 +189,20 @@ QPushButton:pressed {
     </widget>
    </item>
    <item>
-    <widget class="QTextEdit" name="notesText"/>
+    <widget class="QTextEdit" name="notesText">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>50</height>
+      </size>
+     </property>
+    </widget>
    </item>
    <item>
     <widget class="QLabel" name="label">
@@ -184,8 +242,14 @@ QPushButton:pressed {
      </item>
      <item>
       <widget class="QPushButton" name="acceptButton">
+       <property name="enabled">
+        <bool>true</bool>
+       </property>
        <property name="text">
         <string>OK</string>
+       </property>
+       <property name="shortcut">
+        <string>Ctrl+Return</string>
        </property>
        <property name="default">
         <bool>true</bool>
