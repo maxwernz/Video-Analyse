@@ -20,8 +20,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QAbstractScrollArea, QApplicat
     QFrame, QHBoxLayout, QHeaderView, QLabel,
     QMainWindow, QMenu, QMenuBar, QProgressBar,
     QPushButton, QSizePolicy, QSlider, QSpacerItem,
-    QSplitter, QStatusBar, QTabWidget, QTreeWidgetItem,
-    QVBoxLayout, QWidget)
+    QSplitter, QTabWidget, QTreeWidgetItem, QVBoxLayout,
+    QWidget)
 
 from treewidget import TreeWidget
 from videowidget import VideoWidget
@@ -32,7 +32,7 @@ class Ui_MainWindow(object):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
         MainWindow.setWindowModality(Qt.NonModal)
-        MainWindow.resize(1841, 1106)
+        MainWindow.resize(1840, 1106)
         font = QFont()
         font.setFamilies([u"Arial"])
         font.setBold(False)
@@ -77,6 +77,7 @@ class Ui_MainWindow(object):
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.treeWidget.sizePolicy().hasHeightForWidth())
         self.treeWidget.setSizePolicy(sizePolicy)
+        self.treeWidget.setMinimumSize(QSize(0, 0))
         font1 = QFont()
         font1.setFamilies([u"Arial"])
         font1.setPointSize(16)
@@ -88,6 +89,7 @@ class Ui_MainWindow(object):
 "	background-color: rgb(55, 55, 55);\n"
 "	gridline-color: rgb(255, 126, 227);\n"
 "	border-color: rgb(40, 40, 40);\n"
+"	border-radius: 10px;\n"
 "}\n"
 "\n"
 "QTreeView::header {\n"
@@ -113,22 +115,27 @@ class Ui_MainWindow(object):
 "	padding-left: 5px;\n"
 "}\n"
 "\n"
+"QHeaderView::section:first {\n"
+"	border-top-left-radius: 10px;\n"
+"}\n"
+"\n"
 "QHeaderView::section:last {\n"
 "	border-right: none;\n"
+"	border-top-right-radius: 10px;\n"
 "}\n"
 "\n"
 "QHeaderView::down-arrow {\n"
 "	image: url(:/icons/chevron.compact.down.png);\n"
 "	width: 16px;\n"
-"	height: 10px;\n"
+"	heig"
+                        "ht: 10px;\n"
 "	padding: 5px;\n"
 "}\n"
 "\n"
 "QHeaderView::up-arrow {\n"
 "	image: url(:/icons/chevron.compact.up.png);\n"
 "	width: 16px;\n"
-"	h"
-                        "eight: 10px;\n"
+"	height: 10px;\n"
 "	padding: 5px;\n"
 "}\n"
 "\n"
@@ -145,6 +152,24 @@ class Ui_MainWindow(object):
 "	image: url(:/icons/chevron.down.png);\n"
 "}\n"
 "\n"
+"QTreeView::item {\n"
+"    background-color: transparent;\n"
+"    border: none;\n"
+"    padding: 5px;\n"
+"}\n"
+"\n"
+"QTreeView::item:hover {\n"
+"    background-color: rgb(65, 65, 65);\n"
+"}\n"
+"\n"
+"QTreeView::item:selected {\n"
+"    background-color: rgb(100, 100, 100);\n"
+"    color: white; \n"
+"}\n"
+"\n"
+"QTreeView::branch:selected {\n"
+"	background-color: rgb(100,100,100);\n"
+"}\n"
 "")
         self.treeWidget.setFrameShape(QFrame.StyledPanel)
         self.treeWidget.setFrameShadow(QFrame.Plain)
@@ -219,9 +244,11 @@ class Ui_MainWindow(object):
         sizePolicy1.setVerticalStretch(0)
         sizePolicy1.setHeightForWidth(self.videoWidget.sizePolicy().hasHeightForWidth())
         self.videoWidget.setSizePolicy(sizePolicy1)
-        self.videoWidget.setMinimumSize(QSize(0, 0))
+        self.videoWidget.setMinimumSize(QSize(900, 600))
         self.videoWidget.setMaximumSize(QSize(16777215, 16777215))
         self.videoWidget.setAcceptDrops(True)
+        self.videoWidget.setStyleSheet(u"border: 1px solid rgb(55, 55, 55);\n"
+"margin: 50px;")
 
         self.verticalLayout.addWidget(self.videoWidget)
 
@@ -474,7 +501,7 @@ class Ui_MainWindow(object):
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName(u"menubar")
-        self.menubar.setGeometry(QRect(0, 0, 1841, 24))
+        self.menubar.setGeometry(QRect(0, 0, 1840, 24))
         self.menubar.setFont(font)
         self.menuFile = QMenu(self.menubar)
         self.menuFile.setObjectName(u"menuFile")
@@ -490,9 +517,6 @@ class Ui_MainWindow(object):
         self.menuBearbeiten.setObjectName(u"menuBearbeiten")
         self.menuBearbeiten.setFont(font6)
         MainWindow.setMenuBar(self.menubar)
-        self.statusbar = QStatusBar(MainWindow)
-        self.statusbar.setObjectName(u"statusbar")
-        MainWindow.setStatusBar(self.statusbar)
 
         self.menubar.addAction(self.menuFile.menuAction())
         self.menubar.addAction(self.menuBearbeiten.menuAction())

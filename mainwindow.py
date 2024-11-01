@@ -10,7 +10,6 @@ from treewidget_item import ClipTreeItem
 import pickle
 from treewidget import TreeWidget
 from video_creator import VideoCreator, ProgressLogger
-from progress_dialog import ProgressDialog
 from util import milliseconds_to_hhmmss
 
 basedir = os.path.dirname(__file__)
@@ -36,11 +35,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setup_connections()
         self.setup_shortcuts()
 
-        self.statusbar = self.statusBar()
         self.progressBar.setVisible(False)
 
-        self.statusBarLabel = QLabel()
-        self.statusbar.addWidget(self.statusBarLabel)
 
         self.setAcceptDrops(True)
 
@@ -67,8 +63,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.treeWidget.export_clips.connect(self.export)
         self.treeWidget.item_changed.connect(self.set_saved_status)
 
-        self.file_changed.connect(self.on_file_changed)
-        self.file_changes_made.connect(self.on_changes_made)
 
     def setup_shortcuts(self):
         QShortcut(QKeySequence(Qt.Key_Right), self).activated.connect(self.videoWidget.move_forward)
@@ -109,12 +103,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self._current_file = value
             self.file_changed.emit(value)
 
-    def on_file_changed(self, file_path):
-        if not file_path:
-            self.statusBarLabel.setText(" Untitled")
-        else:
-            self.statusBarLabel.setText(" " + file_path)
-
     @Property(bool, notify=file_changes_made)
     def is_saved(self):
         return self._is_saved
@@ -124,13 +112,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self._is_saved != value:
             self._is_saved = value
             self.file_changes_made.emit(value)
-
-    def on_changes_made(self, value):
-        message = self.statusBarLabel.text()
-        if not value:
-            self.statusBarLabel.setText(message + " *")
-        else:
-            self.statusBarLabel.setText(message.removesuffix(" *"))
 
     def set_saved_status(self, value):
         self.is_saved = value
@@ -259,16 +240,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         logger = ProgressLogger()
         video_creator = VideoCreator(clips, self.file_name, file_name, full_video, logger=logger)
-        # progress_dialog = ProgressDialog(self)
-        # video_creator.progress_changed.connect(progress_dialog.set_progress)
         self.progressBar.setVisible(True)
         logger.progress_changed.connect(self.progressBar.setValue)
         logger.export_finished.connect(lambda: self.progressBar.setVisible(False))
 
         try:
             video_creator.start()
-            # progress_dialog.center_on_main_window(self)
-            # progress_dialog.show()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"An error occurred: {e}")
 

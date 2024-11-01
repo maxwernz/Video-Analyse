@@ -9,7 +9,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1841</width>
+    <width>1840</width>
     <height>1106</height>
    </rect>
   </property>
@@ -65,6 +65,12 @@ border: none;
          <verstretch>0</verstretch>
         </sizepolicy>
        </property>
+       <property name="minimumSize">
+        <size>
+         <width>0</width>
+         <height>0</height>
+        </size>
+       </property>
        <property name="font">
         <font>
          <family>Arial</family>
@@ -82,6 +88,7 @@ border: none;
 	background-color: rgb(55, 55, 55);
 	gridline-color: rgb(255, 126, 227);
 	border-color: rgb(40, 40, 40);
+	border-radius: 10px;
 }
 
 QTreeView::header {
@@ -107,8 +114,13 @@ QHeaderView::section {
 	padding-left: 5px;
 }
 
+QHeaderView::section:first {
+	border-top-left-radius: 10px;
+}
+
 QHeaderView::section:last {
 	border-right: none;
+	border-top-right-radius: 10px;
 }
 
 QHeaderView::down-arrow {
@@ -138,6 +150,24 @@ QTreeView::branch:open:has-children:has-siblings  {
 	image: url(:/icons/chevron.down.png);
 }
 
+QTreeView::item {
+    background-color: transparent;
+    border: none;
+    padding: 5px;
+}
+
+QTreeView::item:hover {
+    background-color: rgb(65, 65, 65);
+}
+
+QTreeView::item:selected {
+    background-color: rgb(100, 100, 100);
+    color: white; 
+}
+
+QTreeView::branch:selected {
+	background-color: rgb(100,100,100);
+}
 </string>
        </property>
        <property name="frameShape">
@@ -286,8 +316,8 @@ QProgressBar::chunk {
           </property>
           <property name="minimumSize">
            <size>
-            <width>0</width>
-            <height>0</height>
+            <width>900</width>
+            <height>600</height>
            </size>
           </property>
           <property name="maximumSize">
@@ -298,6 +328,10 @@ QProgressBar::chunk {
           </property>
           <property name="acceptDrops">
            <bool>true</bool>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">border: 1px solid rgb(55, 55, 55);
+margin: 50px;</string>
           </property>
          </widget>
         </item>
@@ -774,7 +808,7 @@ QComboBox:!editable:on, QComboBox::drop-down:editable:on {
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1841</width>
+     <width>1840</width>
      <height>24</height>
     </rect>
    </property>
@@ -829,7 +863,6 @@ QComboBox:!editable:on, QComboBox::drop-down:editable:on {
    <addaction name="menuFile"/>
    <addaction name="menuBearbeiten"/>
   </widget>
-  <widget class="QStatusBar" name="statusbar"/>
   <action name="actionLoad_Video">
    <property name="text">
     <string>Video laden</string>

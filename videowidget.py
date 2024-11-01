@@ -13,7 +13,8 @@ class VideoWidget(QWidget):
         super().__init__()
 
         self.setWindowTitle("Video Player App")
-        self.setGeometry(100, 100, 800, 600)
+
+        
 
         self.is_playing = False
         self.video_loaded = False
@@ -24,6 +25,8 @@ class VideoWidget(QWidget):
 
         self.init_ui()
 
+        # self.setFixedSize(1000, 900)
+
     def init_ui(self):
         # Create a media player and video widget
         self.media_player = QMediaPlayer(self)
@@ -32,10 +35,14 @@ class VideoWidget(QWidget):
         self.media_player.setAudioOutput(self.audio_output)
         self.media_player.setVideoOutput(self.video_widget)
 
+        self.video_widget.setAspectRatioMode(Qt.KeepAspectRatioByExpanding)
+
         # Create the main layout for the central widget
         main_layout = QVBoxLayout(self.parent())
         main_layout.addWidget(self.video_widget)
         self.setLayout(main_layout)
+
+        # self.video_widget.setFixedHeight(660)
 
     def get_position(self):
         return self.media_player.position()
@@ -128,14 +135,23 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
 
     main_window = QMainWindow()
-    video_widget = VideoWidget()
+    media_player = QMediaPlayer()
+    video_widget = QVideoWidget()
+    
+    media_player.setVideoOutput(video_widget)
 
     # Load a video from a URL (replace with a valid file URL for testing)
-    # video_url = QUrl.fromLocalFile("/path/to/video.mp4")
-    # video_widget.load_video(video_url)
+    video_url = QUrl.fromLocalFile("/Users/max/Downloads/IMG_0024.MOV")
+    media_player.setSource(video_url)
+    media_player.play()
+
+    video_widget.setAspectRatioMode(Qt.KeepAspectRatioByExpanding)
+    video_widget.videoSink().videoSizeChanged.connect(lambda: video_widget.resize(video_widget.size()))
+
+
 
     main_window.setCentralWidget(video_widget)
-    main_window.resize(800, 600)
+    # main_window.resize(1200, 700)
     main_window.show()
 
     sys.exit(app.exec())
