@@ -221,16 +221,6 @@ QTreeView::branch:selected {
             <string>Stop</string>
            </property>
           </column>
-          <item>
-           <property name="text">
-            <string>test item</string>
-           </property>
-           <item>
-            <property name="text">
-             <string>test2</string>
-            </property>
-           </item>
-          </item>
          </widget>
         </item>
         <item>

@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-exclude_modules = ['QtDBus', 'QtNetwork', 'QtOpenGL', 'QtPdf', 'QtQml', 'QtQmlMeta', 'QtQmlModels', 'QtQmlWorkerScript', 'QtQuick', 'QtSvg', 'QtVirtualKeyboard', 'PySide6.QtDBus', 'PySide6.QtNetwork']
+exclude_modules = ['QtDBus', 'QtNetwork', 'QtOpenGL', 'QtPdf', 'QtQml', 'QtQmlMeta', 'QtQmlModels', 'QtQmlWorkerScript', 'QtQuick', 'QtSvg', 'QtVirtualKeyboard', 'PySide6.QtDBus']
 
 a = Analysis(
     ['main.py'],

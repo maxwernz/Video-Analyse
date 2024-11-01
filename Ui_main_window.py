@@ -74,8 +74,6 @@ class Ui_MainWindow(object):
         self.verticalLayout_6.setObjectName(u"verticalLayout_6")
         self.verticalLayout_6.setContentsMargins(0, 0, 0, 0)
         self.treeWidget = TreeWidget(self.verticalLayoutWidget_2)
-        __qtreewidgetitem = QTreeWidgetItem(self.treeWidget)
-        QTreeWidgetItem(__qtreewidgetitem)
         self.treeWidget.setObjectName(u"treeWidget")
         sizePolicy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         sizePolicy.setHorizontalStretch(0)
@@ -622,15 +620,6 @@ class Ui_MainWindow(object):
         ___qtreewidgetitem.setText(2, QCoreApplication.translate("MainWindow", u"Stop", None));
         ___qtreewidgetitem.setText(1, QCoreApplication.translate("MainWindow", u"Start", None));
         ___qtreewidgetitem.setText(0, QCoreApplication.translate("MainWindow", u"Clip", None));
-
-        __sortingEnabled = self.treeWidget.isSortingEnabled()
-        self.treeWidget.setSortingEnabled(False)
-        ___qtreewidgetitem1 = self.treeWidget.topLevelItem(0)
-        ___qtreewidgetitem1.setText(0, QCoreApplication.translate("MainWindow", u"test item", None));
-        ___qtreewidgetitem2 = ___qtreewidgetitem1.child(0)
-        ___qtreewidgetitem2.setText(0, QCoreApplication.translate("MainWindow", u"test2", None));
-        self.treeWidget.setSortingEnabled(__sortingEnabled)
-
         self.titleLabel.setText(QCoreApplication.translate("MainWindow", u"No Video", None))
         self.exportFinishedLabel.setText(QCoreApplication.translate("MainWindow", u"Export erfolgreich", None))
         self.openExportButton.setText(QCoreApplication.translate("MainWindow", u"\u00d6ffnen", None))
