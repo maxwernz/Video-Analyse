@@ -2,6 +2,9 @@
 <ui version="4.0">
  <class>MainWindow</class>
  <widget class="QMainWindow" name="MainWindow">
+  <property name="windowModality">
+   <enum>Qt::NonModal</enum>
+  </property>
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -9,6 +12,14 @@
     <width>1841</width>
     <height>1106</height>
    </rect>
+  </property>
+  <property name="font">
+   <font>
+    <family>Arial</family>
+    <weight>50</weight>
+    <italic>false</italic>
+    <bold>false</bold>
+   </font>
   </property>
   <property name="acceptDrops">
    <bool>true</bool>
@@ -18,9 +29,10 @@
   </property>
   <property name="styleSheet">
    <string notr="true">background-color: rgb(31, 31, 31);
-color: rgb(255, 255, 255);
-font: &quot;SF Pro&quot;;
-</string>
+color: rgb(255, 255, 255);</string>
+  </property>
+  <property name="tabShape">
+   <enum>QTabWidget::Rounded</enum>
   </property>
   <property name="unifiedTitleAndToolBarOnMac">
    <bool>false</bool>
@@ -53,44 +65,77 @@ border: none;
          <verstretch>0</verstretch>
         </sizepolicy>
        </property>
+       <property name="font">
+        <font>
+         <family>Arial</family>
+         <pointsize>16</pointsize>
+         <weight>50</weight>
+         <italic>false</italic>
+         <bold>false</bold>
+        </font>
+       </property>
        <property name="acceptDrops">
         <bool>true</bool>
        </property>
        <property name="styleSheet">
         <string notr="true">QTreeView {
 	background-color: rgb(55, 55, 55);
-	/*gridline-color: rgb(255, 126, 227);*/
+	gridline-color: rgb(255, 126, 227);
 	border-color: rgb(40, 40, 40);
+}
+
+QTreeView::header {
+	min-height: 30px;
 }
 
 QHeaderView {
 	min-height: 30px;
+	border-right: 1px solid rgb(40, 40, 40);
+	border-bottom: 1px solid rgb(40, 40, 40);
 }
 
 QHeaderView::section {
     background-color: rgb(55, 55, 55);
     color: rgb(255, 255, 255);
-    font-weight: normal;
+	border-top: none;
+	border-right: 1px solid rgb(40, 40, 40);
+	border-bottom: 1px solid rgb(40, 40, 40);
+	gridline-color: rgb(255, 255, 255);
     text-align: center;
 	min-height: 30px;
+	font: 15px;
+	padding-left: 5px;
 }
 
+QHeaderView::section:last {
+	border-right: none;
+}
 
-QHeaderView::section:hover {
-    background-color: #f7f7f7;
-    color: #111111;
+QHeaderView::down-arrow {
+	image: url(:/icons/chevron.compact.down.png);
+	width: 16px;
+	height: 10px;
+	padding: 5px;
+}
+
+QHeaderView::up-arrow {
+	image: url(:/icons/chevron.compact.up.png);
+	width: 16px;
+	height: 10px;
+	padding: 5px;
 }
 
 QTreeView::branch:has-children:!has-siblings:closed,
 QTreeView::branch:closed:has-children:has-siblings {
         border-image: none;
-        image: url(:/icons/arrowtriangle.down.fill.png);
+	image: url(:/icons/chevron.right.png);
+	padding: 2px;
 }
 
 QTreeView::branch:open:has-children:!has-siblings,
 QTreeView::branch:open:has-children:has-siblings  {
         border-image: none;
-        image: url(:/icons/arrowtriangle.down.fill.png);
+	image: url(:/icons/chevron.down.png);
 }
 
 </string>
@@ -146,26 +191,90 @@ QTreeView::branch:open:has-children:has-siblings  {
          <string>Stop</string>
         </property>
        </column>
+       <item>
+        <property name="text">
+         <string>test item</string>
+        </property>
+        <item>
+         <property name="text">
+          <string>test2</string>
+         </property>
+        </item>
+       </item>
       </widget>
       <widget class="QWidget" name="verticalLayoutWidget">
        <layout class="QVBoxLayout" name="verticalLayout">
         <item>
-         <widget class="QLabel" name="titleLabel">
-          <property name="font">
-           <font>
-            <family>SF Pro</family>
-            <pointsize>24</pointsize>
-            <italic>false</italic>
-            <bold>false</bold>
-           </font>
-          </property>
-          <property name="text">
-           <string>No Video</string>
-          </property>
-          <property name="indent">
-           <number>10</number>
-          </property>
-         </widget>
+         <layout class="QHBoxLayout" name="horizontalLayout_4">
+          <item>
+           <widget class="QLabel" name="titleLabel">
+            <property name="font">
+             <font>
+              <family>Arial</family>
+              <pointsize>24</pointsize>
+              <weight>50</weight>
+              <italic>false</italic>
+              <bold>false</bold>
+             </font>
+            </property>
+            <property name="text">
+             <string>No Video</string>
+            </property>
+            <property name="indent">
+             <number>10</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="horizontalSpacer_5">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QProgressBar" name="progressBar">
+            <property name="styleSheet">
+             <string notr="true">QProgressBar {
+		border: 2px solid rgb(255, 255, 255);
+        border-radius: 7px;
+        background-color: rgb(55, 55, 55);
+        height: 18px;
+		max-width: 80px;
+		text-align: center;
+        font: bold 13px;
+        color: rgb(130, 130, 130);
+		margin-right: 15px;
+}
+
+QProgressBar::chunk {
+        background-color: rgb(255, 255, 255);
+        /*border-radius: 9px;*/
+
+}
+</string>
+            </property>
+            <property name="value">
+             <number>0</number>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+            </property>
+            <property name="textVisible">
+             <bool>true</bool>
+            </property>
+            <property name="textDirection">
+             <enum>QProgressBar::BottomToTop</enum>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </item>
         <item>
          <widget class="VideoWidget" name="videoWidget" native="true">
@@ -217,14 +326,15 @@ QTreeView::branch:open:has-children:has-siblings  {
             </property>
             <property name="maximumSize">
              <size>
-              <width>70</width>
+              <width>80</width>
               <height>16777215</height>
              </size>
             </property>
             <property name="font">
              <font>
-              <family>SF Pro</family>
-              <pointsize>16</pointsize>
+              <family>Arial</family>
+              <pointsize>20</pointsize>
+              <weight>50</weight>
               <italic>false</italic>
               <bold>false</bold>
              </font>
@@ -243,8 +353,9 @@ font: 15px &quot;SF Pro&quot;;
            <widget class="QLabel" name="label_3">
             <property name="font">
              <font>
-              <family>SF Pro</family>
-              <pointsize>16</pointsize>
+              <family>Arial</family>
+              <pointsize>20</pointsize>
+              <weight>50</weight>
               <italic>false</italic>
               <bold>false</bold>
              </font>
@@ -264,14 +375,15 @@ font: 15px &quot;SF Pro&quot;;
             </property>
             <property name="maximumSize">
              <size>
-              <width>70</width>
+              <width>80</width>
               <height>16777215</height>
              </size>
             </property>
             <property name="font">
              <font>
-              <family>SF Pro</family>
-              <pointsize>16</pointsize>
+              <family>Arial</family>
+              <pointsize>20</pointsize>
+              <weight>50</weight>
               <italic>false</italic>
               <bold>false</bold>
              </font>
@@ -430,6 +542,7 @@ QSlider::add-page:horizontal {
             <property name="font">
              <font>
               <family>SF Pro Rounded</family>
+              <weight>50</weight>
               <italic>false</italic>
               <bold>false</bold>
              </font>
@@ -609,6 +722,7 @@ QComboBox:!editable:on, QComboBox::drop-down:editable:on {
              <font>
               <family>SF Pro Text</family>
               <pointsize>20</pointsize>
+              <weight>50</weight>
               <italic>false</italic>
               <bold>false</bold>
              </font>
@@ -664,11 +778,20 @@ QComboBox:!editable:on, QComboBox::drop-down:editable:on {
      <height>24</height>
     </rect>
    </property>
+   <property name="font">
+    <font>
+     <family>Arial</family>
+     <weight>50</weight>
+     <italic>false</italic>
+     <bold>false</bold>
+    </font>
+   </property>
    <widget class="QMenu" name="menuFile">
     <property name="font">
      <font>
       <family>SF Pro</family>
       <pointsize>14</pointsize>
+      <weight>50</weight>
       <italic>false</italic>
       <bold>false</bold>
      </font>
@@ -693,6 +816,7 @@ QComboBox:!editable:on, QComboBox::drop-down:editable:on {
      <font>
       <family>SF Pro</family>
       <pointsize>14</pointsize>
+      <weight>50</weight>
       <italic>false</italic>
       <bold>false</bold>
      </font>

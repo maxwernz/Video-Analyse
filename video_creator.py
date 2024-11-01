@@ -1,8 +1,10 @@
 from PIL import Image, ImageDraw, ImageFont
+from proglog import ProgressBarLogger
 from threading import Thread
 from moviepy.editor import VideoFileClip, concatenate_videoclips, TextClip, CompositeVideoClip, ColorClip, ImageClip
 import os
-from PySide6.QtCore import QObject, Signal
+import platform
+from PySide6.QtCore import QObject, Signal, QTimer
 import numpy as np
 from enum import Enum
 import textwrap
@@ -16,9 +18,7 @@ class ImageType(Enum):
 
 class VideoCreator(Thread, QObject):
 
-    progress_changed = Signal(int)
-
-    def __init__(self, clips, video_filename, save_filename, full_video):
+    def __init__(self, clips, video_filename, save_filename, full_video, logger):
         Thread.__init__(self)
         QObject.__init__(self)
 
@@ -27,6 +27,8 @@ class VideoCreator(Thread, QObject):
         self.filename = save_filename
         self.size = self.video.size
         self.full_video = full_video
+
+        self.logger = logger
 
         self.tempfilename = "/tmp/tmp_video_png.png"
 
@@ -57,12 +59,12 @@ class VideoCreator(Thread, QObject):
             subclips.append(CompositeVideoClip([video_clip, text_clip]))
 
             progress = int(i / len(self.clips) * 100)
-            self.progress_changed.emit(progress)
+            # self.progress_changed.emit(progress)
 
         combined_video = concatenate_videoclips(subclips)
-        combined_video.write_videofile(self.filename, logger=None, audio=False, threads=4)
+        combined_video.write_videofile(self.filename, logger=self.logger, audio=False, threads=4)
 
-        self.progress_changed.emit(100)
+    
 
     def create_category_clip(self, category):
         category_img = self.create_image(category, image_type=ImageType.CATEGORY)
@@ -85,7 +87,11 @@ class VideoCreator(Thread, QObject):
 
         image = Image.new("RGBA", self.size, background)
         draw = ImageDraw.Draw(image)
-        font = ImageFont.truetype("arial.ttf", font_size)
+
+        if platform.system() == "Darwin":
+            font = ImageFont.truetype("Arial.ttf", font_size)
+        else:
+            font = ImageFont.truetype("arial.ttf", font_size)
 
         lines = text.splitlines()
         text = []
@@ -103,6 +109,35 @@ class VideoCreator(Thread, QObject):
         draw.text(position, text, font=font, fill=(255, 255, 255, 255))
 
         return np.array(image)
+    
+
+class ProgressLogger(QObject, ProgressBarLogger):
+
+    progress_changed = Signal(int)
+    export_finished = Signal()
+
+    # def __init__(self):
+    #     QObject.__init__(self)
+    #     ProgressBarLogger.__init__(self)
+    #     self.timer = QTimer()
+    #     self.timer.timeout.connect(lambda: self.export_finished.emit())
+    
+    # def callback(self, **changes):
+    #     # Every time the logger message is updated, this function is called with
+    #     # the `changes` dictionary of the form `parameter: new value`.
+    #     for (parameter, value) in changes.items():
+    #         print ('Parameter %s is now %s' % (parameter, value))
+    
+    def bars_callback(self, bar, attr, value,old_value=None):
+        # Every time the logger progress is updated, this function is called        
+        percentage = (value / self.bars[bar]['total']) * 100
+
+        self.progress_changed.emit(percentage)
+
+        if old_value is not None and percentage == 100:
+            # self.timer.start(2000)
+            self.export_finished.emit()
+    
 
 
 

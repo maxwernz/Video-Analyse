@@ -36,6 +36,33 @@ class TreeWidget(QTreeWidget):
             export_action = QAction("Clips exportieren", self)
             export_action.triggered.connect(lambda: self.export_clips.emit())
             menu.addAction(export_action)
+            menu.setStyleSheet("""
+        QMenu {
+            background-color: rgb(178, 178, 178); /* Background color of the menu */
+            border: 1px solid #C0C0C0; /* Light gray border */
+            padding: 5px; /* Padding around menu */
+            border-radius: 8px; /* Large border radius */
+            font: 14px;
+        }
+
+        QMenu::item {
+            padding: 2px 4px; /* Padding for menu items */
+            color: #333; /* Text color */
+        }
+
+        QMenu::item:selected {
+            background-color: #007AFF; /* Selected item background color */
+            color: white; /* Selected item text color */
+            border-radius: 4px; /* Large border radius for selected items */
+        }
+
+        QMenu::separator {
+            height: 1px; /* Height of the separator */
+            background-color: #C0C0C0; /* Color of the separator */
+            margin: 5px 0; /* Margin around separator */
+        }
+        
+    """)
 
             menu.exec(self.mapToGlobal(event))
 

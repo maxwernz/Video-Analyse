@@ -12,6 +12,23 @@ class ProgressDialog(QDialog):
         self.progress_bar.setGeometry(10, 10, 280, 50)
         self.progress_bar.setValue(0)
 
+        self.progress_bar.setStyleSheet("""
+    QProgressBar {
+        border: 2px solid #d3d3d3;
+        border-radius: 10px;
+        background-color: #e0e0e0;
+        height: 20px;
+        text-align: center;
+        font: bold 12px;
+        color: black;
+    }
+
+    QProgressBar::chunk {
+        background-color: #007AFF;
+        border-radius: 10px;
+    }
+""")
+
         self.progress_label = QLabel("0%", self)  # QLabel für die Prozentzahl
         self.progress_label.setGeometry(10, 60, 280, 20)
         self.progress_label.setAlignment(Qt.AlignCenter)
@@ -45,3 +62,13 @@ class ProgressDialog(QDialog):
         if value == 100:
             self.raise_()
             self.close_timer.start(2000)
+
+
+if __name__ == "__main__":
+    import sys
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication(sys.argv)
+    dialog = ProgressDialog()
+    dialog.show()
+    sys.exit(app.exec())

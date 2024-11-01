@@ -18,9 +18,10 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QTransform)
 from PySide6.QtWidgets import (QAbstractItemView, QAbstractScrollArea, QApplication, QComboBox,
     QFrame, QHBoxLayout, QHeaderView, QLabel,
-    QMainWindow, QMenu, QMenuBar, QPushButton,
-    QSizePolicy, QSlider, QSpacerItem, QSplitter,
-    QStatusBar, QTreeWidgetItem, QVBoxLayout, QWidget)
+    QMainWindow, QMenu, QMenuBar, QProgressBar,
+    QPushButton, QSizePolicy, QSlider, QSpacerItem,
+    QSplitter, QStatusBar, QTabWidget, QTreeWidgetItem,
+    QVBoxLayout, QWidget)
 
 from treewidget import TreeWidget
 from videowidget import VideoWidget
@@ -30,12 +31,17 @@ class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
+        MainWindow.setWindowModality(Qt.NonModal)
         MainWindow.resize(1841, 1106)
+        font = QFont()
+        font.setFamilies([u"Arial"])
+        font.setBold(False)
+        font.setItalic(False)
+        MainWindow.setFont(font)
         MainWindow.setAcceptDrops(True)
         MainWindow.setStyleSheet(u"background-color: rgb(31, 31, 31);\n"
-"color: rgb(255, 255, 255);\n"
-"font: \"SF Pro\";\n"
-"")
+"color: rgb(255, 255, 255);")
+        MainWindow.setTabShape(QTabWidget.Rounded)
         MainWindow.setUnifiedTitleAndToolBarOnMac(False)
         self.actionLoad_Video = QAction(MainWindow)
         self.actionLoad_Video.setObjectName(u"actionLoad_Video")
@@ -63,46 +69,148 @@ class Ui_MainWindow(object):
         self.splitter.setStyleSheet(u"border-color: rgb(0, 0, 0);")
         self.splitter.setOrientation(Qt.Horizontal)
         self.treeWidget = TreeWidget(self.splitter)
+        __qtreewidgetitem = QTreeWidgetItem(self.treeWidget)
+        QTreeWidgetItem(__qtreewidgetitem)
         self.treeWidget.setObjectName(u"treeWidget")
         sizePolicy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.treeWidget.sizePolicy().hasHeightForWidth())
         self.treeWidget.setSizePolicy(sizePolicy)
+        font1 = QFont()
+        font1.setFamilies([u"Arial"])
+        font1.setPointSize(16)
+        font1.setBold(False)
+        font1.setItalic(False)
+        self.treeWidget.setFont(font1)
         self.treeWidget.setAcceptDrops(True)
-        self.treeWidget.setStyleSheet(u"background-color: rgb(55, 55, 55);\n"
-"gridline-color: rgb(255, 126, 227);\n"
-"color: rgb(255, 255, 255);\n"
-"border-color: rgb(40, 40, 40);\n"
-"font: 15px;\n"
+        self.treeWidget.setStyleSheet(u"QTreeView {\n"
+"	background-color: rgb(55, 55, 55);\n"
+"	gridline-color: rgb(255, 126, 227);\n"
+"	border-color: rgb(40, 40, 40);\n"
+"}\n"
+"\n"
+"QTreeView::header {\n"
+"	min-height: 30px;\n"
+"}\n"
+"\n"
+"QHeaderView {\n"
+"	min-height: 30px;\n"
+"	border-right: 1px solid rgb(40, 40, 40);\n"
+"	border-bottom: 1px solid rgb(40, 40, 40);\n"
+"}\n"
+"\n"
+"QHeaderView::section {\n"
+"    background-color: rgb(55, 55, 55);\n"
+"    color: rgb(255, 255, 255);\n"
+"	border-top: none;\n"
+"	border-right: 1px solid rgb(40, 40, 40);\n"
+"	border-bottom: 1px solid rgb(40, 40, 40);\n"
+"	gridline-color: rgb(255, 255, 255);\n"
+"    text-align: center;\n"
+"	min-height: 30px;\n"
+"	font: 15px;\n"
+"	padding-left: 5px;\n"
+"}\n"
+"\n"
+"QHeaderView::section:last {\n"
+"	border-right: none;\n"
+"}\n"
+"\n"
+"QHeaderView::down-arrow {\n"
+"	image: url(:/icons/chevron.compact.down.png);\n"
+"	width: 16px;\n"
+"	height: 10px;\n"
+"	padding: 5px;\n"
+"}\n"
+"\n"
+"QHeaderView::up-arrow {\n"
+"	image: url(:/icons/chevron.compact.up.png);\n"
+"	width: 16px;\n"
+"	h"
+                        "eight: 10px;\n"
+"	padding: 5px;\n"
+"}\n"
+"\n"
+"QTreeView::branch:has-children:!has-siblings:closed,\n"
+"QTreeView::branch:closed:has-children:has-siblings {\n"
+"        border-image: none;\n"
+"	image: url(:/icons/chevron.right.png);\n"
+"	padding: 2px;\n"
+"}\n"
+"\n"
+"QTreeView::branch:open:has-children:!has-siblings,\n"
+"QTreeView::branch:open:has-children:has-siblings  {\n"
+"        border-image: none;\n"
+"	image: url(:/icons/chevron.down.png);\n"
+"}\n"
+"\n"
 "")
         self.treeWidget.setFrameShape(QFrame.StyledPanel)
-        self.treeWidget.setFrameShadow(QFrame.Sunken)
+        self.treeWidget.setFrameShadow(QFrame.Plain)
         self.treeWidget.setLineWidth(4)
         self.treeWidget.setMidLineWidth(1)
         self.treeWidget.setSizeAdjustPolicy(QAbstractScrollArea.AdjustIgnored)
         self.treeWidget.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.treeWidget.setSortingEnabled(True)
+        self.treeWidget.setHeaderHidden(False)
         self.splitter.addWidget(self.treeWidget)
         self.treeWidget.header().setVisible(True)
         self.treeWidget.header().setCascadingSectionResizes(False)
+        self.treeWidget.header().setMinimumSectionSize(100)
         self.treeWidget.header().setHighlightSections(False)
         self.verticalLayoutWidget = QWidget(self.splitter)
         self.verticalLayoutWidget.setObjectName(u"verticalLayoutWidget")
         self.verticalLayout = QVBoxLayout(self.verticalLayoutWidget)
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.verticalLayout.setContentsMargins(0, 0, 0, 0)
+        self.horizontalLayout_4 = QHBoxLayout()
+        self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
         self.titleLabel = QLabel(self.verticalLayoutWidget)
         self.titleLabel.setObjectName(u"titleLabel")
-        font = QFont()
-        font.setFamilies([u"SF Pro"])
-        font.setPointSize(24)
-        font.setBold(False)
-        font.setItalic(False)
-        self.titleLabel.setFont(font)
+        font2 = QFont()
+        font2.setFamilies([u"Arial"])
+        font2.setPointSize(24)
+        font2.setBold(False)
+        font2.setItalic(False)
+        self.titleLabel.setFont(font2)
         self.titleLabel.setIndent(10)
 
-        self.verticalLayout.addWidget(self.titleLabel)
+        self.horizontalLayout_4.addWidget(self.titleLabel)
+
+        self.horizontalSpacer_5 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_4.addItem(self.horizontalSpacer_5)
+
+        self.progressBar = QProgressBar(self.verticalLayoutWidget)
+        self.progressBar.setObjectName(u"progressBar")
+        self.progressBar.setStyleSheet(u"QProgressBar {\n"
+"		border: 2px solid rgb(255, 255, 255);\n"
+"        border-radius: 7px;\n"
+"        background-color: rgb(55, 55, 55);\n"
+"        height: 18px;\n"
+"		max-width: 80px;\n"
+"		text-align: center;\n"
+"        font: bold 13px;\n"
+"        color: rgb(130, 130, 130);\n"
+"		margin-right: 15px;\n"
+"}\n"
+"\n"
+"QProgressBar::chunk {\n"
+"        background-color: rgb(255, 255, 255);\n"
+"        /*border-radius: 9px;*/\n"
+"\n"
+"}\n"
+"")
+        self.progressBar.setValue(0)
+        self.progressBar.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignVCenter)
+        self.progressBar.setTextVisible(True)
+        self.progressBar.setTextDirection(QProgressBar.BottomToTop)
+
+        self.horizontalLayout_4.addWidget(self.progressBar)
+
+
+        self.verticalLayout.addLayout(self.horizontalLayout_4)
 
         self.videoWidget = VideoWidget(self.verticalLayoutWidget)
         self.videoWidget.setObjectName(u"videoWidget")
@@ -126,13 +234,13 @@ class Ui_MainWindow(object):
         self.position_label = QLabel(self.verticalLayoutWidget)
         self.position_label.setObjectName(u"position_label")
         self.position_label.setMinimumSize(QSize(70, 0))
-        self.position_label.setMaximumSize(QSize(70, 16777215))
-        font1 = QFont()
-        font1.setFamilies([u"SF Pro"])
-        font1.setPointSize(16)
-        font1.setBold(False)
-        font1.setItalic(False)
-        self.position_label.setFont(font1)
+        self.position_label.setMaximumSize(QSize(80, 16777215))
+        font3 = QFont()
+        font3.setFamilies([u"Arial"])
+        font3.setPointSize(20)
+        font3.setBold(False)
+        font3.setItalic(False)
+        self.position_label.setFont(font3)
         self.position_label.setStyleSheet(u"QLabels {\n"
 "font: 15px \"SF Pro\";\n"
 "}")
@@ -141,15 +249,15 @@ class Ui_MainWindow(object):
 
         self.label_3 = QLabel(self.verticalLayoutWidget)
         self.label_3.setObjectName(u"label_3")
-        self.label_3.setFont(font1)
+        self.label_3.setFont(font3)
 
         self.horizontalLayout_3.addWidget(self.label_3)
 
         self.duration_label = QLabel(self.verticalLayoutWidget)
         self.duration_label.setObjectName(u"duration_label")
         self.duration_label.setMinimumSize(QSize(70, 0))
-        self.duration_label.setMaximumSize(QSize(70, 16777215))
-        self.duration_label.setFont(font1)
+        self.duration_label.setMaximumSize(QSize(80, 16777215))
+        self.duration_label.setFont(font3)
 
         self.horizontalLayout_3.addWidget(self.duration_label)
 
@@ -239,11 +347,11 @@ class Ui_MainWindow(object):
 
         self.playPauseButton = QPushButton(self.verticalLayoutWidget)
         self.playPauseButton.setObjectName(u"playPauseButton")
-        font2 = QFont()
-        font2.setFamilies([u"SF Pro Rounded"])
-        font2.setBold(False)
-        font2.setItalic(False)
-        self.playPauseButton.setFont(font2)
+        font4 = QFont()
+        font4.setFamilies([u"SF Pro Rounded"])
+        font4.setBold(False)
+        font4.setItalic(False)
+        self.playPauseButton.setFont(font4)
         self.playPauseButton.setAutoFillBackground(False)
         icon2 = QIcon()
         icon2.addFile(u":/icons/custom.play.fill.png", QSize(), QIcon.Mode.Normal, QIcon.State.Off)
@@ -338,12 +446,12 @@ class Ui_MainWindow(object):
         self.clipButton = QPushButton(self.verticalLayoutWidget)
         self.clipButton.setObjectName(u"clipButton")
         self.clipButton.setEnabled(True)
-        font3 = QFont()
-        font3.setFamilies([u"SF Pro Text"])
-        font3.setPointSize(20)
-        font3.setBold(False)
-        font3.setItalic(False)
-        self.clipButton.setFont(font3)
+        font5 = QFont()
+        font5.setFamilies([u"SF Pro Text"])
+        font5.setPointSize(20)
+        font5.setBold(False)
+        font5.setItalic(False)
+        self.clipButton.setFont(font5)
         self.clipButton.setStyleSheet(u"padding-right: 5px")
         icon4 = QIcon()
         icon4.addFile(u":/icons/record.circle.png", QSize(), QIcon.Mode.Normal, QIcon.State.Off)
@@ -367,19 +475,20 @@ class Ui_MainWindow(object):
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName(u"menubar")
         self.menubar.setGeometry(QRect(0, 0, 1841, 24))
+        self.menubar.setFont(font)
         self.menuFile = QMenu(self.menubar)
         self.menuFile.setObjectName(u"menuFile")
-        font4 = QFont()
-        font4.setFamilies([u"SF Pro"])
-        font4.setPointSize(14)
-        font4.setBold(False)
-        font4.setItalic(False)
-        self.menuFile.setFont(font4)
+        font6 = QFont()
+        font6.setFamilies([u"SF Pro"])
+        font6.setPointSize(14)
+        font6.setBold(False)
+        font6.setItalic(False)
+        self.menuFile.setFont(font6)
         self.menuFile.setTearOffEnabled(False)
         self.menuFile.setSeparatorsCollapsible(False)
         self.menuBearbeiten = QMenu(self.menubar)
         self.menuBearbeiten.setObjectName(u"menuBearbeiten")
-        self.menuBearbeiten.setFont(font4)
+        self.menuBearbeiten.setFont(font6)
         MainWindow.setMenuBar(self.menubar)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
@@ -431,6 +540,15 @@ class Ui_MainWindow(object):
         ___qtreewidgetitem.setText(2, QCoreApplication.translate("MainWindow", u"Stop", None));
         ___qtreewidgetitem.setText(1, QCoreApplication.translate("MainWindow", u"Start", None));
         ___qtreewidgetitem.setText(0, QCoreApplication.translate("MainWindow", u"Clip", None));
+
+        __sortingEnabled = self.treeWidget.isSortingEnabled()
+        self.treeWidget.setSortingEnabled(False)
+        ___qtreewidgetitem1 = self.treeWidget.topLevelItem(0)
+        ___qtreewidgetitem1.setText(0, QCoreApplication.translate("MainWindow", u"test item", None));
+        ___qtreewidgetitem2 = ___qtreewidgetitem1.child(0)
+        ___qtreewidgetitem2.setText(0, QCoreApplication.translate("MainWindow", u"test2", None));
+        self.treeWidget.setSortingEnabled(__sortingEnabled)
+
         self.titleLabel.setText(QCoreApplication.translate("MainWindow", u"No Video", None))
         self.position_label.setText(QCoreApplication.translate("MainWindow", u"00:00:00", None))
         self.label_3.setText(QCoreApplication.translate("MainWindow", u"/", None))

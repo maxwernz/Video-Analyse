@@ -1,13 +1,16 @@
 <RCC>
   <qresource>
-    <file>icons/chevron.down.square.png</file>
     <file>icons/gauge.with.needle.fill.png</file>
     <file>icons/filemenu.and.selection.png</file>
     <file>icons/pencil.png</file>
+    <file>icons/chevron.compact.down.png</file>
+    <file>icons/chevron.compact.up.png</file>
     <file>icons/app_icon.icns</file>
     <file>icons/backward.fill.png</file>
     <file>icons/custom.play.fill.png</file>
     <file>icons/forward.fill.png</file>
+    <file>icons/chevron.down.png</file>
+    <file>icons/chevron.right.png</file>
     <file>icons/arrowtriangle.down.fill.png</file>
     <file>icons/pause.fill.png</file>
     <file>icons/record.circle.action.png</file>

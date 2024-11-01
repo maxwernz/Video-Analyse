@@ -2,14 +2,14 @@ import sys
 import os
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMessageBox, QLabel
 from PySide6 import QtCore, QtGui
-from PySide6.QtCore import QUrl, Qt, QSignalBlocker, Signal, Property, QTranslator
+from PySide6.QtCore import QUrl, Qt, QSignalBlocker, Signal, Property, QTranslator, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from Ui_main_window import Ui_MainWindow
 from clip_handler import CreateClip
 from treewidget_item import ClipTreeItem
 import pickle
 from treewidget import TreeWidget
-from video_creator import VideoCreator
+from video_creator import VideoCreator, ProgressLogger
 from progress_dialog import ProgressDialog
 from util import milliseconds_to_hhmmss
 
@@ -37,6 +37,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setup_shortcuts()
 
         self.statusbar = self.statusBar()
+        self.progressBar.setVisible(False)
 
         self.statusBarLabel = QLabel()
         self.statusbar.addWidget(self.statusBarLabel)
@@ -256,14 +257,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         
 
-        video_creator = VideoCreator(clips, self.file_name, file_name, full_video)
-        progress_dialog = ProgressDialog(self)
-        video_creator.progress_changed.connect(progress_dialog.set_progress)
+        logger = ProgressLogger()
+        video_creator = VideoCreator(clips, self.file_name, file_name, full_video, logger=logger)
+        # progress_dialog = ProgressDialog(self)
+        # video_creator.progress_changed.connect(progress_dialog.set_progress)
+        self.progressBar.setVisible(True)
+        logger.progress_changed.connect(self.progressBar.setValue)
+        logger.export_finished.connect(lambda: self.progressBar.setVisible(False))
 
         try:
             video_creator.start()
-            progress_dialog.center_on_main_window(self)
-            progress_dialog.show()
+            # progress_dialog.center_on_main_window(self)
+            # progress_dialog.show()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"An error occurred: {e}")
 
