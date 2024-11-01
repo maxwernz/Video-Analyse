@@ -232,6 +232,34 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_4.addItem(self.horizontalSpacer_5)
 
+        self.exportLayout = QHBoxLayout()
+        self.exportLayout.setSpacing(4)
+        self.exportLayout.setObjectName(u"exportLayout")
+        self.exportFinishedLabel = QLabel(self.verticalLayoutWidget)
+        self.exportFinishedLabel.setObjectName(u"exportFinishedLabel")
+        font3 = QFont()
+        font3.setFamilies([u"Arial"])
+        font3.setPointSize(16)
+        self.exportFinishedLabel.setFont(font3)
+
+        self.exportLayout.addWidget(self.exportFinishedLabel)
+
+        self.openExportButton = QPushButton(self.verticalLayoutWidget)
+        self.openExportButton.setObjectName(u"openExportButton")
+        font4 = QFont()
+        font4.setFamilies([u"Arial"])
+        font4.setPointSize(16)
+        font4.setBold(True)
+        self.openExportButton.setFont(font4)
+        self.openExportButton.setStyleSheet(u"QPushButton:hover {\n"
+"	text-decoration: underline;\n"
+"}")
+
+        self.exportLayout.addWidget(self.openExportButton)
+
+
+        self.horizontalLayout_4.addLayout(self.exportLayout)
+
         self.progressBar = QProgressBar(self.verticalLayoutWidget)
         self.progressBar.setObjectName(u"progressBar")
         self.progressBar.setStyleSheet(u"QProgressBar {\n"
@@ -264,8 +292,9 @@ class Ui_MainWindow(object):
 
         self.line = QFrame(self.verticalLayoutWidget)
         self.line.setObjectName(u"line")
+        self.line.setStyleSheet(u"background-color: rgb(40, 40, 40);")
+        self.line.setFrameShadow(QFrame.Sunken)
         self.line.setFrameShape(QFrame.Shape.HLine)
-        self.line.setFrameShadow(QFrame.Shadow.Sunken)
 
         self.verticalLayout.addWidget(self.line)
 
@@ -291,12 +320,12 @@ class Ui_MainWindow(object):
         self.position_label.setObjectName(u"position_label")
         self.position_label.setMinimumSize(QSize(70, 0))
         self.position_label.setMaximumSize(QSize(80, 16777215))
-        font3 = QFont()
-        font3.setFamilies([u"Arial"])
-        font3.setPointSize(20)
-        font3.setBold(False)
-        font3.setItalic(False)
-        self.position_label.setFont(font3)
+        font5 = QFont()
+        font5.setFamilies([u"Arial"])
+        font5.setPointSize(20)
+        font5.setBold(False)
+        font5.setItalic(False)
+        self.position_label.setFont(font5)
         self.position_label.setStyleSheet(u"QLabels {\n"
 "font: 15px \"SF Pro\";\n"
 "}")
@@ -305,7 +334,7 @@ class Ui_MainWindow(object):
 
         self.label_3 = QLabel(self.verticalLayoutWidget)
         self.label_3.setObjectName(u"label_3")
-        self.label_3.setFont(font3)
+        self.label_3.setFont(font5)
 
         self.horizontalLayout_3.addWidget(self.label_3)
 
@@ -313,7 +342,7 @@ class Ui_MainWindow(object):
         self.duration_label.setObjectName(u"duration_label")
         self.duration_label.setMinimumSize(QSize(70, 0))
         self.duration_label.setMaximumSize(QSize(80, 16777215))
-        self.duration_label.setFont(font3)
+        self.duration_label.setFont(font5)
 
         self.horizontalLayout_3.addWidget(self.duration_label)
 
@@ -403,11 +432,11 @@ class Ui_MainWindow(object):
 
         self.playPauseButton = QPushButton(self.verticalLayoutWidget)
         self.playPauseButton.setObjectName(u"playPauseButton")
-        font4 = QFont()
-        font4.setFamilies([u"SF Pro Rounded"])
-        font4.setBold(False)
-        font4.setItalic(False)
-        self.playPauseButton.setFont(font4)
+        font6 = QFont()
+        font6.setFamilies([u"SF Pro Rounded"])
+        font6.setBold(False)
+        font6.setItalic(False)
+        self.playPauseButton.setFont(font6)
         self.playPauseButton.setAutoFillBackground(False)
         icon2 = QIcon()
         icon2.addFile(u":/icons/custom.play.fill.png", QSize(), QIcon.Mode.Normal, QIcon.State.Off)
@@ -502,12 +531,12 @@ class Ui_MainWindow(object):
         self.clipButton = QPushButton(self.verticalLayoutWidget)
         self.clipButton.setObjectName(u"clipButton")
         self.clipButton.setEnabled(True)
-        font5 = QFont()
-        font5.setFamilies([u"SF Pro Text"])
-        font5.setPointSize(20)
-        font5.setBold(False)
-        font5.setItalic(False)
-        self.clipButton.setFont(font5)
+        font7 = QFont()
+        font7.setFamilies([u"SF Pro Text"])
+        font7.setPointSize(20)
+        font7.setBold(False)
+        font7.setItalic(False)
+        self.clipButton.setFont(font7)
         self.clipButton.setStyleSheet(u"padding-right: 5px")
         icon4 = QIcon()
         icon4.addFile(u":/icons/record.circle.png", QSize(), QIcon.Mode.Normal, QIcon.State.Off)
@@ -534,17 +563,17 @@ class Ui_MainWindow(object):
         self.menubar.setFont(font)
         self.menuFile = QMenu(self.menubar)
         self.menuFile.setObjectName(u"menuFile")
-        font6 = QFont()
-        font6.setFamilies([u"SF Pro"])
-        font6.setPointSize(14)
-        font6.setBold(False)
-        font6.setItalic(False)
-        self.menuFile.setFont(font6)
+        font8 = QFont()
+        font8.setFamilies([u"SF Pro"])
+        font8.setPointSize(14)
+        font8.setBold(False)
+        font8.setItalic(False)
+        self.menuFile.setFont(font8)
         self.menuFile.setTearOffEnabled(False)
         self.menuFile.setSeparatorsCollapsible(False)
         self.menuBearbeiten = QMenu(self.menubar)
         self.menuBearbeiten.setObjectName(u"menuBearbeiten")
-        self.menuBearbeiten.setFont(font6)
+        self.menuBearbeiten.setFont(font8)
         MainWindow.setMenuBar(self.menubar)
 
         self.menubar.addAction(self.menuFile.menuAction())
@@ -603,6 +632,8 @@ class Ui_MainWindow(object):
         self.treeWidget.setSortingEnabled(__sortingEnabled)
 
         self.titleLabel.setText(QCoreApplication.translate("MainWindow", u"No Video", None))
+        self.exportFinishedLabel.setText(QCoreApplication.translate("MainWindow", u"Export erfolgreich", None))
+        self.openExportButton.setText(QCoreApplication.translate("MainWindow", u"\u00d6ffnen", None))
         self.position_label.setText(QCoreApplication.translate("MainWindow", u"00:00:00", None))
         self.label_3.setText(QCoreApplication.translate("MainWindow", u"/", None))
         self.duration_label.setText(QCoreApplication.translate("MainWindow", u"00:00:00", None))

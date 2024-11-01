@@ -3,7 +3,7 @@ import os
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMessageBox, QLabel
 from PySide6 import QtCore, QtGui
 from PySide6.QtCore import QUrl, Qt, QSignalBlocker, Signal, Property, QTranslator, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QKeySequence, QShortcut, QDesktopServices
 from Ui_main_window import Ui_MainWindow
 from clip_handler import CreateClip
 from treewidget_item import ClipTreeItem
@@ -31,13 +31,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionVideo_Exportieren.triggered.connect(lambda: self.export(full_video=True))
         self.actionAnalyse_entfernen.triggered.connect(self.remove_analysis)
         self.position_slider.sliderMoved.connect(self.videoWidget.set_position)
+
+        self.export_timer = QTimer()
         
         self.setup_connections()
         self.setup_shortcuts()
 
         self.progressBar.setVisible(False)
+        self.openExportButton.setVisible(False)
+        self.exportFinishedLabel.setVisible(False)
         self.clipHandler.setVisible(False)
         self.editHandler.setVisible(False)
+
 
         self.treeWidget.set_edit_handler(self.editHandler)
 
@@ -67,6 +72,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.treeWidget.export_clips.connect(self.export)
         self.treeWidget.item_changed.connect(self.set_saved_status)
         self.treeWidget.clip_handler_opened.connect(self.disable_clip_handler)
+        self.export_timer.timeout.connect(lambda: self.exportFinishedLabel.setVisible(False))
+        self.export_timer.timeout.connect(lambda: self.openExportButton.setVisible(False))
+        self.export_timer.timeout.connect(self.openExportButton.clicked.disconnect)
 
 
     def setup_shortcuts(self):
@@ -287,16 +295,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         video_creator = VideoCreator(clips, self.file_name, file_name, full_video, logger=logger)
         self.progressBar.setVisible(True)
         logger.progress_changed.connect(self.progressBar.setValue)
-        logger.export_finished.connect(lambda: self.progressBar.setVisible(False))
+        logger.export_finished.connect(lambda: self.export_finished(file_name))
 
         try:
             video_creator.start()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"An error occurred: {e}")
 
+    
+    def export_finished(self, file_name):
+        self.progressBar.setVisible(False)
+        self.exportFinishedLabel.setVisible(True)
+        self.openExportButton.setVisible(True)
+        self.openExportButton.clicked.connect(lambda: self.open_file_explorer(file_name))
+        self.export_timer.start(10000)
+
+
     def remove_analysis(self):
         self.treeWidget.remove_analysis()
         self.current_file = None
+
+    def open_file_explorer(self, path):
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls:
@@ -344,5 +364,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.duration_label.setText(f"{milliseconds_to_hhmmss(duration)}")
 
 
-
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
 
