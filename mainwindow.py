@@ -23,8 +23,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         super().__init__()
         # self.set_language('de')
         self.setupUi(self)
-        self.treeWidget.header().setVisible(True)
-        self.videoStack.setCurrentIndex(1)
 
         self.actionLoad_Video.triggered.connect(self.open_video)
         self.actionAnalyse_speichern.triggered.connect(self.save_analysis)
@@ -33,8 +31,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionVideo_Exportieren.triggered.connect(lambda: self.export(full_video=True))
         self.actionAnalyse_entfernen.triggered.connect(self.remove_analysis)
         self.position_slider.sliderMoved.connect(self.videoWidget.set_position)
-
-        self.loadVideoButton.clicked.connect(self.open_video)
 
         self.export_timer = QTimer()
         
@@ -46,6 +42,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.exportFinishedLabel.setVisible(False)
         self.clipHandler.setVisible(False)
         self.editHandler.setVisible(False)
+
 
         self.treeWidget.set_edit_handler(self.editHandler)
 
@@ -179,9 +176,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.videoWidget.media_player.durationChanged.connect(self.duration_changed)
             self.videoWidget.load_video(QUrl.fromLocalFile(self.file_name))
             self.titleLabel.setText(os.path.basename(file_name).removesuffix('.mp4'))
-
-            self.videoThumbnailsWidget.add_video(file_name)
-            self.videoStack.setCurrentIndex(0)
 
     def save_analysis(self):
 
