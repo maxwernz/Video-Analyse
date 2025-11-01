@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QAbstractScrollArea, QApplicat
     QLabel, QMainWindow, QMenu, QMenuBar,
     QProgressBar, QPushButton, QSizePolicy, QSlider,
     QSpacerItem, QSplitter, QStackedWidget, QTabWidget,
-    QTreeWidgetItem, QVBoxLayout, QWidget)
+    QTableWidgetItem, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from clip_handler import (CreateClip, EditClip)
 from treewidget import TreeWidget

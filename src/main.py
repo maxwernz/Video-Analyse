@@ -6,7 +6,7 @@ from mainwindow import MainWindow
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MainWindow()
-    # window.load_analysis("/Users/max/Downloads/TSV vs. S3L.analysis")
-    # window.load_video("/Users/max/Downloads/IMG_0024.MOV")
+    window.load_video("/Volumes/T7/Handball/Videos/Handschuhsheim/TSV vs Hockenheim.mp4")
+    window.load_video("/Volumes/T7/Handball/Videos/Handschuhsheim/TSV vs. Dossenheim.mp4")
     window.show()
     sys.exit(app.exec())

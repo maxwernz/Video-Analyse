@@ -145,7 +145,7 @@ QTabWidget::tab-bar {
            <widget class="QWidget" name="videosPage">
             <layout class="QVBoxLayout" name="verticalLayout_5">
              <item>
-              <widget class="VideoThumbnailWidget" name="videoThumbnailsWidget" native="true"/>
+              <widget class="VideoThumbnailWidget" name="videoThumbnailsWidget"/>
              </item>
             </layout>
            </widget>
@@ -1189,9 +1189,8 @@ QComboBox:!editable:on, QComboBox::drop-down:editable:on {
   </customwidget>
   <customwidget>
    <class>VideoThumbnailWidget</class>
-   <extends>QWidget</extends>
+   <extends>QTableWidget</extends>
    <header>video_thumbnail_widget.h</header>
-   <container>1</container>
   </customwidget>
  </customwidgets>
  <resources>

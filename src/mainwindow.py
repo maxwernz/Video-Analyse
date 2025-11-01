@@ -50,8 +50,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.treeWidget.set_edit_handler(self.editHandler)
 
 
-
-
         self.setAcceptDrops(True)
 
         self.clip_start = None
