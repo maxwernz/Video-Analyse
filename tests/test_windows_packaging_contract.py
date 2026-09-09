@@ -88,12 +88,45 @@ def test_a_desktop_shortcut_is_offered_but_not_preselected(
 def test_the_installer_carries_the_declared_semantic_version(
     installer_script: str,
 ) -> None:
+    from build_config.shared import artifact_name
+
     assert directive(installer_script, "AppVersion") == "{#ApplicationVersion}"
     assert directive(installer_script, "VersionInfoVersion") == "{#ApplicationVersion}"
+    assert directive(installer_script, "OutputBaseFilename") == "{#OutputBaseFilename}"
     assert (
-        directive(installer_script, "OutputBaseFilename")
-        == "{#ArtifactBaseName}-{#ApplicationVersion}-x64-setup"
+        artifact_name("x64-setup")
+        == f"Video-Analyse-{application_version()}-x64-setup"
     )
+
+
+def test_the_build_script_supplies_every_value_the_installer_requires(
+    installer_script: str,
+) -> None:
+    """Nothing the installer needs may be restated inside the installer script."""
+
+    required_defines = set(re.findall(r"^#ifndef (\w+)$", installer_script, re.MULTILINE))
+    assert required_defines, "the installer script declares no required defines"
+
+    build_script = BUILD_SCRIPT.read_text(encoding="utf-8")
+    supplied = set(re.findall(r"/D(\w+)=", build_script))
+
+    assert required_defines <= supplied, (
+        "the build script never supplies "
+        f"{sorted(required_defines - supplied)}"
+    )
+
+
+def test_the_installer_reuses_the_shared_application_metadata() -> None:
+    build_script = BUILD_SCRIPT.read_text(encoding="utf-8")
+
+    assert "import build_config.shared as shared" in build_script
+    for shared_name in (
+        "shared.APPLICATION_NAME",
+        "shared.PUBLISHER",
+        "shared.application_version()",
+        "shared.artifact_name(",
+    ):
+        assert shared_name in build_script, f"the build script does not reuse {shared_name}"
 
 
 def test_windows_packaging_reuses_the_shared_configuration() -> None:
@@ -131,6 +164,8 @@ def test_one_documented_command_builds_the_windows_artifact() -> None:
     assert "build_config/windows.spec" in build_script
     assert "--smoke-test" in build_script
     assert "windows_installer.iss" in build_script
+    # x64compatible needs Inno Setup 6.3, so an older compiler must be rejected.
+    assert '[version]"6.3"' in build_script
 
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     assert "scripts/build_windows.ps1" in readme

@@ -46,6 +46,12 @@ def application_version() -> str:
         return tomllib.load(project_definition)["project"]["version"]
 
 
+def artifact_name(platform_suffix: str) -> str:
+    """The published artifact name for a platform, without its file extension."""
+
+    return f"{ARTIFACT_BASE_NAME}-{application_version()}-{platform_suffix}"
+
+
 def bundled_data() -> list[tuple[str, str]]:
     """Resources every packaged application must carry."""
 

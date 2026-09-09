@@ -8,8 +8,8 @@
     packaged application, and fails if the packaged application cannot complete
     its smoke check.
 
-    Requires uv and Inno Setup 6 (ISCC.exe). Install Inno Setup with
-    `winget install JRSoftware.InnoSetup` if it is not already present.
+    Requires uv and Inno Setup 6.3 or newer (ISCC.exe). Install Inno Setup with
+    `winget install JRSoftware.InnoSetup` or `choco install innosetup`.
 #>
 
 [CmdletBinding()]
@@ -21,28 +21,43 @@ $PSNativeCommandUseErrorActionPreference = $true
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
 
-$applicationName = "Video Analyse"
-$packagedApplication = Join-Path $projectRoot "dist\$applicationName"
-$executable = Join-Path $packagedApplication "$applicationName.exe"
-
-if (-not $IsWindows) {
+# $IsWindows exists only in PowerShell 6 and newer, so ask the platform itself.
+if ($env:OS -ne "Windows_NT") {
     throw "This build must run natively on Windows."
 }
 if ($env:PROCESSOR_ARCHITECTURE -ne "AMD64") {
     throw "This build must run natively on x64 Windows, not $env:PROCESSOR_ARCHITECTURE."
 }
 
-function Resolve-InnoSetupCompiler {
-    $onPath = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
-    if ($onPath) { return $onPath.Source }
+$minimumInnoSetupVersion = [version]"6.3"
 
+function Resolve-InnoSetupCompiler {
+    <#
+        The installer uses the x64compatible architecture identifier, which
+        Inno Setup only understands from 6.3 onwards, so an older compiler must
+        be reported here rather than as an obscure compilation error.
+    #>
+
+    $candidates = @()
+    $onPath = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
+    if ($onPath) { $candidates += $onPath.Source }
     foreach ($programFiles in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
-        if (-not $programFiles) { continue }
-        $candidate = Join-Path $programFiles "Inno Setup 6\ISCC.exe"
-        if (Test-Path $candidate) { return $candidate }
+        if ($programFiles) { $candidates += (Join-Path $programFiles "Inno Setup 6\ISCC.exe") }
     }
 
-    throw "Inno Setup 6 (ISCC.exe) was not found. Install it with 'winget install JRSoftware.InnoSetup'."
+    foreach ($candidate in $candidates) {
+        if (-not (Test-Path $candidate)) { continue }
+
+        $reported = (Get-Item $candidate).VersionInfo.ProductVersion
+        $found = [version]($reported -replace '^(\d+(\.\d+)*).*$', '$1')
+        if ($found -lt $minimumInnoSetupVersion) {
+            Write-Warning "Ignoring Inno Setup $found at $candidate; $minimumInnoSetupVersion or newer is required."
+            continue
+        }
+        return $candidate
+    }
+
+    throw "Inno Setup $minimumInnoSetupVersion or newer (ISCC.exe) was not found. Install it with 'winget install JRSoftware.InnoSetup'."
 }
 
 $innoSetupCompiler = Resolve-InnoSetupCompiler
@@ -50,9 +65,16 @@ $innoSetupCompiler = Resolve-InnoSetupCompiler
 Write-Host "==> Installing locked dependencies"
 uv sync --locked --all-groups
 
-$version = (uv run python -c "import build_config.shared as s; print(s.application_version())").Trim()
+# build_config/shared.py is the single owner of application metadata; reading it
+# here keeps the installer from restating the name, publisher, or version.
+$metadata = uv run python -c "import json; import build_config.shared as shared; print(json.dumps({'name': shared.APPLICATION_NAME, 'publisher': shared.PUBLISHER, 'version': shared.application_version(), 'installer': shared.artifact_name('x64-setup')}))" | ConvertFrom-Json
 
-Write-Host "==> Building $applicationName $version for x64"
+$applicationName = $metadata.name
+$packagedApplication = Join-Path $projectRoot "dist\$applicationName"
+$executable = Join-Path $packagedApplication "$applicationName.exe"
+$installer = Join-Path $projectRoot "dist\$($metadata.installer).exe"
+
+Write-Host "==> Building $applicationName $($metadata.version) for x64"
 Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
 uv run pyinstaller build_config/windows.spec --noconfirm --distpath dist --workpath build
 
@@ -67,10 +89,19 @@ Write-Host "==> Running the packaged smoke check"
 $smokeDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("video-analyse-smoke-" + [System.Guid]::NewGuid())
 New-Item -ItemType Directory -Path $smokeDirectory | Out-Null
 $smokeReport = Join-Path $smokeDirectory "smoke-report.json"
+$smokeEnvironment = @{
+    QT_QPA_PLATFORM             = "offscreen"
+    VIDEO_ANALYSE_LOG_DIR       = (Join-Path $smokeDirectory "logs")
+    VIDEO_ANALYSE_SMOKE_REPORT  = $smokeReport
+}
+$previousEnvironment = @{}
+foreach ($name in $smokeEnvironment.Keys) {
+    $previousEnvironment[$name] = [System.Environment]::GetEnvironmentVariable($name)
+}
 try {
-    $env:QT_QPA_PLATFORM = "offscreen"
-    $env:VIDEO_ANALYSE_LOG_DIR = Join-Path $smokeDirectory "logs"
-    $env:VIDEO_ANALYSE_SMOKE_REPORT = $smokeReport
+    foreach ($name in $smokeEnvironment.Keys) {
+        [System.Environment]::SetEnvironmentVariable($name, $smokeEnvironment[$name])
+    }
 
     $smoke = Start-Process -FilePath $executable -ArgumentList "--smoke-test" -Wait -PassThru -NoNewWindow
     if ($smoke.ExitCode -ne 0) {
@@ -86,14 +117,19 @@ try {
     Write-Host "    bundled font: $($report.font)"
 }
 finally {
+    foreach ($name in $smokeEnvironment.Keys) {
+        [System.Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name])
+    }
     Remove-Item -Recurse -Force $smokeDirectory -ErrorAction SilentlyContinue
-    Remove-Item env:QT_QPA_PLATFORM, env:VIDEO_ANALYSE_LOG_DIR, env:VIDEO_ANALYSE_SMOKE_REPORT -ErrorAction SilentlyContinue
 }
 
-$installer = Join-Path $projectRoot "dist\Video-Analyse-$version-x64-setup.exe"
 Write-Host "==> Creating $installer"
 & $innoSetupCompiler `
-    "/DApplicationVersion=$version" `
+    "/DApplicationName=$applicationName" `
+    "/DApplicationVersion=$($metadata.version)" `
+    "/DPublisher=$($metadata.publisher)" `
+    "/DExecutableName=$applicationName.exe" `
+    "/DOutputBaseFilename=$($metadata.installer)" `
     "/DSourceDirectory=$packagedApplication" `
     "/DOutputDirectory=$(Join-Path $projectRoot 'dist')" `
     "/DIconFile=$(Join-Path $projectRoot 'icons\app_icon.ico')" `

@@ -93,6 +93,10 @@ jobs:
         shell: pwsh
 
       - name: Verify the installer end to end
+        # The gate turns "artifact missing" skips into failures, so this job
+        # cannot report success for a verification that never ran.
+        env:
+          VIDEO_ANALYSE_REQUIRE_PACKAGE: "1"
         run: uv run python -m pytest tests/test_windows_package.py
         shell: pwsh
 

@@ -1,21 +1,34 @@
 ; Per-user Windows installer for Video Analyse.
 ;
-; scripts/build_windows.ps1 supplies every value that varies between builds, so
-; this script never repeats the version, the publisher, or any path:
-;   ISCC /DApplicationVersion=... /DSourceDirectory=... /DOutputDirectory=... /DIconFile=...
+; Every value that build_config/shared.py owns arrives as a command-line define,
+; so application metadata cannot drift between platforms. scripts/build_windows.ps1
+; is the only supported caller:
+;
+;   ISCC /DApplicationName=... /DApplicationVersion=... /DPublisher=...
+;        /DExecutableName=... /DOutputBaseFilename=... /DSourceDirectory=...
+;        /DOutputDirectory=... /DIconFile=...
 ;
 ; The installer installs for the current user only, so Windows never asks for
 ; administrator elevation. AppId is a fixed GUID: it is the stable application
 ; identity that lets a later version upgrade an existing installation in place
 ; and keeps one entry in the installed-apps list across upgrades.
+;
+; Requires Inno Setup 6.3 or newer for the x64compatible architecture identifier.
 
-#define ApplicationName "Video Analyse"
-#define ArtifactBaseName "Video-Analyse"
-#define Publisher "maxwernz"
-#define ExecutableName "Video Analyse.exe"
-
+#ifndef ApplicationName
+  #error ApplicationName must be defined by the build script
+#endif
 #ifndef ApplicationVersion
   #error ApplicationVersion must be defined by the build script
+#endif
+#ifndef Publisher
+  #error Publisher must be defined by the build script
+#endif
+#ifndef ExecutableName
+  #error ExecutableName must be defined by the build script
+#endif
+#ifndef OutputBaseFilename
+  #error OutputBaseFilename must be defined by the build script
 #endif
 #ifndef SourceDirectory
   #error SourceDirectory must be defined by the build script
@@ -50,7 +63,7 @@ SolidCompression=yes
 WizardStyle=modern
 SetupIconFile={#IconFile}
 OutputDir={#OutputDirectory}
-OutputBaseFilename={#ArtifactBaseName}-{#ApplicationVersion}-x64-setup
+OutputBaseFilename={#OutputBaseFilename}
 CloseApplications=yes
 RestartApplications=no
 
