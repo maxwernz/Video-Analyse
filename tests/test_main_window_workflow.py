@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E4
 import mainwindow as mainwindow_module  # noqa: E402
 from analysis import UnsavedChangesChoice, new_analysis_document  # noqa: E402
 from clip_handler import ClipDraft, ClipHandler  # noqa: E402
+from playback import FakePlayback  # noqa: E402
 from mainwindow import MainWindow  # noqa: E402
 from treewidget import TreeWidget  # noqa: E402
 from treewidget_item import ClipTreeItem  # noqa: E402
@@ -44,7 +45,7 @@ def silent_message_boxes(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str
 
 @pytest.fixture
 def window(application: QApplication):
-    main_window = MainWindow()
+    main_window = MainWindow(playback=FakePlayback())
     yield main_window
     main_window.document = new_analysis_document()
     main_window.close()
@@ -551,3 +552,108 @@ def test_adding_a_video_does_not_interrupt_the_one_under_review(
 
     _create_clip(window, name="Fast break")
     assert window.analysis.clips[0].source_video_id == first.id
+
+
+def test_navigating_to_a_clip_seeks_the_player_to_its_start(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    _create_clip(window, start_ms=12_000, end_ms=14_000)
+
+    window.jump_to_clip(_clip_rows(window)[0])
+
+    assert window.player.position() == 12_000
+
+
+def test_a_clip_is_marked_against_the_player_position(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    window.player.play()
+    window.player.seek(30_000)
+    window.clip_started()
+    window.player.seek(35_000)
+
+    window.clip_stopped()
+
+    assert window.player.is_playing() is False
+    assert window.clipHandler.isVisibleTo(window) is True
+    assert (window.clipHandler.start_time, window.clipHandler.stop_time) == (
+        30_000,
+        35_000,
+    )
+
+
+def test_the_play_button_follows_what_the_player_is_actually_doing(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+
+    window.player.play()
+    assert window.playPauseButton.isChecked() is True
+
+    window.player.step_backward()
+    assert window.playPauseButton.isChecked() is False
+
+
+def test_choosing_a_playback_speed_sets_a_numeric_rate(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+
+    window.speedBox.setCurrentText("0.25x")
+
+    assert window.player.playback_rate() == 0.25
+
+
+def test_loading_a_video_makes_it_the_active_source_video_of_the_player(
+    window: MainWindow,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video_path = _load_video(window, tmp_path)
+
+    assert window.player.is_loaded() is True
+    assert window.player.location() == str(video_path)
+
+    monkeypatch.setattr(
+        window,
+        "ask_unsaved_changes",
+        lambda: UnsavedChangesChoice.DISCARD,
+    )
+    window.new_analysis()
+
+    assert window.player.is_loaded() is False
+
+
+def test_playing_stepping_and_speed_never_dirty_the_document(
+    window: MainWindow,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    _save_to(window, tmp_path / "match.analysis", monkeypatch)
+
+    window.player.play()
+    window.player.seek(20_000)
+    window.player.step_forward()
+    window.player.step_backward()
+    window.speedBox.setCurrentText("2x")
+    window.player.play_pause()
+
+    assert window.document.dirty is False
+    assert window.is_saved is True
+
+
+def test_the_play_button_does_not_claim_to_play_with_no_video_loaded(
+    window: MainWindow,
+) -> None:
+    window.playPauseButton.click()
+
+    assert window.player.is_playing() is False
+    assert window.playPauseButton.isChecked() is False
