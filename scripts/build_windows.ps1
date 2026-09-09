@@ -50,7 +50,14 @@ function Resolve-InnoSetupCompiler {
 
         # ProductVersion metadata can be 0.0.0.0 even for current Inno Setup
         # releases. ISCC's documented --version output is authoritative.
-        $reported = (& $candidate --version 2>&1 | Out-String).Trim()
+        $nativeErrorsWereExceptions = $PSNativeCommandUseErrorActionPreference
+        $PSNativeCommandUseErrorActionPreference = $false
+        try {
+            $reported = (& $candidate --version 2>&1 | Out-String).Trim()
+        }
+        finally {
+            $PSNativeCommandUseErrorActionPreference = $nativeErrorsWereExceptions
+        }
         $versionMatch = [regex]::Match($reported, '\d+(?:\.\d+)+')
         if (-not $versionMatch.Success) {
             Write-Warning "Ignoring Inno Setup at $candidate because its version could not be determined from '$reported'."

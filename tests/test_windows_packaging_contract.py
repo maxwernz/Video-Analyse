@@ -169,6 +169,7 @@ def test_one_documented_command_builds_the_windows_artifact() -> None:
     # Modern Inno Setup binaries may expose 0.0.0.0 in Windows ProductVersion
     # metadata, so ask the compiler for its authoritative engine version.
     assert "--version" in build_script
+    assert "$PSNativeCommandUseErrorActionPreference = $false" in build_script
     assert "VersionInfo.ProductVersion" not in build_script
 
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
