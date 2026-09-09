@@ -82,9 +82,9 @@ macOS remembers this decision, so later launches need only a double-click.
 
 ## Building the Windows package
 
-On x64 Windows 11 with [Inno Setup 6](https://jrsoftware.org/isdl.php) installed
-(`winget install JRSoftware.InnoSetup`), one command produces the authoritative
-package that CI publishes:
+On x64 Windows 11 with [Inno Setup](https://jrsoftware.org/isdl.php) 6.3 or newer
+installed (`winget install JRSoftware.InnoSetup`, or `choco install innosetup` as
+CI does), one command produces the authoritative package that CI publishes:
 
 ```console
 pwsh ./scripts/build_windows.ps1
@@ -101,6 +101,10 @@ uninstalling it:
 ```console
 uv run python -m pytest tests/test_windows_package.py
 ```
+
+Those tests install, launch, upgrade, and uninstall the real artifact, and they
+skip when it has not been built. CI sets `VIDEO_ANALYSE_REQUIRE_PACKAGE=1`, which
+turns those skips into failures so a pipeline cannot pass without verifying.
 
 Windows packaging reuses `build_config/shared.py` unchanged, so entry point,
 dependencies, bundled resources, and metadata cannot drift from the macOS
