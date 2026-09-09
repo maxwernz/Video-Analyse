@@ -1,110 +1,32 @@
 import sys
 import os
 from pathlib import Path
-from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMessageBox, QLabel
-from PySide6 import QtCore, QtGui
-from PySide6.QtCore import QUrl, Qt, QSignalBlocker, Signal, Property, QTranslator, QTimer, QStandardPaths
+from PySide6.QtWidgets import (
+    QApplication,
+    QInputDialog,
+    QMainWindow,
+    QFileDialog,
+    QMessageBox,
+)
+from PySide6 import QtCore
+from PySide6.QtCore import QUrl, QEvent, Qt, QSignalBlocker, Signal, Property, QTranslator, QTimer, QStandardPaths
 from PySide6.QtGui import QKeySequence, QShortcut, QDesktopServices
 from Ui_main_window import Ui_MainWindow
 from analysis import (
     Analysis,
     AnalysisDocument,
     AnalysisError,
-    normalize_category_name,
+    SourceVideo,
+    UnsavedChangesChoice,
+    new_analysis_document,
 )
-from clip_handler import ClipHandler, CreateClip
 from treewidget_item import ClipItem, ClipTreeItem
-from treewidget import TreeWidget
 from video_creator import VideoCreator, ProgressLogger
 from util import milliseconds_to_hhmmss
 
 basedir = os.path.dirname(__file__)
 
-class MainWindow(QMainWindow, Ui_MainWindow):
-
-    file_changed = Signal(str)
-    file_changes_made = Signal(bool)
-
-    def __init__(self, parent=None):
-        super().__init__()
-        # self.set_language('de')
-        self.setupUi(self)
-
-        self.actionLoad_Video.triggered.connect(self.open_video)
-        self.actionAnalyse_speichern.triggered.connect(self.save_analysis)
-        self.actionAnalyse_laden.triggered.connect(self.open_analysis)
-        self.actionClips_Exportieren.triggered.connect(self.export)
-        self.actionVideo_Exportieren.triggered.connect(
-            lambda: self.export(include_all_clips=True)
-        )
-        self.actionAnalyse_entfernen.triggered.connect(self.remove_analysis)
-        self.position_slider.sliderMoved.connect(self.videoWidget.set_position)
-
-        self.export_timer = QTimer()
-        
-        self.setup_connections()
-        self.setup_shortcuts()
-
-        self.progressBar.setVisible(False)
-        self.openExportButton.setVisible(False)
-        self.exportFinishedLabel.setVisible(False)
-        self.clipHandler.setVisible(False)
-        self.editHandler.setVisible(False)
-
-
-        self.treeWidget.set_edit_handler(self.editHandler)
-
-
-        self.setAcceptDrops(True)
-
-        self.clip_start = None
-        self.file_name = None
-        self._current_file = None
-        self.file_changed.emit(None)
-        self._is_saved = True
-        self.analysis_document = AnalysisDocument.new()
-
-    def set_language(self, lang_code):
-        translator = QTranslator()
-        translator.load('qtbase_' + lang_code, ':/translations')
-        QApplication.instance().installTranslator(translator)
-
-    def setup_connections(self):
-        self.playPauseButton.clicked.connect(self.videoWidget.play_pause_video)
-        self.videoWidget.video_paused.connect(self.toggle_play_button)
-        self.soundButton.clicked.connect(self.videoWidget.change_sound)
-        self.forwardButton.clicked.connect(self.videoWidget.jump_forward)
-        self.backwardButton.clicked.connect(self.videoWidget.jump_backward)
-        self.clipButton.toggled.connect(lambda recording: self.clip_started() if recording else self.clip_stopped())
-        self.speedBox.currentIndexChanged.connect(lambda: self.videoWidget.change_speed(self.speedBox.currentText()))
-        self.treeWidget.itemClicked.connect(self.jump_to_clip)
-        self.treeWidget.export_clips.connect(self.export)
-        self.treeWidget.item_changed.connect(self.analysis_content_changed)
-        self.treeWidget.clip_handler_opened.connect(self.disable_clip_handler)
-        self.export_timer.timeout.connect(lambda: self.exportFinishedLabel.setVisible(False))
-        self.export_timer.timeout.connect(lambda: self.openExportButton.setVisible(False))
-        self.export_timer.timeout.connect(self.openExportButton.clicked.disconnect)
-
-
-    def setup_shortcuts(self):
-        QShortcut(QKeySequence(Qt.Key_Right), self).activated.connect(self.videoWidget.move_forward)
-        QShortcut(QKeySequence(Qt.Key_Left), self).activated.connect(self.videoWidget.move_backward)
-        QShortcut(QKeySequence(Qt.Key_Up), self).activated.connect(self.change_speed_up)
-        QShortcut(QKeySequence(Qt.Key_Down), self).activated.connect(self.change_speed_down)
-        QShortcut(QKeySequence.Close, self).activated.connect(self.close)
-
-    def closeEvent(self, event):
-        if self.is_saved or self.confirm_close():
-            event.accept()
-        else:
-            event.ignore()
-
-    def confirm_close(self):
-        message_box = QMessageBox()
-        message_box.setWindowTitle("Ungespeicherte Änderungen")
-        message_box.setText("Es gibt ungespeicherte Änderungen. Möchten sie speichern?")
-        message_box.setStandardButtons(QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
-        message_box.setStyleSheet("""
+MESSAGE_BOX_STYLE_SHEET = """
     QMessageBox {
         background-color: rgb(31, 31, 31); /* Dark background for the message box */
         border: 2px solid rgb(65, 65, 65); /* Border around the message box */
@@ -135,20 +57,125 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     QMessageBox QPushButton:pressed {
         background-color: rgb(80, 80, 80); /* Darker color when pressed */
     }
-""")
-        reply = message_box.exec()
-        
-        if reply == QMessageBox.Save:
-            return self.save_analysis()
-        elif reply == QMessageBox.Discard:
-            return True
+"""
+
+NO_ANALYSIS_TITLE = "No Video"
+
+
+class MainWindow(QMainWindow, Ui_MainWindow):
+    """Drives one Analysis document; the Analysis owns all durable state."""
+
+    file_changed = Signal(str)
+    file_changes_made = Signal(bool)
+
+    def __init__(self, parent=None):
+        super().__init__()
+        # self.set_language('de')
+        self.setupUi(self)
+
+        self.actionLoad_Video.triggered.connect(self.open_video)
+        self.actionAnalyse_speichern.triggered.connect(self.save_analysis)
+        self.actionAnalyse_laden.triggered.connect(self.open_analysis)
+        self.actionClips_Exportieren.triggered.connect(self.export)
+        self.actionVideo_Exportieren.triggered.connect(
+            lambda: self.export(include_all_clips=True)
+        )
+        self.actionAnalyse_entfernen.triggered.connect(self.remove_analysis)
+        self.position_slider.sliderMoved.connect(self.videoWidget.set_position)
+
+        self.export_timer = QTimer()
+
+        self.setup_connections()
+        self.setup_shortcuts()
+
+        self.progressBar.setVisible(False)
+        self.openExportButton.setVisible(False)
+        self.exportFinishedLabel.setVisible(False)
+        self.clipHandler.setVisible(False)
+        self.editHandler.setVisible(False)
+
+        self.setAcceptDrops(True)
+        self.titleLabel.installEventFilter(self)
+
+        self.pending_clip_start = None
+        self._current_file = None
+        self.file_changed.emit(None)
+        self._is_saved = True
+        self.document = new_analysis_document()
+        self.render_analysis()
+
+    def set_language(self, lang_code):
+        translator = QTranslator()
+        translator.load('qtbase_' + lang_code, ':/translations')
+        QApplication.instance().installTranslator(translator)
+
+    def setup_connections(self):
+        self.playPauseButton.clicked.connect(self.videoWidget.play_pause_video)
+        self.videoWidget.video_paused.connect(self.toggle_play_button)
+        self.soundButton.clicked.connect(self.videoWidget.change_sound)
+        self.forwardButton.clicked.connect(self.videoWidget.jump_forward)
+        self.backwardButton.clicked.connect(self.videoWidget.jump_backward)
+        self.clipButton.toggled.connect(lambda recording: self.clip_started() if recording else self.clip_stopped())
+        self.speedBox.currentIndexChanged.connect(lambda: self.videoWidget.change_speed(self.speedBox.currentText()))
+        self.videoWidget.media_player.positionChanged.connect(self.position_changed)
+        self.videoWidget.media_player.durationChanged.connect(self.duration_changed)
+
+        self.treeWidget.itemClicked.connect(self.jump_to_clip)
+        self.treeWidget.export_clips.connect(self.export)
+        self.treeWidget.clip_edit_requested.connect(self.edit_clip)
+        self.treeWidget.clip_remove_requested.connect(self.remove_clip)
+        self.treeWidget.category_edit_requested.connect(self.rename_category)
+        self.treeWidget.category_remove_requested.connect(self.remove_category)
+
+        self.clipHandler.clip_submitted.connect(self.create_clip)
+        self.clipHandler.cancelButton.clicked.connect(self.disable_clip_handler)
+        self.editHandler.clip_submitted.connect(self.apply_clip_edit)
+        self.editHandler.cancelButton.clicked.connect(self.disable_edit_handler)
+
+        self.export_timer.timeout.connect(lambda: self.exportFinishedLabel.setVisible(False))
+        self.export_timer.timeout.connect(lambda: self.openExportButton.setVisible(False))
+        self.export_timer.timeout.connect(self.openExportButton.clicked.disconnect)
+
+    def setup_shortcuts(self):
+        QShortcut(QKeySequence(Qt.Key_Right), self).activated.connect(self.videoWidget.move_forward)
+        QShortcut(QKeySequence(Qt.Key_Left), self).activated.connect(self.videoWidget.move_backward)
+        QShortcut(QKeySequence(Qt.Key_Up), self).activated.connect(self.change_speed_up)
+        QShortcut(QKeySequence(Qt.Key_Down), self).activated.connect(self.change_speed_down)
+        QShortcut(QKeySequence.Close, self).activated.connect(self.close)
+        QShortcut(QKeySequence("Ctrl+Shift+R"), self).activated.connect(self.rename_analysis)
+
+    @property
+    def analysis(self) -> Analysis:
+        return self.document.analysis
+
+    def closeEvent(self, event):
+        if self.may_replace_analysis():
+            event.accept()
         else:
-            return False
+            event.ignore()
+
+    def may_replace_analysis(self) -> bool:
+        """Ask about unsaved changes before the current Analysis is let go."""
+        return self.document.request_close(self.ask_unsaved_changes, self.save_analysis)
+
+    def ask_unsaved_changes(self) -> UnsavedChangesChoice:
+        message_box = QMessageBox(self)
+        message_box.setWindowTitle("Ungespeicherte Änderungen")
+        message_box.setText("Es gibt ungespeicherte Änderungen. Möchten sie speichern?")
+        message_box.setStandardButtons(QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+        message_box.setStyleSheet(MESSAGE_BOX_STYLE_SHEET)
+        reply = message_box.exec()
+
+        if reply == QMessageBox.Save:
+            return UnsavedChangesChoice.SAVE
+        if reply == QMessageBox.Discard:
+            return UnsavedChangesChoice.DISCARD
+        return UnsavedChangesChoice.CANCEL
 
     @Property(str, notify=file_changed)
     def current_file(self):
         return self._current_file
-    
+
     @current_file.setter
     def current_file(self, value):
         if self._current_file != value:
@@ -158,23 +185,58 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     @Property(bool, notify=file_changes_made)
     def is_saved(self):
         return self._is_saved
-    
+
     @is_saved.setter
     def is_saved(self, value):
         if self._is_saved != value:
             self._is_saved = value
             self.file_changes_made.emit(value)
 
-    def analysis_content_changed(self, _is_saved=False):
-        try:
-            self.analysis_document.replace_analysis(self._analysis_from_ui())
-        except AnalysisError as error:
-            QMessageBox.critical(self, "Analysis could not be updated", str(error))
+    def render_analysis(self):
+        """Render the Analysis; it stays the single source of truth."""
+        analysis = self.analysis
+        self.titleLabel.setText(analysis.title or NO_ANALYSIS_TITLE)
+        self.treeWidget.render_analysis(analysis)
+        self.refresh_document_state()
+
+    def refresh_document_state(self):
+        self.current_file = (
+            None if self.document.path is None else str(self.document.path)
+        )
+        self.is_saved = not self.document.dirty
+
+    def eventFilter(self, watched, event):
+        if watched is self.titleLabel and event.type() == QEvent.MouseButtonDblClick:
+            self.rename_analysis()
+            return True
+        return super().eventFilter(watched, event)
+
+    def rename_analysis(self):
+        title, accepted = QInputDialog.getText(
+            self,
+            "Analyse umbenennen",
+            "Titel:",
+            text=self.analysis.title,
+        )
+        if not accepted:
             return
-        self.is_saved = False
+        self.apply_analysis_change(
+            lambda: self.analysis.set_title(title.strip()),
+            "Analysis could not be renamed",
+        )
+
+    def apply_analysis_change(self, change, failure_title) -> bool:
+        """Run one Analysis operation, reporting the invariant it violated."""
+        try:
+            change()
+        except AnalysisError as error:
+            QMessageBox.critical(self, failure_title, str(error))
+            return False
+        self.render_analysis()
+        return True
 
     def toggle_play_button(self):
-        with QSignalBlocker(self.playPauseButton): 
+        with QSignalBlocker(self.playPauseButton):
             self.playPauseButton.click()
 
     def open_video(self):
@@ -187,32 +249,44 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.load_video(file_name)
 
     def load_video(self, file_name):
-        if file_name:
-            self.remove_analysis()
-            self.file_name = file_name
-            self.analysis_document = AnalysisDocument.new(Path(file_name).stem)
-            self.analysis_document.analysis.add_source_video(
+        if not file_name:
+            return
+        if self.analysis.source_videos:
+            if not self.may_replace_analysis():
+                return
+            self.document = new_analysis_document()
+
+        analysis = self.analysis
+        try:
+            if not analysis.title:
+                analysis.set_title(Path(file_name).stem)
+            source_video = analysis.add_source_video(
                 Path(file_name).name,
                 file_name,
             )
-            self.videoWidget.media_player.positionChanged.connect(self.position_changed)
-            self.videoWidget.media_player.durationChanged.connect(self.duration_changed)
-            self.videoWidget.load_video(QUrl.fromLocalFile(self.file_name))
-            self.titleLabel.setText(Path(file_name).stem)
-            self.is_saved = False
+        except AnalysisError as error:
+            QMessageBox.critical(self, "Source video could not be added", str(error))
+            return
+
+        self.load_media(source_video)
+        self.render_analysis()
+
+    def load_media(self, source_video: SourceVideo):
+        self.videoWidget.load_video(QUrl.fromLocalFile(source_video.location))
+
+    def active_source_video(self) -> SourceVideo | None:
+        source_videos = self.analysis.source_videos
+        return source_videos[0] if source_videos else None
 
     def save_analysis(self) -> bool:
         try:
-            if (
-                self.analysis_document.path is None
-                or self.analysis_document.requires_save_as
-            ):
+            if self.document.path is None or self.document.requires_save_as:
                 documents_directory = QStandardPaths.writableLocation(
                     QStandardPaths.StandardLocation.DocumentsLocation
                 )
                 suggested_path = os.path.join(
                     documents_directory,
-                    f"{self.titleLabel.text()}.analysis",
+                    f"{self.analysis.title or 'Analyse'}.analysis",
                 )
                 file_name = QFileDialog.getSaveFileName(
                     self,
@@ -222,15 +296,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 )[0]
                 if not file_name:
                     return False
-                saved_path = self.analysis_document.save_as(file_name)
+                self.document.save_as(file_name)
             else:
-                saved_path = self.analysis_document.save()
+                self.document.save()
         except (AnalysisError, OSError) as error:
             QMessageBox.critical(self, "Analysis could not be saved", str(error))
             return False
 
-        self.current_file = str(saved_path)
-        self.is_saved = True
+        self.refresh_document_state()
         return True
 
     def open_analysis(self):
@@ -247,55 +320,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def load_analysis(self, file_name):
         if not file_name:
             return
+        if not self.may_replace_analysis():
+            return
 
+        document = AnalysisDocument.new()
         try:
-            self.analysis_document.load(file_name)
+            document.load(file_name)
         except AnalysisError as error:
             QMessageBox.critical(self, "Analysis could not be opened", str(error))
             return
 
-        analysis = self.analysis_document.analysis
-        source_video = analysis.source_videos[0]
-        categories_by_id = {category.id: category for category in analysis.categories}
-
-        self.treeWidget.remove_analysis()
-        ClipHandler.categories = {category.name: None for category in analysis.categories}
-        self.file_name = source_video.location
-        self.titleLabel.setText(analysis.title)
-        self.current_file = (
-            None
-            if self.analysis_document.path is None
-            else str(self.analysis_document.path)
-        )
-
-        for domain_clip in analysis.clips:
-            category = (
-                None
-                if domain_clip.category_id is None
-                else categories_by_id[domain_clip.category_id].name
-            )
-            clip_item = ClipItem(
-                domain_clip.name,
-                domain_clip.start_ms,
-                domain_clip.end_ms,
-                domain_clip.notes,
-                category,
-            )
-            clip_item.analysis_id = domain_clip.id
-            self.treeWidget.add_clip(clip_item)
-
-        if os.path.exists(self.file_name):
-            self.videoWidget.media_player.positionChanged.connect(self.position_changed)
-            self.videoWidget.media_player.durationChanged.connect(self.duration_changed)
-            self.videoWidget.load_video(QUrl.fromLocalFile(self.file_name))
+        self.document = document
+        source_video = self.active_source_video()
+        if source_video is not None and os.path.exists(source_video.location):
+            self.load_media(source_video)
         else:
+            self.videoWidget.unload_video()
             QMessageBox.warning(
                 self,
                 "Source video not found",
                 "The Analysis was opened, but its Source video must be relinked.",
             )
-        self.treeWidget.fit_tree()
-        self.is_saved = not self.analysis_document.dirty
+        self.render_analysis()
 
     def change_speed_up(self):
         current_index = self.speedBox.currentIndex()
@@ -307,51 +353,174 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def change_speed_down(self):
         current_index = self.speedBox.currentIndex()
         if current_index == 0:
-            return 
+            return
         self.speedBox.setCurrentIndex(current_index - 1)
 
     def clip_started(self):
-        self.clip_start = self.videoWidget.get_position()
+        """Begin a Pending Clip on the active Source video."""
+        self.pending_clip_start = self.videoWidget.get_position()
 
     def clip_stopped(self):
         if self.videoWidget.videoIsPlaying():
             self.playPauseButton.click()
         clip_stop = self.videoWidget.get_position()
+        clip_start = self.pending_clip_start
+        self.pending_clip_start = None
 
-        self.clipHandler.new_clip(self.clip_start, clip_stop)
-        self.treeWidget.disable_clip_handler()
+        if clip_start is None:
+            return
+        if self.active_source_video() is None:
+            QMessageBox.information(
+                self,
+                "Kein Video",
+                "Ein Clip braucht ein geladenes Video.",
+            )
+            return
+
+        self.disable_edit_handler()
+        self.clipHandler.new_clip(clip_start, clip_stop, self.category_names())
         self.clipHandler.setVisible(True)
-        self.clipHandler.acceptButton.clicked.connect(lambda: self.add_clip(clip=self.clipHandler.clip))
-        self.clipHandler.cancelButton.clicked.connect(self.disable_clip_handler)
 
+    def category_names(self) -> list[str]:
+        return [category.name for category in self.analysis.categories]
 
-    def add_clip(self, clip):
-        self.treeWidget.add_clip(clip)
-        self.treeWidget.fit_tree()
-        self.analysis_content_changed()
+    def category_id_for(self, category_name):
+        """Resolve a Category name to its identity, creating it when it is new."""
+        if category_name is None:
+            return None, None
+        category = self.analysis.category_named(category_name)
+        if category is not None:
+            return category.id, None
+        created = self.analysis.add_category(category_name)
+        return created.id, created
+
+    def create_clip(self, draft):
+        source_video = self.active_source_video()
+        if source_video is None:
+            return
+
+        created_category = None
+        try:
+            category_id, created_category = self.category_id_for(draft.category_name)
+            self.analysis.add_clip(
+                source_video.id,
+                draft.name,
+                draft.start_ms,
+                draft.end_ms,
+                notes=draft.notes,
+                category_id=category_id,
+            )
+        except AnalysisError as error:
+            self.discard_created_category(created_category)
+            QMessageBox.critical(self, "Clip could not be created", str(error))
+            return
+
         self.disable_clip_handler()
+        self.render_analysis()
 
+    def edit_clip(self, clip_id):
+        try:
+            clip = self.analysis.clip(clip_id)
+        except AnalysisError:
+            return
+        category_name = (
+            None
+            if clip.category_id is None
+            else self.analysis.category(clip.category_id).name
+        )
+
+        self.disable_clip_handler()
+        self.editHandler.new_clip(
+            ClipItem.from_clip(clip, category_name),
+            self.category_names(),
+        )
+        self.editHandler.setVisible(True)
+
+    def apply_clip_edit(self, draft):
+        if draft.clip_id is None:
+            return
+
+        created_category = None
+        try:
+            category_id, created_category = self.category_id_for(draft.category_name)
+            self.analysis.update_clip(
+                draft.clip_id,
+                name=draft.name,
+                notes=draft.notes,
+                category_id=category_id,
+            )
+        except AnalysisError as error:
+            self.discard_created_category(created_category)
+            QMessageBox.critical(self, "Clip could not be changed", str(error))
+            return
+
+        self.disable_edit_handler()
+        self.render_analysis()
+
+    def discard_created_category(self, category):
+        """Undo a Category that only existed for a Clip change that failed."""
+        if category is None:
+            return
+        try:
+            self.analysis.remove_category(category.id)
+        except AnalysisError:
+            pass
+
+    def remove_clip(self, clip_id):
+        self.apply_analysis_change(
+            lambda: self.analysis.remove_clip(clip_id),
+            "Clip could not be removed",
+        )
+
+    def rename_category(self, category_id):
+        try:
+            category = self.analysis.category(category_id)
+        except AnalysisError:
+            return
+        name, accepted = QInputDialog.getText(
+            self,
+            "Kategorie umbenennen",
+            "Name:",
+            text=category.name,
+        )
+        if not accepted:
+            return
+        self.apply_analysis_change(
+            lambda: self.analysis.update_category(category_id, name=name),
+            "Category could not be renamed",
+        )
+
+    def remove_category(self, category_id):
+        """Remove a Category; its Clips stay in the Analysis as uncategorized."""
+        self.apply_analysis_change(
+            lambda: self.analysis.remove_category(category_id),
+            "Category could not be removed",
+        )
 
     def disable_clip_handler(self):
         self.clipHandler.setVisible(False)
-        self.clipHandler.acceptButton.clicked.disconnect()
-        self.clipHandler.cancelButton.clicked.disconnect()
 
-    def jump_to_clip(self):
-        selected_item = self.treeWidget.currentItem()
-        if not isinstance(selected_item, ClipTreeItem):
+    def disable_edit_handler(self):
+        self.editHandler.setVisible(False)
+
+    def jump_to_clip(self, item, _column=0):
+        if not isinstance(item, ClipTreeItem):
             return
-        
-        self.videoWidget.set_position(selected_item.clip_item.jump_point())
+
+        self.videoWidget.set_position(item.clip().jump_point())
 
     def export(self, include_all_clips=False):
+        source_video = self.active_source_video()
+        if source_video is None:
+            QMessageBox.information(self, "Info", "No video loaded")
+            return
 
         if include_all_clips:
-            selected_clips = self.treeWidget.get_top_level_items()
+            clips = self.treeWidget.all_clip_items()
         else:
-            selected_clips = self.treeWidget.selectedItems()
-        if not selected_clips:
-            QMessageBox.information(self, "Info", f"No Clips selected")
+            clips = self.treeWidget.selected_clip_items()
+        if not clips:
+            QMessageBox.information(self, "Info", "No Clips selected")
             return
 
         export_directory = QStandardPaths.writableLocation(
@@ -366,25 +535,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not file_name:
             return
 
-        clips = []
-
-        for item in selected_clips:
-            if item.is_category_item():
-                for child in item.children():
-                    clip = child.clip_item
-                    if clip not in clips:
-                        clips.append(clip)
-            else:
-                clip = item.clip_item
-                if clip not in clips:
-                    clips.append(clip)
-
-        
-
         logger = ProgressLogger()
         video_creator = VideoCreator(
             clips,
-            self.file_name,
+            source_video.location,
             file_name,
             include_analysis_title=include_all_clips,
             logger=logger,
@@ -398,7 +552,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"An error occurred: {e}")
 
-    
     def export_finished(self, file_name):
         self.progressBar.setVisible(False)
         self.exportFinishedLabel.setVisible(True)
@@ -406,85 +559,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.openExportButton.clicked.connect(lambda: self.open_file_explorer(file_name))
         self.export_timer.start(10000)
 
-
     def remove_analysis(self):
-        self.treeWidget.remove_analysis()
-        self.analysis_document = AnalysisDocument.new()
-        self.file_name = None
-        self.current_file = None
-        self.is_saved = True
-
-    def _analysis_from_ui(self) -> Analysis:
-        existing = self.analysis_document.analysis
-        analysis = Analysis(self.titleLabel.text(), analysis_id=existing.id)
-
-        if not self.file_name:
-            return analysis
-
-        existing_source = existing.source_videos[0] if existing.source_videos else None
-        source_video = analysis.add_source_video(
-            (
-                existing_source.display_name
-                if existing_source is not None
-                else Path(self.file_name).name
-            ),
-            self.file_name,
-            source_video_id=None if existing_source is None else existing_source.id,
-            relative_path=(
-                None if existing_source is None else existing_source.relative_path
-            ),
-            duration_ms=None if existing_source is None else existing_source.duration_ms,
-            byte_size=None if existing_source is None else existing_source.byte_size,
-            fingerprint=None if existing_source is None else existing_source.fingerprint,
-        )
-
-        existing_categories = {
-            normalize_category_name(category.name): category
-            for category in existing.categories
-        }
-        category_names = [category.name for category in existing.categories]
-        category_names.extend(ClipHandler.categories)
-        category_names.extend(
-            clip.category
-            for clip in TreeWidget.tree_item_list
-            if clip.category is not None
-        )
-        categories_by_name = {}
-        for category_name in category_names:
-            normalized_name = normalize_category_name(category_name)
-            if normalized_name in categories_by_name:
-                continue
-            existing_category = existing_categories.get(normalized_name)
-            category = analysis.add_category(
-                category_name,
-                "#808080" if existing_category is None else existing_category.color,
-                category_id=None if existing_category is None else existing_category.id,
-            )
-            categories_by_name[normalized_name] = category
-
-        for position, clip_item in enumerate(TreeWidget.tree_item_list):
-            old_identity = getattr(clip_item, "analysis_id", None)
-            existing_clip = next(
-                (clip for clip in existing.clips if clip.id == old_identity),
-                None,
-            )
-            category_id = None
-            if clip_item.category is not None:
-                category_id = categories_by_name[
-                    normalize_category_name(clip_item.category)
-                ].id
-            clip = analysis.add_clip(
-                source_video.id,
-                clip_item.name,
-                clip_item.start_position,
-                clip_item.end_position,
-                notes=clip_item.notes,
-                category_id=category_id,
-                clip_id=None if existing_clip is None else existing_clip.id,
-                creation_order=position,
-            )
-            clip_item.analysis_id = clip.id
-        return analysis
+        """Start over with a new, empty Analysis."""
+        if not self.may_replace_analysis():
+            return
+        self.document = new_analysis_document()
+        self.videoWidget.unload_video()
+        self.pending_clip_start = None
+        self.disable_clip_handler()
+        self.disable_edit_handler()
+        self.render_analysis()
 
     def open_file_explorer(self, path):
         QDesktopServices.openUrl(QUrl.fromLocalFile(path))
@@ -506,12 +590,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if event.mimeData().hasUrls:
             event.setDropAction(QtCore.Qt.CopyAction)
             event.accept()
-            
-            url = str(event.mimeData().urls()[0].toLocalFile()).lower()
 
-            if url.endswith(".mp4") or url.endswith(".mov"):
+            url = str(event.mimeData().urls()[0].toLocalFile())
+
+            if url.lower().endswith((".mp4", ".mov")):
                 self.load_video(url)
-            elif url.endswith(".analysis"):
+            elif url.lower().endswith(".analysis"):
                 self.load_analysis(url)
         else:
             event.ignore()
@@ -530,7 +614,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def set_position_label(self, position):
         self.position_label.setText(f"{milliseconds_to_hhmmss(position)}")
-    
+
     def set_duration_label(self, duration):
         self.duration_label.setText(f"{milliseconds_to_hhmmss(duration)}")
 

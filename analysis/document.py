@@ -2,17 +2,28 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Callable
+from enum import Enum
 from pathlib import Path
 from typing import Self
 
 from .codec import AnalysisFileCodec, AnalysisFileFormat
 from .errors import (
+    AnalysisError,
     AnalysisFileError,
     EmptyAnalysisError,
     LegacySourceOverwriteError,
     SaveAsRequiredError,
 )
 from .model import Analysis
+
+
+class UnsavedChangesChoice(Enum):
+    """What the user chose when asked about unsaved Analysis changes."""
+
+    SAVE = "save"
+    DISCARD = "discard"
+    CANCEL = "cancel"
 
 
 class AnalysisDocument:
@@ -71,10 +82,28 @@ class AnalysisDocument:
             self._requires_save_as = False
             self._saved_revision = self._analysis.revision
 
-    def replace_analysis(self, analysis: Analysis) -> None:
-        """Replace edited content while retaining this document's file lifecycle."""
-        self._analysis = analysis
-        self._saved_revision = None
+    def request_close(
+        self,
+        ask_choice: Callable[[], UnsavedChangesChoice],
+        save: Callable[[], bool],
+    ) -> bool:
+        """Decide whether this document may close, keeping unsaved work when not.
+
+        ``save`` reports whether the Analysis actually reached its file; a
+        cancelled Save As, a failed write, or failed validation all report
+        ``False`` and keep the document open with its unsaved state intact.
+        """
+        if not self.dirty:
+            return True
+        choice = ask_choice()
+        if choice is UnsavedChangesChoice.CANCEL:
+            return False
+        if choice is UnsavedChangesChoice.DISCARD:
+            return True
+        try:
+            return bool(save())
+        except AnalysisError:
+            return False
 
     def save(self) -> Path:
         if self._path is None or self._requires_save_as:

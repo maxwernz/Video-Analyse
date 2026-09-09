@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import Any, Final
 from uuid import UUID, uuid4
 
-from .errors import InvalidAnalysisDataError
+from .errors import InvalidAnalysisDataError, UnknownEntityError
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +35,16 @@ class Clip:
     notes: str
     category_id: UUID | None
     creation_order: int
+
+
+class _Unchanged:
+    """Marker distinguishing "leave as is" from an explicit ``None``."""
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return "UNCHANGED"
+
+
+UNCHANGED: Final = _Unchanged()
 
 
 class Analysis:
@@ -74,6 +85,57 @@ class Analysis:
     @property
     def revision(self) -> int:
         return self._revision
+
+    def set_title(self, title: str) -> None:
+        if not isinstance(title, str):
+            raise InvalidAnalysisDataError("Analysis title must be text")
+        if title == self._title:
+            return
+        self._title = title
+        self._revision += 1
+
+    def source_video(self, source_video_id: UUID) -> SourceVideo:
+        source_video = next(
+            (source for source in self._source_videos if source.id == source_video_id),
+            None,
+        )
+        if source_video is None:
+            raise UnknownEntityError("Analysis has no such Source video")
+        return source_video
+
+    def category(self, category_id: UUID) -> Category:
+        category = next(
+            (existing for existing in self._categories if existing.id == category_id),
+            None,
+        )
+        if category is None:
+            raise UnknownEntityError("Analysis has no such Category")
+        return category
+
+    def category_named(self, name: str) -> Category | None:
+        normalized_name = normalize_category_name(name)
+        return next(
+            (
+                category
+                for category in self._categories
+                if normalize_category_name(category.name) == normalized_name
+            ),
+            None,
+        )
+
+    def clip(self, clip_id: UUID) -> Clip:
+        clip = next(
+            (existing for existing in self._clips if existing.id == clip_id),
+            None,
+        )
+        if clip is None:
+            raise UnknownEntityError("Analysis has no such Clip")
+        return clip
+
+    def clips_of_source_video(self, source_video_id: UUID) -> tuple[Clip, ...]:
+        return tuple(
+            clip for clip in self._clips if clip.source_video_id == source_video_id
+        )
 
     def add_source_video(
         self,
@@ -122,6 +184,32 @@ class Analysis:
         self._revision += 1
         return source_video
 
+    def rename_source_video(
+        self,
+        source_video_id: UUID,
+        display_name: str,
+    ) -> SourceVideo:
+        source_video = self.source_video(source_video_id)
+        if not isinstance(display_name, str) or not display_name.strip():
+            raise InvalidAnalysisDataError(
+                "Source-video display name must not be empty"
+            )
+        if display_name == source_video.display_name:
+            return source_video
+        renamed = replace(source_video, display_name=display_name)
+        self._source_videos[self._source_videos.index(source_video)] = renamed
+        self._revision += 1
+        return renamed
+
+    def remove_source_video(self, source_video_id: UUID) -> None:
+        source_video = self.source_video(source_video_id)
+        self._source_videos.remove(source_video)
+        self._clips = [
+            clip for clip in self._clips if clip.source_video_id != source_video_id
+        ]
+        self._renumber_clips()
+        self._revision += 1
+
     def add_category(
         self,
         name: str,
@@ -149,6 +237,45 @@ class Analysis:
         self._revision += 1
         return category
 
+    def update_category(
+        self,
+        category_id: UUID,
+        *,
+        name: str | _Unchanged = UNCHANGED,
+        color: str | _Unchanged = UNCHANGED,
+    ) -> Category:
+        category = self.category(category_id)
+        updated = category
+        if not isinstance(name, _Unchanged):
+            normalized_name = normalize_category_name(name)
+            if any(
+                other.id != category_id
+                and normalize_category_name(other.name) == normalized_name
+                for other in self._categories
+            ):
+                raise InvalidAnalysisDataError(
+                    f"Category names must be unique: {name!r}"
+                )
+            updated = replace(updated, name=name.strip())
+        if not isinstance(color, _Unchanged):
+            if not isinstance(color, str) or not color.strip():
+                raise InvalidAnalysisDataError("Category color must not be empty")
+            updated = replace(updated, color=color)
+        if updated == category:
+            return category
+        self._categories[self._categories.index(category)] = updated
+        self._revision += 1
+        return updated
+
+    def remove_category(self, category_id: UUID) -> None:
+        category = self.category(category_id)
+        self._categories.remove(category)
+        self._clips = [
+            replace(clip, category_id=None) if clip.category_id == category_id else clip
+            for clip in self._clips
+        ]
+        self._revision += 1
+
     def add_clip(
         self,
         source_video_id: UUID,
@@ -163,37 +290,6 @@ class Analysis:
     ) -> Clip:
         if not isinstance(source_video_id, UUID):
             raise InvalidAnalysisDataError("Clip Source-video identity must be a UUID")
-        source_video = next(
-            (source for source in self._source_videos if source.id == source_video_id),
-            None,
-        )
-        if source_video is None:
-            raise InvalidAnalysisDataError("Clip refers to an unknown Source video")
-        if category_id is not None and all(
-            category.id != category_id for category in self._categories
-        ):
-            raise InvalidAnalysisDataError("Clip refers to an unknown Category")
-        if (
-            isinstance(start_ms, bool)
-            or not isinstance(start_ms, int)
-            or isinstance(end_ms, bool)
-            or not isinstance(end_ms, int)
-            or start_ms < 0
-            or end_ms <= start_ms
-        ):
-            raise InvalidAnalysisDataError(
-                "Clip interval must satisfy 0 <= start_ms < end_ms"
-            )
-        if source_video.duration_ms is not None and end_ms > source_video.duration_ms:
-            raise InvalidAnalysisDataError(
-                "Clip end_ms exceeds its Source video duration"
-            )
-        if not isinstance(name, str) or not name.strip():
-            raise InvalidAnalysisDataError("Clip name must not be empty")
-        if not isinstance(notes, str):
-            raise InvalidAnalysisDataError("Clip notes must be text")
-        if category_id is not None and not isinstance(category_id, UUID):
-            raise InvalidAnalysisDataError("Clip Category identity must be a UUID")
         order = len(self._clips) if creation_order is None else creation_order
         if (
             isinstance(order, bool)
@@ -208,19 +304,102 @@ class Analysis:
             raise InvalidAnalysisDataError("Clip identity must be a UUID")
         if any(clip.id == identity for clip in self._clips):
             raise InvalidAnalysisDataError("Clip identity must be unique")
-        clip = Clip(
-            id=identity,
-            source_video_id=source_video_id,
-            name=name,
-            start_ms=start_ms,
-            end_ms=end_ms,
-            notes=notes,
-            category_id=category_id,
-            creation_order=order,
+        clip = self._validated_clip(
+            Clip(
+                id=identity,
+                source_video_id=source_video_id,
+                name=name,
+                start_ms=start_ms,
+                end_ms=end_ms,
+                notes=notes,
+                category_id=category_id,
+                creation_order=order,
+            )
         )
         self._clips.append(clip)
         self._revision += 1
         return clip
+
+    def update_clip(
+        self,
+        clip_id: UUID,
+        *,
+        name: str | _Unchanged = UNCHANGED,
+        start_ms: int | _Unchanged = UNCHANGED,
+        end_ms: int | _Unchanged = UNCHANGED,
+        notes: str | _Unchanged = UNCHANGED,
+        category_id: UUID | None | _Unchanged = UNCHANGED,
+    ) -> Clip:
+        clip = self.clip(clip_id)
+        changes: dict[str, Any] = {
+            field: value
+            for field, value in (
+                ("name", name),
+                ("start_ms", start_ms),
+                ("end_ms", end_ms),
+                ("notes", notes),
+                ("category_id", category_id),
+            )
+            if not isinstance(value, _Unchanged)
+        }
+        updated = self._validated_clip(replace(clip, **changes))
+        if updated == clip:
+            return clip
+        self._clips[self._clips.index(clip)] = updated
+        self._revision += 1
+        return updated
+
+    def remove_clip(self, clip_id: UUID) -> None:
+        clip = self.clip(clip_id)
+        self._clips.remove(clip)
+        self._renumber_clips()
+        self._revision += 1
+
+    def _validated_clip(self, clip: Clip) -> Clip:
+        source_video = next(
+            (
+                source
+                for source in self._source_videos
+                if source.id == clip.source_video_id
+            ),
+            None,
+        )
+        if source_video is None:
+            raise InvalidAnalysisDataError("Clip refers to an unknown Source video")
+        if clip.category_id is not None:
+            if not isinstance(clip.category_id, UUID):
+                raise InvalidAnalysisDataError("Clip Category identity must be a UUID")
+            if all(category.id != clip.category_id for category in self._categories):
+                raise InvalidAnalysisDataError("Clip refers to an unknown Category")
+        if (
+            isinstance(clip.start_ms, bool)
+            or not isinstance(clip.start_ms, int)
+            or isinstance(clip.end_ms, bool)
+            or not isinstance(clip.end_ms, int)
+            or clip.start_ms < 0
+            or clip.end_ms <= clip.start_ms
+        ):
+            raise InvalidAnalysisDataError(
+                "Clip interval must satisfy 0 <= start_ms < end_ms"
+            )
+        if (
+            source_video.duration_ms is not None
+            and clip.end_ms > source_video.duration_ms
+        ):
+            raise InvalidAnalysisDataError(
+                "Clip end_ms exceeds its Source video duration"
+            )
+        if not isinstance(clip.name, str) or not clip.name.strip():
+            raise InvalidAnalysisDataError("Clip name must not be empty")
+        if not isinstance(clip.notes, str):
+            raise InvalidAnalysisDataError("Clip notes must be text")
+        return clip
+
+    def _renumber_clips(self) -> None:
+        self._clips = [
+            replace(clip, creation_order=order)
+            for order, clip in enumerate(self._clips)
+        ]
 
 
 def normalize_category_name(name: str) -> str:

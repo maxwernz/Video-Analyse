@@ -35,7 +35,7 @@ jobs:
         run: uv sync --locked --all-groups
 
       - name: Type-check portable runtime
-        run: uv run mypy main.py app_runtime.py video_creator.py build_config/shared.py
+        run: uv run mypy main.py app_runtime.py video_creator.py build_config/shared.py analysis
 
       - name: Run source checks
         run: uv run python -m pytest
