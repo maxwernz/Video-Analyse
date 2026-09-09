@@ -24,6 +24,11 @@ the two-press Pending Clip flow.
 Read the evidence and verdict in `prototype/video_analyse_desktop/FINDINGS.md`.
 Fourteen captures are in `prototype/video_analyse_desktop/screenshots/`.
 
+The visual primary source is preserved on remote branch
+`prototype/desktop-ux-2026-09-09` at commit
+`8420bde19fc3ecb9d7935b3257267ae1f159ea97`. Keep that branch throwaway and out of
+`main`; production code should implement only the accepted decisions.
+
 ## Validated design decisions
 
 - Always-visible Source-video list above Clips is clearest for multi-video ownership.

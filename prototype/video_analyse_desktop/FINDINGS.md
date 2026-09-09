@@ -14,6 +14,9 @@ only where a grouped view is explicitly selected.
 This is a design verdict, not production-ready code. The prototype remains isolated
 from the current widgets, persistence, MoviePy, and real media.
 
+Primary-source capture: branch `prototype/desktop-ux-2026-09-09`, commit
+`8420bde19fc3ecb9d7935b3257267ae1f159ea97`.
+
 ## Variant comparison
 
 | Variant | What worked | What did not |
