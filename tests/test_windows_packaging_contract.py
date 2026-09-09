@@ -166,6 +166,10 @@ def test_one_documented_command_builds_the_windows_artifact() -> None:
     assert "windows_installer.iss" in build_script
     # x64compatible needs Inno Setup 6.3, so an older compiler must be rejected.
     assert '[version]"6.3"' in build_script
+    # Modern Inno Setup binaries may expose 0.0.0.0 in Windows ProductVersion
+    # metadata, so ask the compiler for its authoritative engine version.
+    assert "--version" in build_script
+    assert "VersionInfo.ProductVersion" not in build_script
 
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     assert "scripts/build_windows.ps1" in readme

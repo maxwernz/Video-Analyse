@@ -48,8 +48,15 @@ function Resolve-InnoSetupCompiler {
     foreach ($candidate in $candidates) {
         if (-not (Test-Path $candidate)) { continue }
 
-        $reported = (Get-Item $candidate).VersionInfo.ProductVersion
-        $found = [version]($reported -replace '^(\d+(\.\d+)*).*$', '$1')
+        # ProductVersion metadata can be 0.0.0.0 even for current Inno Setup
+        # releases. ISCC's documented --version output is authoritative.
+        $reported = (& $candidate --version 2>&1 | Out-String).Trim()
+        $versionMatch = [regex]::Match($reported, '\d+(?:\.\d+)+')
+        if (-not $versionMatch.Success) {
+            Write-Warning "Ignoring Inno Setup at $candidate because its version could not be determined from '$reported'."
+            continue
+        }
+        $found = [version]$versionMatch.Value
         if ($found -lt $minimumInnoSetupVersion) {
             Write-Warning "Ignoring Inno Setup $found at $candidate; $minimumInnoSetupVersion or newer is required."
             continue
