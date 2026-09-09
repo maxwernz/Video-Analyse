@@ -118,8 +118,9 @@ window resizing, menus, dialogs, fonts, shortcuts, and video behavior.
 
 ## Production UI release
 
-The smallest release that reproduces this direction on top of `AnalysisDocument` is,
-in order:
+The smallest release that reproduces this direction on top of `AnalysisDocument` is
+specified as issue #29, which carries its user stories, implementation and testing
+decisions, and ticket list. In order:
 
 1. **Deepen playback** into an explicit player seam: load/unload, play/pause, seek,
    position, duration, rate, and stepping, with no widget construction inside it and a
