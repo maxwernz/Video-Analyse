@@ -1,6 +1,5 @@
 import sys
 import os
-from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication,
     QInputDialog,
@@ -10,7 +9,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6 import QtCore
 from PySide6.QtCore import QUrl, QEvent, Qt, QSignalBlocker, Signal, Property, QTranslator, QTimer, QStandardPaths
-from PySide6.QtGui import QKeySequence, QShortcut, QDesktopServices
+from PySide6.QtGui import QAction, QKeySequence, QShortcut, QDesktopServices
 from Ui_main_window import Ui_MainWindow
 from analysis import (
     Analysis,
@@ -18,7 +17,11 @@ from analysis import (
     AnalysisError,
     SourceVideo,
     UnsavedChangesChoice,
-    new_analysis_document,
+)
+from application_workflow import (
+    ANALYSIS_FILE_FILTER,
+    SOURCE_VIDEO_FILE_FILTER,
+    ApplicationWorkflow,
 )
 from treewidget_item import ClipItem, ClipTreeItem
 from video_creator import VideoCreator, ProgressLogger
@@ -73,18 +76,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # self.set_language('de')
         self.setupUi(self)
 
-        self.actionLoad_Video.triggered.connect(self.open_video)
-        self.actionAnalyse_speichern.triggered.connect(self.save_analysis)
-        self.actionAnalyse_laden.triggered.connect(self.open_analysis)
         self.actionClips_Exportieren.triggered.connect(self.export)
         self.actionVideo_Exportieren.triggered.connect(
             lambda: self.export(include_all_clips=True)
         )
-        self.actionAnalyse_entfernen.triggered.connect(self.remove_analysis)
         self.position_slider.sliderMoved.connect(self.videoWidget.set_position)
 
         self.export_timer = QTimer()
 
+        self.setup_document_commands()
         self.setup_connections()
         self.setup_shortcuts()
 
@@ -101,7 +101,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._current_file = None
         self.file_changed.emit(None)
         self._is_saved = True
-        self.document = new_analysis_document()
+        self.workflow = ApplicationWorkflow(
+            self,
+            on_analysis_replaced=self.analysis_replaced,
+            on_document_changed=self.render_analysis,
+            on_source_video_added=self.source_video_added,
+        )
         self.render_analysis()
 
     def set_language(self, lang_code):
@@ -141,12 +146,63 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         QShortcut(QKeySequence(Qt.Key_Left), self).activated.connect(self.videoWidget.move_backward)
         QShortcut(QKeySequence(Qt.Key_Up), self).activated.connect(self.change_speed_up)
         QShortcut(QKeySequence(Qt.Key_Down), self).activated.connect(self.change_speed_down)
-        QShortcut(QKeySequence.Close, self).activated.connect(self.close)
         QShortcut(QKeySequence("Ctrl+Shift+R"), self).activated.connect(self.rename_analysis)
+
+    def setup_document_commands(self):
+        """Give the Analysis document commands menu entries and shortcuts.
+
+        The Designer file still describes the original single-video menu, so
+        the commands are named, shortcut, and ordered here. Issue #25 retires
+        that file and this stays the definition.
+        """
+        self.actionAnalyse_entfernen.setText("Neue Analyse")
+        self.actionAnalyse_entfernen.setShortcut(QKeySequence.StandardKey.New)
+        self.actionAnalyse_laden.setText("Analyse öffnen …")
+        self.actionAnalyse_laden.setShortcut(QKeySequence.StandardKey.Open)
+        self.actionAnalyse_speichern.setText("Analyse speichern")
+        self.actionAnalyse_speichern.setShortcut(QKeySequence.StandardKey.Save)
+        self.actionLoad_Video.setText("Video hinzufügen …")
+        self.actionLoad_Video.setShortcut(QKeySequence("Ctrl+Shift+O"))
+
+        self.actionAnalyse_speichern_unter = QAction("Analyse speichern unter …", self)
+        self.actionAnalyse_speichern_unter.setShortcut(QKeySequence.StandardKey.SaveAs)
+        self.actionAnalyse_schliessen = QAction("Schließen", self)
+        self.actionAnalyse_schliessen.setShortcut(QKeySequence.StandardKey.Close)
+
+        self.actionAnalyse_entfernen.triggered.connect(self.new_analysis)
+        self.actionAnalyse_laden.triggered.connect(self.open_analysis)
+        self.actionAnalyse_speichern.triggered.connect(self.save_analysis)
+        self.actionAnalyse_speichern_unter.triggered.connect(self.save_analysis_as)
+        self.actionLoad_Video.triggered.connect(self.open_video)
+        self.actionAnalyse_schliessen.triggered.connect(self.close)
+
+        self.menuFile.clear()
+        self.menuFile.addAction(self.actionAnalyse_entfernen)
+        self.menuFile.addAction(self.actionAnalyse_laden)
+        self.menuFile.addAction(self.actionAnalyse_speichern)
+        self.menuFile.addAction(self.actionAnalyse_speichern_unter)
+        self.menuFile.addSeparator()
+        self.menuFile.addAction(self.actionLoad_Video)
+        self.menuFile.addSeparator()
+        self.menuFile.addAction(self.actionClips_Exportieren)
+        self.menuFile.addAction(self.actionVideo_Exportieren)
+        self.menuFile.addSeparator()
+        self.menuFile.addAction(self.actionAnalyse_schliessen)
+
+        # Every entry it held has moved into the File menu.
+        self.menubar.removeAction(self.menuBearbeiten.menuAction())
+
+    @property
+    def document(self) -> AnalysisDocument:
+        return self.workflow.document
+
+    @document.setter
+    def document(self, document: AnalysisDocument) -> None:
+        self.workflow.adopt_document(document)
 
     @property
     def analysis(self) -> Analysis:
-        return self.document.analysis
+        return self.workflow.analysis
 
     def closeEvent(self, event):
         if self.may_replace_analysis():
@@ -156,7 +212,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def may_replace_analysis(self) -> bool:
         """Ask about unsaved changes before the current Analysis is let go."""
-        return self.document.request_close(self.ask_unsaved_changes, self.save_analysis)
+        return self.workflow.may_replace_analysis()
+
+    def analysis_replaced(self):
+        """A different Analysis is open now; drop everything transient."""
+        self.pending_clip_start = None
+        self.disable_clip_handler()
+        self.disable_edit_handler()
+        self.videoWidget.unload_video()
+        self.activate_first_source_video()
+
+    def activate_first_source_video(self):
+        source_video = self.active_source_video()
+        if source_video is None:
+            return
+        if os.path.exists(source_video.location):
+            self.load_media(source_video)
+        else:
+            QMessageBox.warning(
+                self,
+                "Source video not found",
+                "The Analysis was opened, but its Source video must be relinked.",
+            )
 
     def ask_unsaved_changes(self) -> UnsavedChangesChoice:
         message_box = QMessageBox(self)
@@ -204,6 +281,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             None if self.document.path is None else str(self.document.path)
         )
         self.is_saved = not self.document.dirty
+        self.setWindowTitle(self.workflow.window_title)
 
     def eventFilter(self, watched, event):
         if watched is self.titleLabel and event.type() == QEvent.MouseButtonDblClick:
@@ -240,36 +318,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.playPauseButton.click()
 
     def open_video(self):
-        file_name = QFileDialog.getOpenFileName(
-            self,
-            "Open file",
-            QStandardPaths.writableLocation(QStandardPaths.StandardLocation.MoviesLocation),
-            "Video files (*.mp4 *.mov)",
-        )[0]
-        self.load_video(file_name)
+        """Add a Source video chosen from a dialog to the current Analysis."""
+        self.workflow.add_source_video()
 
     def load_video(self, file_name):
+        """Add a Source video by path; it never replaces the current Analysis."""
         if not file_name:
             return
-        if self.analysis.source_videos:
-            if not self.may_replace_analysis():
-                return
-            self.document = new_analysis_document()
+        self.workflow.add_source_video_file(file_name)
 
-        analysis = self.analysis
-        try:
-            if not analysis.title:
-                analysis.set_title(Path(file_name).stem)
-            source_video = analysis.add_source_video(
-                Path(file_name).name,
-                file_name,
-            )
-        except AnalysisError as error:
-            QMessageBox.critical(self, "Source video could not be added", str(error))
-            return
+    def drop_file(self, path) -> bool:
+        """Add a dropped video, or open a dropped Analysis file."""
+        return self.workflow.open_dropped_file(path)
 
-        self.load_media(source_video)
-        self.render_analysis()
+    def source_video_added(self, source_video: SourceVideo):
+        """Show a newly added Source video only when nothing is playing yet.
+
+        Adding footage must never interrupt the video under review. Choosing
+        which of several Source videos is active belongs to the Videos sidebar
+        tab (issue #15), so until it exists the player stays on the first one.
+        """
+        if self.active_source_video() is source_video:
+            self.load_media(source_video)
 
     def load_media(self, source_video: SourceVideo):
         self.videoWidget.load_video(QUrl.fromLocalFile(source_video.location))
@@ -279,69 +349,54 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         return source_videos[0] if source_videos else None
 
     def save_analysis(self) -> bool:
-        try:
-            if self.document.path is None or self.document.requires_save_as:
-                documents_directory = QStandardPaths.writableLocation(
-                    QStandardPaths.StandardLocation.DocumentsLocation
-                )
-                suggested_path = os.path.join(
-                    documents_directory,
-                    f"{self.analysis.title or 'Analyse'}.analysis",
-                )
-                file_name = QFileDialog.getSaveFileName(
-                    self,
-                    "Save file",
-                    suggested_path,
-                    "Analyse Dateien (*.analysis)",
-                )[0]
-                if not file_name:
-                    return False
-                self.document.save_as(file_name)
-            else:
-                self.document.save()
-        except (AnalysisError, OSError) as error:
-            QMessageBox.critical(self, "Analysis could not be saved", str(error))
+        return self.workflow.save()
+
+    def save_analysis_as(self) -> bool:
+        return self.workflow.save_as()
+
+    def open_analysis(self) -> bool:
+        return self.workflow.open_analysis()
+
+    def load_analysis(self, file_name) -> bool:
+        if not file_name:
             return False
+        return self.workflow.open_analysis_file(file_name)
 
-        self.refresh_document_state()
-        return True
+    # --- What the workflow asks of the person ------------------------------
 
-    def open_analysis(self):
-        file_name = QFileDialog.getOpenFileName(
+    def choose_source_video(self) -> str | None:
+        return QFileDialog.getOpenFileName(
             self,
-            "Open file",
+            "Video hinzufügen",
+            QStandardPaths.writableLocation(
+                QStandardPaths.StandardLocation.MoviesLocation
+            ),
+            SOURCE_VIDEO_FILE_FILTER,
+        )[0] or None
+
+    def choose_analysis_to_open(self) -> str | None:
+        return QFileDialog.getOpenFileName(
+            self,
+            "Analyse öffnen",
             QStandardPaths.writableLocation(
                 QStandardPaths.StandardLocation.DocumentsLocation
             ),
-            "Analyse Dateien (*.analysis)",
-        )[0]
-        self.load_analysis(file_name)
+            ANALYSIS_FILE_FILTER,
+        )[0] or None
 
-    def load_analysis(self, file_name):
-        if not file_name:
-            return
-        if not self.may_replace_analysis():
-            return
+    def choose_analysis_destination(self, suggested_name: str) -> str | None:
+        documents_directory = QStandardPaths.writableLocation(
+            QStandardPaths.StandardLocation.DocumentsLocation
+        )
+        return QFileDialog.getSaveFileName(
+            self,
+            "Analyse speichern",
+            os.path.join(documents_directory, suggested_name),
+            ANALYSIS_FILE_FILTER,
+        )[0] or None
 
-        document = AnalysisDocument.new()
-        try:
-            document.load(file_name)
-        except AnalysisError as error:
-            QMessageBox.critical(self, "Analysis could not be opened", str(error))
-            return
-
-        self.document = document
-        source_video = self.active_source_video()
-        if source_video is not None and os.path.exists(source_video.location):
-            self.load_media(source_video)
-        else:
-            self.videoWidget.unload_video()
-            QMessageBox.warning(
-                self,
-                "Source video not found",
-                "The Analysis was opened, but its Source video must be relinked.",
-            )
-        self.render_analysis()
+    def report_failure(self, title: str, message: str) -> None:
+        QMessageBox.critical(self, title, message)
 
     def change_speed_up(self):
         current_index = self.speedBox.currentIndex()
@@ -539,16 +594,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.openExportButton.clicked.connect(lambda: self.open_file_explorer(file_name))
         self.export_timer.start(10000)
 
-    def remove_analysis(self):
-        """The New Analysis action: let the current Analysis go and start empty."""
-        if not self.may_replace_analysis():
-            return
-        self.document = new_analysis_document()
-        self.videoWidget.unload_video()
-        self.pending_clip_start = None
-        self.disable_clip_handler()
-        self.disable_edit_handler()
-        self.render_analysis()
+    def new_analysis(self) -> bool:
+        """The New Analysis command: let the current Analysis go and start empty."""
+        return self.workflow.new_analysis()
 
     def open_file_explorer(self, path):
         QDesktopServices.openUrl(QUrl.fromLocalFile(path))
@@ -572,11 +620,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             event.accept()
 
             url = str(event.mimeData().urls()[0].toLocalFile())
-
-            if url.lower().endswith((".mp4", ".mov")):
-                self.load_video(url)
-            elif url.lower().endswith(".analysis"):
-                self.load_analysis(url)
+            self.drop_file(url)
         else:
             event.ignore()
 

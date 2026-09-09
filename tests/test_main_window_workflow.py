@@ -7,6 +7,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtGui import QKeySequence  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
 
 import mainwindow as mainwindow_module  # noqa: E402
@@ -372,7 +373,7 @@ def test_cancelling_the_prompt_keeps_the_current_analysis_loaded(
         lambda: UnsavedChangesChoice.CANCEL,
     )
 
-    window.remove_analysis()
+    window.new_analysis()
 
     assert len(window.analysis.clips) == 1
     assert len(_clip_rows(window)) == 1
@@ -391,9 +392,162 @@ def test_discarding_starts_a_new_empty_analysis(
         lambda: UnsavedChangesChoice.DISCARD,
     )
 
-    window.remove_analysis()
+    window.new_analysis()
 
     assert window.analysis.clips == ()
     assert window.analysis.source_videos == ()
     assert _clip_rows(window) == []
     assert window.is_saved is True
+
+
+def _menu_texts(window: MainWindow) -> list[str]:
+    return [
+        action.text()
+        for action in window.menuFile.actions()
+        if not action.isSeparator()
+    ]
+
+
+def test_the_document_commands_have_menu_entries_and_shortcuts(
+    window: MainWindow,
+) -> None:
+    commands = {
+        window.actionAnalyse_entfernen: QKeySequence.StandardKey.New,
+        window.actionAnalyse_laden: QKeySequence.StandardKey.Open,
+        window.actionAnalyse_speichern: QKeySequence.StandardKey.Save,
+        window.actionAnalyse_speichern_unter: QKeySequence.StandardKey.SaveAs,
+        window.actionAnalyse_schliessen: QKeySequence.StandardKey.Close,
+    }
+    menu_texts = _menu_texts(window)
+
+    for action, standard_key in commands.items():
+        assert action.shortcut() == QKeySequence(standard_key)
+        assert action.text() in menu_texts
+
+    assert window.actionLoad_Video.text() in menu_texts
+    assert window.actionLoad_Video.shortcut() == QKeySequence("Ctrl+Shift+O")
+
+
+def test_adding_a_second_video_keeps_the_first_and_its_clips(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    second_video = tmp_path / "second-half.mp4"
+    second_video.write_bytes(b"not a real video")
+
+    window.load_video(str(second_video))
+
+    assert [source.display_name for source in window.analysis.source_videos] == [
+        "first-half.mp4",
+        "second-half.mp4",
+    ]
+    assert len(window.analysis.clips) == 1
+    assert window.analysis.title == "first-half"
+
+
+def test_a_dropped_video_is_added_to_the_current_analysis(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    dropped = tmp_path / "second-half.MOV"
+    dropped.write_bytes(b"not a real video")
+
+    assert window.drop_file(str(dropped)) is True
+
+    assert len(window.analysis.source_videos) == 2
+
+
+def test_a_dropped_file_of_another_kind_is_ignored(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    note = tmp_path / "notes.txt"
+    note.write_text("nothing to see", encoding="utf-8")
+
+    assert window.drop_file(str(note)) is False
+    assert window.analysis.source_videos == ()
+
+
+def test_the_window_title_reports_the_analysis_and_its_dirty_state(
+    window: MainWindow,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert window.windowTitle() == "Unbenannte Analyse — Video Analyse"
+
+    _load_video(window, tmp_path)
+    assert window.windowTitle() == "• first-half — Video Analyse"
+
+    _save_to(window, tmp_path / "match.analysis", monkeypatch)
+    assert window.windowTitle() == "first-half — Video Analyse"
+
+    _create_clip(window)
+    assert window.windowTitle() == "• first-half — Video Analyse"
+
+
+def test_save_as_writes_the_analysis_to_a_second_file(
+    window: MainWindow,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    _save_to(window, tmp_path / "match.analysis", monkeypatch)
+
+    copy_path = tmp_path / "copy.analysis"
+    monkeypatch.setattr(
+        QFileDialog,
+        "getSaveFileName",
+        staticmethod(lambda *args, **kwargs: (str(copy_path), "")),
+    )
+    assert window.save_analysis_as() is True
+
+    assert copy_path.is_file()
+    assert window.document.path == copy_path
+    assert window.is_saved is True
+
+
+def test_a_failed_open_leaves_the_current_analysis_untouched(
+    window: MainWindow,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    silent_message_boxes: list[tuple[str, str]],
+) -> None:
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    analysis = window.analysis
+    broken = tmp_path / "broken.analysis"
+    broken.write_text("{ not json", encoding="utf-8")
+    monkeypatch.setattr(
+        window,
+        "ask_unsaved_changes",
+        lambda: UnsavedChangesChoice.DISCARD,
+    )
+
+    assert window.load_analysis(str(broken)) is False
+
+    assert window.analysis is analysis
+    assert len(window.analysis.clips) == 1
+    assert len(_clip_rows(window)) == 1
+    assert any(level == "critical" for level, _ in silent_message_boxes)
+
+
+def test_adding_a_video_does_not_interrupt_the_one_under_review(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    first_video = _load_video(window, tmp_path)
+    second_video = tmp_path / "second-half.mp4"
+    second_video.write_bytes(b"not a real video")
+
+    window.load_video(str(second_video))
+
+    first = window.analysis.source_videos[0]
+    assert first.location == str(first_video)
+    assert window.active_source_video() == first
+
+    _create_clip(window, name="Fast break")
+    assert window.analysis.clips[0].source_video_id == first.id
