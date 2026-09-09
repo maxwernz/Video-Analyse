@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import builtins
+import copyreg
 import io
 import pickle
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from .errors import InvalidAnalysisDataError, UnsafeLegacyAnalysisError
-from .model import Analysis, Category
+from .model import Analysis, Category, normalize_category_name
 
 
 class _LegacyClip:
@@ -15,13 +16,15 @@ class _LegacyClip:
 
 
 class _RestrictedLegacyUnpickler(pickle.Unpickler):
-    _SAFE_BUILTINS = {"dict", "frozenset", "list", "set", "tuple"}
+    _SAFE_BUILTINS = {"dict", "frozenset", "list", "object", "set", "tuple"}
 
     def find_class(self, module: str, name: str) -> Any:
         if module == "treewidget_item" and name == "ClipItem":
             return _LegacyClip
         if module in {"builtins", "__builtin__"} and name in self._SAFE_BUILTINS:
             return getattr(builtins, name)
+        if module in {"copyreg", "copy_reg"} and name == "_reconstructor":
+            return getattr(copyreg, name)
         raise UnsafeLegacyAnalysisError(
             f"Legacy Analysis contains unsupported global {module}.{name}"
         )
@@ -93,7 +96,7 @@ class LegacyAnalysisImporter:
             if category_name is not None:
                 if not isinstance(category_name, str):
                     raise InvalidAnalysisDataError("Legacy Category name must be text")
-                normalized_name = category_name.strip().casefold()
+                normalized_name = normalize_category_name(category_name)
                 category = categories_by_name.get(normalized_name)
                 if category is None:
                     category = analysis.add_category(category_name)

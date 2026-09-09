@@ -6,7 +6,12 @@ from PySide6 import QtCore, QtGui
 from PySide6.QtCore import QUrl, Qt, QSignalBlocker, Signal, Property, QTranslator, QTimer, QStandardPaths
 from PySide6.QtGui import QKeySequence, QShortcut, QDesktopServices
 from Ui_main_window import Ui_MainWindow
-from analysis import Analysis, AnalysisDocument, AnalysisError
+from analysis import (
+    Analysis,
+    AnalysisDocument,
+    AnalysisError,
+    normalize_category_name,
+)
 from clip_handler import ClipHandler, CreateClip
 from treewidget_item import ClipItem, ClipTreeItem
 from treewidget import TreeWidget
@@ -74,7 +79,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.speedBox.currentIndexChanged.connect(lambda: self.videoWidget.change_speed(self.speedBox.currentText()))
         self.treeWidget.itemClicked.connect(self.jump_to_clip)
         self.treeWidget.export_clips.connect(self.export)
-        self.treeWidget.item_changed.connect(self.set_saved_status)
+        self.treeWidget.item_changed.connect(self.analysis_content_changed)
         self.treeWidget.clip_handler_opened.connect(self.disable_clip_handler)
         self.export_timer.timeout.connect(lambda: self.exportFinishedLabel.setVisible(False))
         self.export_timer.timeout.connect(lambda: self.openExportButton.setVisible(False))
@@ -134,8 +139,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         reply = message_box.exec()
         
         if reply == QMessageBox.Save:
-            self.save_analysis()
-            return True
+            return self.save_analysis()
         elif reply == QMessageBox.Discard:
             return True
         else:
@@ -161,8 +165,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self._is_saved = value
             self.file_changes_made.emit(value)
 
-    def set_saved_status(self, value):
-        self.is_saved = value
+    def analysis_content_changed(self, _is_saved=False):
+        try:
+            self.analysis_document.replace_analysis(self._analysis_from_ui())
+        except AnalysisError as error:
+            QMessageBox.critical(self, "Analysis could not be updated", str(error))
+            return
+        self.is_saved = False
 
     def toggle_play_button(self):
         with QSignalBlocker(self.playPauseButton): 
@@ -192,9 +201,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.titleLabel.setText(Path(file_name).stem)
             self.is_saved = False
 
-    def save_analysis(self):
+    def save_analysis(self) -> bool:
         try:
-            self.analysis_document.replace_analysis(self._analysis_from_ui())
             if (
                 self.analysis_document.path is None
                 or self.analysis_document.requires_save_as
@@ -213,16 +221,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     "Analyse Dateien (*.analysis)",
                 )[0]
                 if not file_name:
-                    return
+                    return False
                 saved_path = self.analysis_document.save_as(file_name)
             else:
                 saved_path = self.analysis_document.save()
         except (AnalysisError, OSError) as error:
             QMessageBox.critical(self, "Analysis could not be saved", str(error))
-            return
+            return False
 
         self.current_file = str(saved_path)
         self.is_saved = True
+        return True
 
     def open_analysis(self):
         file_name = QFileDialog.getOpenFileName(
@@ -319,7 +328,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def add_clip(self, clip):
         self.treeWidget.add_clip(clip)
         self.treeWidget.fit_tree()
-        self.is_saved = False
+        self.analysis_content_changed()
         self.disable_clip_handler()
 
 
@@ -430,7 +439,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         )
 
         existing_categories = {
-            category.name.strip().casefold(): category
+            normalize_category_name(category.name): category
             for category in existing.categories
         }
         category_names = [category.name for category in existing.categories]
@@ -442,7 +451,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         )
         categories_by_name = {}
         for category_name in category_names:
-            normalized_name = category_name.strip().casefold()
+            normalized_name = normalize_category_name(category_name)
             if normalized_name in categories_by_name:
                 continue
             existing_category = existing_categories.get(normalized_name)
@@ -462,7 +471,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             category_id = None
             if clip_item.category is not None:
                 category_id = categories_by_name[
-                    clip_item.category.strip().casefold()
+                    normalize_category_name(clip_item.category)
                 ].id
             clip = analysis.add_clip(
                 source_video.id,

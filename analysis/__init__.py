@@ -13,7 +13,7 @@ from .errors import (
     UnsupportedSchemaVersionError,
 )
 from .legacy import LegacyAnalysisImporter
-from .model import Analysis, Category, Clip, SourceVideo
+from .model import Analysis, Category, Clip, SourceVideo, normalize_category_name
 
 __all__ = [
     "Analysis",
@@ -29,6 +29,7 @@ __all__ = [
     "LegacySourceOverwriteError",
     "LegacyAnalysisImporter",
     "MalformedJSONError",
+    "normalize_category_name",
     "SaveAsRequiredError",
     "SourceVideo",
     "UnsafeLegacyAnalysisError",

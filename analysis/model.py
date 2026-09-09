@@ -42,6 +42,8 @@ class Analysis:
     def __init__(self, title: str, *, analysis_id: UUID | None = None) -> None:
         if not isinstance(title, str):
             raise InvalidAnalysisDataError("Analysis title must be text")
+        if analysis_id is not None and not isinstance(analysis_id, UUID):
+            raise InvalidAnalysisDataError("Analysis identity must be a UUID")
         self._id = analysis_id or uuid4()
         self._title = title
         self._source_videos: list[SourceVideo] = []
@@ -84,9 +86,29 @@ class Analysis:
         byte_size: int | None = None,
         fingerprint: str | None = None,
     ) -> SourceVideo:
+        if not isinstance(display_name, str) or not display_name.strip():
+            raise InvalidAnalysisDataError(
+                "Source-video display name must not be empty"
+            )
+        if not isinstance(location, str) or not location.strip():
+            raise InvalidAnalysisDataError("Source-video location must not be empty")
+        if relative_path is not None and not isinstance(relative_path, str):
+            raise InvalidAnalysisDataError("Source-video relative path must be text")
+        _validate_optional_non_negative_integer(duration_ms, "Source-video duration")
+        _validate_optional_non_negative_integer(byte_size, "Source-video byte size")
+        if fingerprint is not None and not isinstance(fingerprint, str):
+            raise InvalidAnalysisDataError("Source-video fingerprint must be text")
         identity = source_video_id or uuid4()
+        if not isinstance(identity, UUID):
+            raise InvalidAnalysisDataError("Source-video identity must be a UUID")
         if any(source.id == identity for source in self._source_videos):
             raise InvalidAnalysisDataError("Source-video identity must be unique")
+        if any(source.location == location for source in self._source_videos):
+            raise InvalidAnalysisDataError("Source video has already been added")
+        if fingerprint is not None and any(
+            source.fingerprint == fingerprint for source in self._source_videos
+        ):
+            raise InvalidAnalysisDataError("Source video has already been added")
         source_video = SourceVideo(
             id=identity,
             display_name=display_name,
@@ -107,15 +129,19 @@ class Analysis:
         *,
         category_id: UUID | None = None,
     ) -> Category:
-        normalized_name = _normalized_category_name(name)
+        normalized_name = normalize_category_name(name)
+        if not isinstance(color, str) or not color.strip():
+            raise InvalidAnalysisDataError("Category color must not be empty")
         if any(
-            _normalized_category_name(category.name) == normalized_name
+            normalize_category_name(category.name) == normalized_name
             for category in self._categories
         ):
             raise InvalidAnalysisDataError(
                 f"Category names must be unique: {name!r}"
             )
         identity = category_id or uuid4()
+        if not isinstance(identity, UUID):
+            raise InvalidAnalysisDataError("Category identity must be a UUID")
         if any(category.id == identity for category in self._categories):
             raise InvalidAnalysisDataError("Category identity must be unique")
         category = Category(identity, name.strip(), color)
@@ -135,6 +161,8 @@ class Analysis:
         clip_id: UUID | None = None,
         creation_order: int | None = None,
     ) -> Clip:
+        if not isinstance(source_video_id, UUID):
+            raise InvalidAnalysisDataError("Clip Source-video identity must be a UUID")
         source_video = next(
             (source for source in self._source_videos if source.id == source_video_id),
             None,
@@ -160,8 +188,24 @@ class Analysis:
             raise InvalidAnalysisDataError(
                 "Clip end_ms exceeds its Source video duration"
             )
+        if not isinstance(name, str) or not name.strip():
+            raise InvalidAnalysisDataError("Clip name must not be empty")
+        if not isinstance(notes, str):
+            raise InvalidAnalysisDataError("Clip notes must be text")
+        if category_id is not None and not isinstance(category_id, UUID):
+            raise InvalidAnalysisDataError("Clip Category identity must be a UUID")
         order = len(self._clips) if creation_order is None else creation_order
+        if (
+            isinstance(order, bool)
+            or not isinstance(order, int)
+            or order != len(self._clips)
+        ):
+            raise InvalidAnalysisDataError(
+                "Clip creation order must be contiguous and match stored order"
+            )
         identity = clip_id or uuid4()
+        if not isinstance(identity, UUID):
+            raise InvalidAnalysisDataError("Clip identity must be a UUID")
         if any(clip.id == identity for clip in self._clips):
             raise InvalidAnalysisDataError("Clip identity must be unique")
         clip = Clip(
@@ -179,7 +223,17 @@ class Analysis:
         return clip
 
 
-def _normalized_category_name(name: str) -> str:
+def normalize_category_name(name: str) -> str:
     if not isinstance(name, str) or not name.strip():
         raise InvalidAnalysisDataError("Category name must not be empty")
     return name.strip().casefold()
+
+
+def _validate_optional_non_negative_integer(
+    value: int | None,
+    field: str,
+) -> None:
+    if value is None:
+        return
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise InvalidAnalysisDataError(f"{field} must be a non-negative integer")

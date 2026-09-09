@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pickletools
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -44,7 +45,7 @@ class AnalysisFileCodec:
                 self._decode_json(data),
                 AnalysisFileFormat.JSON,
             )
-        if data.startswith(b"\x80"):
+        if _has_pickle_syntax(data):
             return DecodedAnalysis(
                 self._legacy_importer.import_bytes(data, source_path),
                 AnalysisFileFormat.LEGACY_PICKLE,
@@ -237,3 +238,11 @@ def _uuid(value: object, field: str) -> UUID:
         return UUID(value)
     except ValueError as error:
         raise InvalidAnalysisDataError(f"{field} must be a UUID string") from error
+
+
+def _has_pickle_syntax(data: bytes) -> bool:
+    """Recognize pickle opcodes without constructing or executing their values."""
+    try:
+        return any(opcode.name == "STOP" for opcode, _, _ in pickletools.genops(data))
+    except Exception:
+        return False
