@@ -17,21 +17,34 @@ $to-spec
 $to-tickets
 ```
 
-That produces the missing UI implementation tickets with dependencies. The prototype code itself stays on its prototype branch; production tickets use [desktop-ux.md](/Users/maxwernz/development/VideoAnalysePy/docs/design/desktop-ux.md), screenshots, and prototype behavior as references.
+That produces the missing UI implementation tickets with dependencies.
+
+> **Superseded, 2026-09-09.** Phase 2 is complete. The three decisions are resolved in
+> [desktop-ux.md](design/desktop-ux.md), recorded as ADR 0005 and ADR 0006, and the
+> production UI release is specified as issue #29. The phase table below was reordered
+> during that session: #15 no longer comes first, because it now owns the Clips/Videos
+> sidebar and therefore needs the workspace shell (#25) to exist. Building it earlier
+> would mean building the sidebar twice.
+>
+> Note that `$to-spec`, `$to-tickets`, and `$implement` are not currently enabled as
+> slash commands in this workspace.
+
+The prototype code itself stays on its prototype branch; production tickets use
+[desktop-ux.md](design/desktop-ux.md), screenshots, and prototype behavior as
+references.
 
 The fastest implementation order after that is:
 
-| Phase | Work |
-|---|---|
-| 1 | Merge #8 and #14 |
-| 2 | Resolve UX decisions and generate UI tickets |
-| 3 | Update #15 to use the validated Clips/Videos sidebar design, then implement #15 |
-| 4 | Deepen and implement Playback |
-| 5 | Deepen and implement Application Workflow |
-| 6 | Implement the core UI tickets: shell, sidebar, Clip editor, compact timeline |
-| 7 | Implement #16, #17, #18, and #19 around the new interface |
-| 8 | Deepen Export, then implement #20 |
-| 9 | Finish #9/#10 and publish through #11 |
+| Phase | Work | Status |
+|---|---|---|
+| 1 | Merge #8 and #14 | done |
+| 2 | Resolve UX decisions, write spec #29, generate UI tickets | done |
+| 3 | Deepen Playback (#23) and Application Workflow (#24), in parallel | next |
+| 4 | Build the workspace shell and retire the Designer main window (#25) | |
+| 5 | Implement the sidebar and multi-video Clips (#15), Clip editor (#26), timeline (#27) | |
+| 6 | Implement #16, #17, #18, and #19 around the new interface | |
+| 7 | Deepen Export, then implement #20 | |
+| 8 | Finish #9/#10 and publish through #11 | |
 
 Playback should come before the final timeline because the timeline needs trustworthy player state, errors, duration, seeking, and end-of-Clip behavior.
 
