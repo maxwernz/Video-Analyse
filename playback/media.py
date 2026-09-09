@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QObject, QUrl
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
@@ -47,8 +49,13 @@ class MediaPlayerPlayback(Playback):
         return not self._media_player.source().isEmpty()
 
     def location(self) -> str | None:
+        """Report where the media is in the platform's own path form.
+
+        QUrl hands back forward slashes on every platform, which would make
+        this disagree with FakePlayback about the same Source video.
+        """
         source = self._media_player.source()
-        return None if source.isEmpty() else source.toLocalFile()
+        return None if source.isEmpty() else str(Path(source.toLocalFile()))
 
     def position(self) -> int:
         return self._media_player.position()

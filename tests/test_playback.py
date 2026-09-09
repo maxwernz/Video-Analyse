@@ -216,3 +216,22 @@ def test_loading_another_source_video_drops_a_seek_meant_for_the_last_one() -> N
     player.set_seekable(True)
 
     assert player.position() == 0
+
+
+def test_both_playbacks_report_the_same_location_for_the_same_video(
+    application: QApplication,
+    tmp_path,
+) -> None:
+    """A native path in, a native path out, whatever the platform separator."""
+    from playback import MediaPlayerPlayback
+
+    video_path = tmp_path / "first-half.mp4"
+    video_path.write_bytes(b"not a real video")
+    real = MediaPlayerPlayback()
+    fake = FakePlayback()
+
+    real.load(str(video_path))
+    fake.load(str(video_path))
+
+    assert real.location() == fake.location() == str(video_path)
+    assert real.location() == os.fspath(video_path)
