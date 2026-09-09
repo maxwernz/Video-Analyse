@@ -648,3 +648,12 @@ def test_playing_stepping_and_speed_never_dirty_the_document(
 
     assert window.document.dirty is False
     assert window.is_saved is True
+
+
+def test_the_play_button_does_not_claim_to_play_with_no_video_loaded(
+    window: MainWindow,
+) -> None:
+    window.playPauseButton.click()
+
+    assert window.player.is_playing() is False
+    assert window.playPauseButton.isChecked() is False

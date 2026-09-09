@@ -13,14 +13,17 @@ class FakePlayback(Playback):
         self._duration = 0
         self._rate = 1.0
         self._muted = False
+        self._seekable = True
 
-    def load(self, location: str, duration_ms: int = 0) -> None:
+    def load(self, location: str) -> None:
+        self._forget_pending_seek()
         self._location = location
         self._position = 0
-        self.set_duration(duration_ms)
+        self.set_duration(0)
 
     def unload(self) -> None:
         self.pause()
+        self._forget_pending_seek()
         self._location = None
         self._position = 0
         self.set_duration(0)
@@ -42,9 +45,11 @@ class FakePlayback(Playback):
         self._duration = duration_ms
         self.duration_changed.emit(duration_ms)
 
-    def seek(self, position_ms: int) -> None:
-        self._position = self._within_video(position_ms)
-        self.position_changed.emit(self._position)
+    def set_seekable(self, seekable: bool) -> None:
+        """Stand in for media that cannot take a position until it loads."""
+        self._seekable = seekable
+        if seekable:
+            self._apply_pending_seek()
 
     def playback_rate(self) -> float:
         return self._rate
@@ -57,6 +62,13 @@ class FakePlayback(Playback):
 
     def set_muted(self, muted: bool) -> None:
         self._muted = muted
+
+    def _seek_to(self, position_ms: int) -> None:
+        self._position = position_ms
+        self.position_changed.emit(self._position)
+
+    def _can_seek(self) -> bool:
+        return self._seekable
 
     def _start_playing(self) -> None:
         return None

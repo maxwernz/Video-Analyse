@@ -26,15 +26,20 @@ class MediaPlayerPlayback(Playback):
             lambda duration: self.duration_changed.emit(int(duration))
         )
         self._media_player.playbackStateChanged.connect(self._playback_state_changed)
+        self._media_player.seekableChanged.connect(
+            lambda _seekable: self._apply_pending_seek()
+        )
 
     def set_video_output(self, video_output: QObject | None) -> None:
         self._media_player.setVideoOutput(video_output)
 
     def load(self, location: str) -> None:
+        self._forget_pending_seek()
         self._media_player.setSource(QUrl.fromLocalFile(location))
 
     def unload(self) -> None:
         self.pause()
+        self._forget_pending_seek()
         self._media_player.stop()
         self._media_player.setSource(QUrl())
 
@@ -51,8 +56,11 @@ class MediaPlayerPlayback(Playback):
     def duration(self) -> int:
         return self._media_player.duration()
 
-    def seek(self, position_ms: int) -> None:
-        self._media_player.setPosition(self._within_video(position_ms))
+    def _seek_to(self, position_ms: int) -> None:
+        self._media_player.setPosition(position_ms)
+
+    def _can_seek(self) -> bool:
+        return self._media_player.isSeekable()
 
     def playback_rate(self) -> float:
         return self._media_player.playbackRate()
@@ -65,9 +73,6 @@ class MediaPlayerPlayback(Playback):
 
     def set_muted(self, muted: bool) -> None:
         self._audio_output.setMuted(muted)
-
-    def toggle_muted(self) -> None:
-        self.set_muted(not self.is_muted())
 
     def _start_playing(self) -> None:
         self._media_player.play()
