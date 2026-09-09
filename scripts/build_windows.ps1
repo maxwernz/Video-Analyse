@@ -29,13 +29,11 @@ if ($env:PROCESSOR_ARCHITECTURE -ne "AMD64") {
     throw "This build must run natively on x64 Windows, not $env:PROCESSOR_ARCHITECTURE."
 }
 
-$minimumInnoSetupVersion = [version]"6.3"
-
 function Resolve-InnoSetupCompiler {
     <#
-        The installer uses the x64compatible architecture identifier, which
-        Inno Setup only understands from 6.3 onwards, so an older compiler must
-        be reported here rather than as an obscure compilation error.
+        Find the compiler here and let compilation validate its capabilities.
+        Valid Inno Setup builds can expose zeroed Windows version metadata and
+        no version command, while older compilers reject x64compatible directly.
     #>
 
     $candidates = @()
@@ -46,32 +44,10 @@ function Resolve-InnoSetupCompiler {
     }
 
     foreach ($candidate in $candidates) {
-        if (-not (Test-Path $candidate)) { continue }
-
-        # ProductVersion metadata can be 0.0.0.0 even for current Inno Setup
-        # releases. ISCC's documented --version output is authoritative.
-        $nativeErrorsWereExceptions = $PSNativeCommandUseErrorActionPreference
-        $PSNativeCommandUseErrorActionPreference = $false
-        try {
-            $reported = (& $candidate --version 2>&1 | Out-String).Trim()
-        }
-        finally {
-            $PSNativeCommandUseErrorActionPreference = $nativeErrorsWereExceptions
-        }
-        $versionMatch = [regex]::Match($reported, '\d+(?:\.\d+)+')
-        if (-not $versionMatch.Success) {
-            Write-Warning "Ignoring Inno Setup at $candidate because its version could not be determined from '$reported'."
-            continue
-        }
-        $found = [version]$versionMatch.Value
-        if ($found -lt $minimumInnoSetupVersion) {
-            Write-Warning "Ignoring Inno Setup $found at $candidate; $minimumInnoSetupVersion or newer is required."
-            continue
-        }
-        return $candidate
+        if (Test-Path $candidate) { return $candidate }
     }
 
-    throw "Inno Setup $minimumInnoSetupVersion or newer (ISCC.exe) was not found. Install it with 'winget install JRSoftware.InnoSetup'."
+    throw "Inno Setup 6.3 or newer (ISCC.exe) was not found. Install it with 'winget install JRSoftware.InnoSetup'."
 }
 
 $innoSetupCompiler = Resolve-InnoSetupCompiler
