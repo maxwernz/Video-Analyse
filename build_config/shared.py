@@ -16,6 +16,7 @@ APPLICATION_NAME = "Video Analyse"
 BUNDLE_IDENTIFIER = "de.maxwernz.videoanalyse"
 ARTIFACT_BASE_NAME = "Video-Analyse"
 MACOS_ARCHITECTURE = "arm64"
+PUBLISHER = "maxwernz"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENTRY_SCRIPT = str(PROJECT_ROOT / "main.py")
@@ -43,6 +44,12 @@ def application_version() -> str:
 
     with (PROJECT_ROOT / "pyproject.toml").open("rb") as project_definition:
         return tomllib.load(project_definition)["project"]["version"]
+
+
+def artifact_name(platform_suffix: str) -> str:
+    """The published artifact name for a platform, without its file extension."""
+
+    return f"{ARTIFACT_BASE_NAME}-{application_version()}-{platform_suffix}"
 
 
 def bundled_data() -> list[tuple[str, str]]:

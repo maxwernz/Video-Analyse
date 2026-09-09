@@ -30,7 +30,7 @@ at a writable directory.
 Run all source checks with:
 
 ```console
-uv run mypy main.py app_runtime.py video_creator.py analysis
+uv run mypy main.py app_runtime.py video_creator.py build_config/shared.py build_config/windows_version_resource.py analysis
 uv run python -m pytest
 ```
 
@@ -79,3 +79,56 @@ you obtained from this project's own releases.
    scroll to the message naming Video Analyse, and choose **Open Anyway**.
 
 macOS remembers this decision, so later launches need only a double-click.
+
+## Building the Windows package
+
+On x64 Windows 11 with [Inno Setup](https://jrsoftware.org/isdl.php) 6.3 or newer
+installed (`winget install JRSoftware.InnoSetup`, or `choco install innosetup` as
+CI does), one command produces the authoritative package that CI publishes:
+
+```console
+pwsh ./scripts/build_windows.ps1
+```
+
+It installs the locked dependencies, builds `Video Analyse.exe` natively for x64,
+verifies the packaged application by running its smoke mode, and writes the
+per-user installer `dist\Video-Analyse-<version>-x64-setup.exe`. The version comes
+from `pyproject.toml` and reaches both the executable's Windows version resource
+and the installer. Continuous integration runs the same script on a Windows x64
+runner and then verifies the artifact by installing, launching, upgrading, and
+uninstalling it:
+
+```console
+uv run python -m pytest tests/test_windows_package.py
+```
+
+Those tests install, launch, upgrade, and uninstall the real artifact, and they
+skip when it has not been built. CI sets `VIDEO_ANALYSE_REQUIRE_PACKAGE=1`, which
+turns those skips into failures so a pipeline cannot pass without verifying.
+
+Windows packaging reuses `build_config/shared.py` unchanged, so entry point,
+dependencies, bundled resources, and metadata cannot drift from the macOS
+package. `build_config/windows.spec` owns the Windows executable details, and
+`build_config/windows_installer.iss` owns the installer.
+
+Because a packaged Windows application has no console, the smoke mode also writes
+its report to the file named by `VIDEO_ANALYSE_SMOKE_REPORT` when that variable is
+set.
+
+## Installing on Windows
+
+Video Analyse is distributed unsigned, so Windows shows a Microsoft Defender
+SmartScreen warning the first time the installer runs. Only run an installer you
+obtained from this project's own releases.
+
+1. Run the downloaded `Video-Analyse-<version>-x64-setup.exe`.
+2. When SmartScreen reports an unrecognized app, choose **More info** and then
+   **Run anyway**.
+3. Follow the installer. It installs for your user account only, so Windows never
+   asks for administrator rights, and it adds Video Analyse to the Start Menu. A
+   desktop shortcut is offered but not preselected.
+4. Launch Video Analyse from the Start Menu.
+
+To update, run a newer installer: it upgrades the existing installation in place
+and keeps one entry in the installed-apps list. To remove Video Analyse, use
+**Settings → Apps → Installed apps → Video Analyse → Uninstall**.
