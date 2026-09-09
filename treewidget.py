@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from PySide6.QtWidgets import QTreeWidget, QMenu
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QBrush, QColor
 from PySide6.QtCore import Qt, Signal
 
 from analysis import Analysis
@@ -62,7 +62,11 @@ class TreeWidget(QTreeWidget):
         self.itemDoubleClicked.connect(self.request_edit)
 
     def render_analysis(self, analysis: Analysis) -> None:
-        """Rebuild the tree from the Analysis, keeping the selected Clip selected."""
+        """Rebuild the tree from the Analysis, keeping the selected Clip selected.
+
+        Every Category of the Analysis is rendered, including one holding no
+        Clips, so that it stays reachable for renaming and removal.
+        """
         selected_clip_ids = {
             item.clip_id for item in self._clip_tree_items() if item.isSelected()
         }
@@ -70,18 +74,17 @@ class TreeWidget(QTreeWidget):
 
         category_names = {category.id: category.name for category in analysis.categories}
         category_items: dict[UUID, CategoryTreeItem] = {}
+        for category in analysis.categories:
+            category_item = CategoryTreeItem(category.id, category.name, parent=self)
+            color = QColor(category.color)
+            if color.isValid():
+                category_item.setForeground(0, QBrush(color))
+            category_items[category.id] = category_item
+
         for clip in analysis.clips:
             parent: QTreeWidget | CategoryTreeItem = self
             if clip.category_id is not None:
-                category_item = category_items.get(clip.category_id)
-                if category_item is None:
-                    category_item = CategoryTreeItem(
-                        clip.category_id,
-                        category_names[clip.category_id],
-                        parent=self,
-                    )
-                    category_items[clip.category_id] = category_item
-                parent = category_item
+                parent = category_items[clip.category_id]
             clip_item = ClipItem.from_clip(
                 clip,
                 None if clip.category_id is None else category_names[clip.category_id],
@@ -115,16 +118,17 @@ class TreeWidget(QTreeWidget):
         menu.exec(self.mapToGlobal(event))
 
     def request_edit(self, item, _=None) -> None:
-        if isinstance(item, ClipTreeItem):
-            self.clip_edit_requested.emit(item.clip_id)
-        elif isinstance(item, CategoryTreeItem):
-            self.category_edit_requested.emit(item.category_id)
+        self._request(item, self.clip_edit_requested, self.category_edit_requested)
 
     def request_remove(self, item) -> None:
+        self._request(item, self.clip_remove_requested, self.category_remove_requested)
+
+    def _request(self, item, clip_signal, category_signal) -> None:
+        """Report a requested change by identity; the Analysis decides the rest."""
         if isinstance(item, ClipTreeItem):
-            self.clip_remove_requested.emit(item.clip_id)
+            clip_signal.emit(item.clip_id)
         elif isinstance(item, CategoryTreeItem):
-            self.category_remove_requested.emit(item.category_id)
+            category_signal.emit(item.category_id)
 
     def selected_clip_items(self) -> list[ClipItem]:
         """The Clips covered by the selection, Category items included."""
@@ -143,19 +147,21 @@ class TreeWidget(QTreeWidget):
 
     def _clip_items_of(self, items) -> list[ClipItem]:
         clip_items: list[ClipItem] = []
-        for item in items:
-            candidates = item.children() if item.is_category_item() else [item]
-            for candidate in candidates:
-                clip_item = candidate.clip()
-                if clip_item not in clip_items:
-                    clip_items.append(clip_item)
+        for tree_item in self._flatten(items):
+            if tree_item.clip_item not in clip_items:
+                clip_items.append(tree_item.clip_item)
         return clip_items
 
     def _clip_tree_items(self) -> list[ClipTreeItem]:
-        clip_items: list[ClipTreeItem] = []
-        for item in self.get_top_level_items():
-            if isinstance(item, ClipTreeItem):
-                clip_items.append(item)
-            else:
-                clip_items.extend(item.children())
-        return clip_items
+        return self._flatten(self.get_top_level_items())
+
+    @staticmethod
+    def _flatten(items) -> list[ClipTreeItem]:
+        """The Clip rows covered by these items, Category rows expanded."""
+        clip_rows: list[ClipTreeItem] = []
+        for item in items:
+            candidates = [item] if isinstance(item, ClipTreeItem) else item.children()
+            for candidate in candidates:
+                if candidate not in clip_rows:
+                    clip_rows.append(candidate)
+        return clip_rows

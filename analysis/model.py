@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from typing import Any, Final
+from typing import Any, Final, Protocol, TypeVar
 from uuid import UUID, uuid4
 
 from .errors import InvalidAnalysisDataError, UnknownEntityError
@@ -86,6 +88,28 @@ class Analysis:
     def revision(self) -> int:
         return self._revision
 
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Apply several operations as one change, undone entirely if one fails.
+
+        A rejected change leaves neither content nor revision behind, so a
+        failed edit never marks its Analysis document dirty.
+        """
+        title = self._title
+        source_videos = list(self._source_videos)
+        categories = list(self._categories)
+        clips = list(self._clips)
+        revision = self._revision
+        try:
+            yield
+        except Exception:
+            self._title = title
+            self._source_videos = source_videos
+            self._categories = categories
+            self._clips = clips
+            self._revision = revision
+            raise
+
     def set_title(self, title: str) -> None:
         if not isinstance(title, str):
             raise InvalidAnalysisDataError("Analysis title must be text")
@@ -95,22 +119,16 @@ class Analysis:
         self._revision += 1
 
     def source_video(self, source_video_id: UUID) -> SourceVideo:
-        source_video = next(
-            (source for source in self._source_videos if source.id == source_video_id),
-            None,
+        return _required(
+            _with_id(self._source_videos, source_video_id),
+            "Analysis has no such Source video",
         )
-        if source_video is None:
-            raise UnknownEntityError("Analysis has no such Source video")
-        return source_video
 
     def category(self, category_id: UUID) -> Category:
-        category = next(
-            (existing for existing in self._categories if existing.id == category_id),
-            None,
+        return _required(
+            _with_id(self._categories, category_id),
+            "Analysis has no such Category",
         )
-        if category is None:
-            raise UnknownEntityError("Analysis has no such Category")
-        return category
 
     def category_named(self, name: str) -> Category | None:
         normalized_name = normalize_category_name(name)
@@ -124,13 +142,10 @@ class Analysis:
         )
 
     def clip(self, clip_id: UUID) -> Clip:
-        clip = next(
-            (existing for existing in self._clips if existing.id == clip_id),
-            None,
+        return _required(
+            _with_id(self._clips, clip_id),
+            "Analysis has no such Clip",
         )
-        if clip is None:
-            raise UnknownEntityError("Analysis has no such Clip")
-        return clip
 
     def clips_of_source_video(self, source_video_id: UUID) -> tuple[Clip, ...]:
         return tuple(
@@ -356,14 +371,7 @@ class Analysis:
         self._revision += 1
 
     def _validated_clip(self, clip: Clip) -> Clip:
-        source_video = next(
-            (
-                source
-                for source in self._source_videos
-                if source.id == clip.source_video_id
-            ),
-            None,
-        )
+        source_video = _with_id(self._source_videos, clip.source_video_id)
         if source_video is None:
             raise InvalidAnalysisDataError("Clip refers to an unknown Source video")
         if clip.category_id is not None:
@@ -400,6 +408,30 @@ class Analysis:
             replace(clip, creation_order=order)
             for order, clip in enumerate(self._clips)
         ]
+
+
+class _Identified(Protocol):
+    @property
+    def id(self) -> UUID: ...
+
+
+_IdentifiedT = TypeVar("_IdentifiedT", bound=_Identified)
+
+
+def _with_id(
+    entities: Sequence[_IdentifiedT],
+    entity_id: UUID,
+) -> _IdentifiedT | None:
+    return next(
+        (entity for entity in entities if entity.id == entity_id),
+        None,
+    )
+
+
+def _required(entity: _IdentifiedT | None, message: str) -> _IdentifiedT:
+    if entity is None:
+        raise UnknownEntityError(message)
+    return entity
 
 
 def normalize_category_name(name: str) -> str:

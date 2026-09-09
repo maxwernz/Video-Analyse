@@ -120,10 +120,10 @@ class EditClip(ClipHandler):
         self.start_time, self.stop_time = clip_item.clip_times()
         self._set_duration_label()
 
-        self.clipNameLine.setText(clip_item.clip_name())
-        self.notesText.setText(clip_item.clip_notes())
+        self.clipNameLine.setText(clip_item.name)
+        self.notesText.setText(clip_item.notes)
         self.set_categories(category_names, clip_item.category)
-        self.acceptButton.setEnabled(bool(clip_item.clip_name().strip()))
+        self.acceptButton.setEnabled(bool(clip_item.name.strip()))
 
     def _draft(self) -> ClipDraft:
         return replace(super()._draft(), clip_id=self.clip_id)

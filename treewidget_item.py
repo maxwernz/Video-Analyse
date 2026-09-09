@@ -48,15 +48,6 @@ class ClipItem:
             milliseconds_to_hhmmss(self.end_position),
         )
 
-    def jump_point(self) -> int:
-        return self.start_position
-
-    def clip_name(self) -> str:
-        return self.name
-
-    def clip_notes(self) -> str:
-        return self.notes
-
 
 class TreeItem(QTreeWidgetItem):
 
@@ -65,9 +56,6 @@ class TreeItem(QTreeWidgetItem):
 
     def children(self):
         return [self.child(i) for i in range(self.childCount())]
-
-    def is_category_item(self):
-        return self.parent() is None
 
 
 class CategoryTreeItem(TreeItem):
@@ -90,6 +78,3 @@ class ClipTreeItem(TreeItem):
     @property
     def clip_id(self) -> UUID | None:
         return self.clip_item.clip_id
-
-    def clip(self) -> ClipItem:
-        return self.clip_item

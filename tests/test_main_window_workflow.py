@@ -56,6 +56,23 @@ def _load_video(window: MainWindow, tmp_path: Path) -> Path:
     return video_path
 
 
+def _category_row(window: MainWindow, name: str):
+    for item in window.treeWidget.get_top_level_items():
+        if item.text(0) == name:
+            return item
+    return None
+
+
+def _clip_rows(window: MainWindow) -> list[ClipTreeItem]:
+    rows: list[ClipTreeItem] = []
+    for item in window.treeWidget.get_top_level_items():
+        if isinstance(item, ClipTreeItem):
+            rows.append(item)
+        else:
+            rows.extend(item.children())
+    return rows
+
+
 def _create_clip(
     window: MainWindow,
     name: str = "Fast break",
@@ -79,7 +96,13 @@ def test_a_new_window_starts_with_an_empty_saved_analysis(window: MainWindow) ->
     assert window.analysis.source_videos == ()
     assert window.analysis.clips == ()
     assert window.is_saved is True
-    assert window.treeWidget.topLevelItemCount() == 0
+    assert _clip_rows(window) == []
+
+
+def test_a_category_without_clips_is_still_rendered(window: MainWindow) -> None:
+    assert [
+        item.text(0) for item in window.treeWidget.get_top_level_items()
+    ] == ["Abwehr", "Angriff", "Tor"]
 
 
 def test_loading_a_video_adds_a_source_video_and_dirties_the_document(
@@ -111,8 +134,7 @@ def test_creating_a_clip_goes_through_the_analysis_and_is_rendered(
     assert window.analysis.category(clip.category_id).name == "Angriff"
     assert window.clipHandler.isVisibleTo(window) is False
 
-    category_item = window.treeWidget.topLevelItem(0)
-    assert category_item.text(0) == "Angriff"
+    category_item = _category_row(window, "Angriff")
     assert category_item.child(0).clip_id == clip.id
 
 
@@ -149,7 +171,8 @@ def test_editing_a_clip_updates_the_analysis_in_place(
     assert window.analysis.category(updated.category_id).name == "Abwehr"
     assert len(window.analysis.clips) == 1
     assert window.editHandler.isVisibleTo(window) is False
-    assert window.treeWidget.topLevelItem(0).text(0) == "Abwehr"
+    assert _category_row(window, "Abwehr").child(0).clip_id == clip.id
+    assert _category_row(window, "Angriff").childCount() == 0
 
 
 def test_an_invalid_clip_edit_is_reported_and_changes_nothing(
@@ -176,6 +199,32 @@ def test_an_invalid_clip_edit_is_reported_and_changes_nothing(
     assert any(level == "critical" for level, _ in silent_message_boxes)
 
 
+def test_a_rejected_clip_change_leaves_the_document_as_it_was(
+    window: MainWindow,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    _save_to(window, tmp_path / "match.analysis", monkeypatch)
+    clip = window.analysis.clips[0]
+
+    window.apply_clip_edit(
+        ClipDraft(
+            name="   ",
+            notes="",
+            category_name="Konter",
+            start_ms=clip.start_ms,
+            end_ms=clip.end_ms,
+            clip_id=clip.id,
+        )
+    )
+
+    assert window.analysis.category_named("Konter") is None
+    assert window.document.dirty is False
+    assert window.is_saved is True
+
+
 def test_removing_a_clip_removes_it_from_the_analysis(
     window: MainWindow,
     tmp_path: Path,
@@ -187,7 +236,7 @@ def test_removing_a_clip_removes_it_from_the_analysis(
     window.remove_clip(clip.id)
 
     assert window.analysis.clips == ()
-    assert window.treeWidget.topLevelItemCount() == 0
+    assert _clip_rows(window) == []
 
 
 def test_removing_a_category_keeps_its_clips_uncategorized(
@@ -201,8 +250,9 @@ def test_removing_a_category_keeps_its_clips_uncategorized(
     window.remove_category(clip.category_id)
 
     assert window.analysis.clip(clip.id).category_id is None
-    rendered = window.treeWidget.topLevelItem(0)
-    assert isinstance(rendered, ClipTreeItem)
+    assert _category_row(window, "Angriff") is None
+    rendered = _clip_rows(window)[0]
+    assert rendered.parent() is None
     assert rendered.clip_id == clip.id
 
 
@@ -238,10 +288,10 @@ def test_playback_position_and_selection_do_not_dirty_the_document(
 
     window.position_changed(4_200)
     window.duration_changed(90_000)
-    window.treeWidget.topLevelItem(0).child(0).setSelected(True)
+    _clip_rows(window)[0].setSelected(True)
     window.treeWidget.sortByColumn(0, mainwindow_module.Qt.DescendingOrder)
     window.treeWidget.collapseAll()
-    window.jump_to_clip(window.treeWidget.topLevelItem(0).child(0))
+    window.jump_to_clip(_clip_rows(window)[0])
 
     assert window.document.dirty is False
     assert window.is_saved is True
@@ -283,7 +333,7 @@ def test_saving_and_reopening_preserves_identities_and_content(
     assert [clip.id for clip in window.analysis.clips] == [clip_id]
     assert window.analysis.clips[0].name == "Fast break"
     assert window.document.dirty is False
-    assert window.treeWidget.topLevelItem(0).text(0) == "Angriff"
+    assert _category_row(window, "Angriff").child(0).clip_id == clip_id
 
 
 def test_a_cancelled_save_prevents_close_and_keeps_unsaved_work(
@@ -325,7 +375,7 @@ def test_cancelling_the_prompt_keeps_the_current_analysis_loaded(
     window.remove_analysis()
 
     assert len(window.analysis.clips) == 1
-    assert window.treeWidget.topLevelItemCount() == 1
+    assert len(_clip_rows(window)) == 1
 
 
 def test_discarding_starts_a_new_empty_analysis(
@@ -345,5 +395,5 @@ def test_discarding_starts_a_new_empty_analysis(
 
     assert window.analysis.clips == ()
     assert window.analysis.source_videos == ()
-    assert window.treeWidget.topLevelItemCount() == 0
+    assert _clip_rows(window) == []
     assert window.is_saved is True

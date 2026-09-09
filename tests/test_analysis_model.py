@@ -171,6 +171,39 @@ def test_removing_a_clip_keeps_the_creation_order_contiguous() -> None:
     assert analysis.clip(third.id).creation_order == 1
 
 
+def test_a_failed_transaction_leaves_neither_content_nor_revision_behind() -> None:
+    analysis = _analysis_with_source()
+    source_video_id = analysis.source_videos[0].id
+    revision = analysis.revision
+
+    with pytest.raises(InvalidAnalysisDataError):
+        with analysis.transaction():
+            analysis.add_category("Konter", "#F59E0B")
+            analysis.add_clip(source_video_id, "  ", 1_000, 2_000)
+
+    assert analysis.categories == ()
+    assert analysis.clips == ()
+    assert analysis.revision == revision
+
+
+def test_a_successful_transaction_keeps_every_change() -> None:
+    analysis = _analysis_with_source()
+    source_video_id = analysis.source_videos[0].id
+
+    with analysis.transaction():
+        category = analysis.add_category("Konter", "#F59E0B")
+        analysis.add_clip(
+            source_video_id,
+            "Fast break",
+            1_000,
+            2_000,
+            category_id=category.id,
+        )
+
+    assert [existing.name for existing in analysis.categories] == ["Konter"]
+    assert analysis.clips[0].category_id == category.id
+
+
 def test_unknown_entities_are_reported_as_unknown() -> None:
     from uuid import uuid4
 

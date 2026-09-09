@@ -59,7 +59,7 @@ MESSAGE_BOX_STYLE_SHEET = """
     }
 """
 
-NO_ANALYSIS_TITLE = "No Video"
+UNTITLED_ANALYSIS_LABEL = "No Video"
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
@@ -195,7 +195,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def render_analysis(self):
         """Render the Analysis; it stays the single source of truth."""
         analysis = self.analysis
-        self.titleLabel.setText(analysis.title or NO_ANALYSIS_TITLE)
+        self.titleLabel.setText(analysis.title or UNTITLED_ANALYSIS_LABEL)
         self.treeWidget.render_analysis(analysis)
         self.refresh_document_state()
 
@@ -387,36 +387,30 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def category_id_for(self, category_name):
         """Resolve a Category name to its identity, creating it when it is new."""
         if category_name is None:
-            return None, None
+            return None
         category = self.analysis.category_named(category_name)
         if category is not None:
-            return category.id, None
-        created = self.analysis.add_category(category_name)
-        return created.id, created
+            return category.id
+        return self.analysis.add_category(category_name).id
 
     def create_clip(self, draft):
         source_video = self.active_source_video()
         if source_video is None:
             return
 
-        created_category = None
-        try:
-            category_id, created_category = self.category_id_for(draft.category_name)
-            self.analysis.add_clip(
-                source_video.id,
-                draft.name,
-                draft.start_ms,
-                draft.end_ms,
-                notes=draft.notes,
-                category_id=category_id,
-            )
-        except AnalysisError as error:
-            self.discard_created_category(created_category)
-            QMessageBox.critical(self, "Clip could not be created", str(error))
-            return
+        def add_clip():
+            with self.analysis.transaction():
+                self.analysis.add_clip(
+                    source_video.id,
+                    draft.name,
+                    draft.start_ms,
+                    draft.end_ms,
+                    notes=draft.notes,
+                    category_id=self.category_id_for(draft.category_name),
+                )
 
-        self.disable_clip_handler()
-        self.render_analysis()
+        if self.apply_analysis_change(add_clip, "Clip could not be created"):
+            self.disable_clip_handler()
 
     def edit_clip(self, clip_id):
         try:
@@ -440,31 +434,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if draft.clip_id is None:
             return
 
-        created_category = None
-        try:
-            category_id, created_category = self.category_id_for(draft.category_name)
-            self.analysis.update_clip(
-                draft.clip_id,
-                name=draft.name,
-                notes=draft.notes,
-                category_id=category_id,
-            )
-        except AnalysisError as error:
-            self.discard_created_category(created_category)
-            QMessageBox.critical(self, "Clip could not be changed", str(error))
-            return
+        def update_clip():
+            with self.analysis.transaction():
+                self.analysis.update_clip(
+                    draft.clip_id,
+                    name=draft.name,
+                    notes=draft.notes,
+                    category_id=self.category_id_for(draft.category_name),
+                )
 
-        self.disable_edit_handler()
-        self.render_analysis()
-
-    def discard_created_category(self, category):
-        """Undo a Category that only existed for a Clip change that failed."""
-        if category is None:
-            return
-        try:
-            self.analysis.remove_category(category.id)
-        except AnalysisError:
-            pass
+        if self.apply_analysis_change(update_clip, "Clip could not be changed"):
+            self.disable_edit_handler()
 
     def remove_clip(self, clip_id):
         self.apply_analysis_change(
@@ -507,7 +487,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not isinstance(item, ClipTreeItem):
             return
 
-        self.videoWidget.set_position(item.clip().jump_point())
+        self.videoWidget.set_position(item.clip_item.start_position)
 
     def export(self, include_all_clips=False):
         source_video = self.active_source_video()
@@ -560,7 +540,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.export_timer.start(10000)
 
     def remove_analysis(self):
-        """Start over with a new, empty Analysis."""
+        """The New Analysis action: let the current Analysis go and start empty."""
         if not self.may_replace_analysis():
             return
         self.document = new_analysis_document()
