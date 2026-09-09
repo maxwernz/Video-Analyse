@@ -15,6 +15,7 @@ from PyInstaller.utils.hooks import copy_metadata
 APPLICATION_NAME = "Video Analyse"
 BUNDLE_IDENTIFIER = "de.maxwernz.videoanalyse"
 ARTIFACT_BASE_NAME = "Video-Analyse"
+MACOS_ARCHITECTURE = "arm64"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENTRY_SCRIPT = str(PROJECT_ROOT / "main.py")
@@ -52,3 +53,9 @@ def bundled_data() -> list[tuple[str, str]]:
         (str(fonts / "NotoSans.ttf"), "assets/fonts"),
         (str(fonts / "OFL.txt"), "assets/fonts"),
     ] + copy_metadata("imageio")
+
+
+def macos_disk_image_name() -> str:
+    """The single authoritative filename of the macOS disk image."""
+
+    return f"{ARTIFACT_BASE_NAME}-{application_version()}-{MACOS_ARCHITECTURE}.dmg"

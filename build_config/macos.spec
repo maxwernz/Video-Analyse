@@ -11,6 +11,7 @@ from shared import (  # noqa: E402
     ENTRY_SCRIPT,
     EXCLUDED_MODULES,
     HIDDEN_IMPORTS,
+    MACOS_ARCHITECTURE,
     PROJECT_ROOT,
     application_version,
     bundled_data,
@@ -48,7 +49,9 @@ executable = EXE(
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
-    target_arch="arm64",
+    target_arch=MACOS_ARCHITECTURE,
+    # No Developer ID identity: PyInstaller ad-hoc signs the arm64 binaries,
+    # which macOS requires before it will load them.
     codesign_identity=None,
     entitlements_file=None,
     icon=[icon],

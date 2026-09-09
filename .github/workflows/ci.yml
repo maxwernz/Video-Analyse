@@ -59,6 +59,8 @@ jobs:
 
       - name: Verify the packaged application
         run: uv run python -m pytest tests/test_macos_package.py
+        env:
+          VIDEO_ANALYSE_REQUIRE_PACKAGE: "1"
 
       - name: Upload the disk image
         uses: actions/upload-artifact@v7

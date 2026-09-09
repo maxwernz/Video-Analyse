@@ -22,7 +22,7 @@ echo "==> Installing locked dependencies"
 uv sync --locked --all-groups
 
 version="$(uv run python -c 'import build_config.shared as s; print(s.application_version())')"
-disk_image="dist/Video-Analyse-${version}-arm64.dmg"
+disk_image="dist/$(uv run python -c 'import build_config.shared as s; print(s.macos_disk_image_name())')"
 
 echo "==> Building ${application_name} ${version} for arm64"
 rm -rf build dist
@@ -36,11 +36,10 @@ fi
 echo "==> Verifying the ad-hoc signature"
 codesign --verify --strict "$bundle"
 
+# The smoke check deliberately uses no VIDEO_ANALYSE_LOG_DIR override so that the
+# packaged application resolves its real operating-system diagnostic-log location.
 echo "==> Running the packaged smoke check"
-smoke_log_directory="$(mktemp -d)"
-trap 'rm -rf "$smoke_log_directory"' EXIT
-QT_QPA_PLATFORM=offscreen VIDEO_ANALYSE_LOG_DIR="$smoke_log_directory" \
-    "${bundle}/Contents/MacOS/${application_name}" --smoke-test
+QT_QPA_PLATFORM=offscreen "${bundle}/Contents/MacOS/${application_name}" --smoke-test
 
 echo "==> Creating ${disk_image}"
 staging_directory="$(mktemp -d)"

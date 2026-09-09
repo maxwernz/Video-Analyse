@@ -16,6 +16,10 @@ import tomllib
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).parents[1]))
+
+from build_config.shared import macos_disk_image_name  # noqa: E402
+
 
 PROJECT_ROOT = Path(__file__).parents[1]
 APPLICATION_NAME = "Video Analyse"
@@ -32,9 +36,12 @@ def application_version() -> str:
 
 @pytest.fixture(scope="module")
 def disk_image() -> Path:
-    image = PROJECT_ROOT / "dist" / f"Video-Analyse-{application_version()}-arm64.dmg"
+    image = PROJECT_ROOT / "dist" / macos_disk_image_name()
     if not image.is_file():
-        pytest.skip(f"{image.name} is not built; run scripts/build_macos.sh")
+        message = f"{image.name} is not built; run scripts/build_macos.sh"
+        if os.environ.get("VIDEO_ANALYSE_REQUIRE_PACKAGE"):
+            pytest.fail(message)
+        pytest.skip(message)
     return image
 
 
@@ -90,11 +97,13 @@ def test_packaged_application_is_a_valid_arm64_bundle(
 
 
 def test_packaged_application_completes_its_smoke_check(
-    mounted_application: Path, tmp_path: Path
+    mounted_application: Path,
 ) -> None:
+    # No VIDEO_ANALYSE_LOG_DIR override: the packaged application must resolve
+    # its real operating-system diagnostic-log location.
     environment = os.environ.copy()
+    environment.pop("VIDEO_ANALYSE_LOG_DIR", None)
     environment["QT_QPA_PLATFORM"] = "offscreen"
-    environment["VIDEO_ANALYSE_LOG_DIR"] = str(tmp_path / "logs")
 
     result = subprocess.run(
         [str(mounted_application / "Contents" / "MacOS" / APPLICATION_NAME),
