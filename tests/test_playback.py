@@ -19,7 +19,8 @@ def application() -> QApplication:
 @pytest.fixture
 def player(application: QApplication) -> FakePlayback:
     playback = FakePlayback()
-    playback.load("/videos/first-half.mp4", duration_ms=90_000)
+    playback.load("/videos/first-half.mp4")
+    playback.set_duration(90_000)
     return playback
 
 
@@ -107,10 +108,11 @@ def test_the_duration_of_the_active_source_video_is_readable_and_observable(
     durations: list[int] = []
     player.duration_changed.connect(durations.append)
 
-    player.load("/videos/first-half.mp4", duration_ms=90_000)
+    player.load("/videos/first-half.mp4")
+    player.set_duration(90_000)
 
     assert player.duration() == 90_000
-    assert durations == [90_000]
+    assert durations == [0, 90_000]
 
 
 def test_unloading_forgets_the_active_source_video(player: FakePlayback) -> None:
@@ -177,3 +179,40 @@ def test_jumping_moves_a_fixed_interval_whatever_the_playback_rate(
     player.set_playback_rate(2.0)
     player.jump_backward()
     assert player.position() == 20_000
+
+
+def test_a_seek_made_before_the_media_can_seek_is_applied_once_it_can() -> None:
+    player = FakePlayback()
+    player.load("/videos/first-half.mp4")
+    player.set_seekable(False)
+
+    player.seek(12_000)
+    assert player.position() == 0
+
+    player.set_seekable(True)
+
+    assert player.position() == 12_000
+
+
+def test_a_later_seek_replaces_the_one_still_waiting() -> None:
+    player = FakePlayback()
+    player.load("/videos/first-half.mp4")
+    player.set_seekable(False)
+
+    player.seek(12_000)
+    player.seek(20_000)
+    player.set_seekable(True)
+
+    assert player.position() == 20_000
+
+
+def test_loading_another_source_video_drops_a_seek_meant_for_the_last_one() -> None:
+    player = FakePlayback()
+    player.load("/videos/first-half.mp4")
+    player.set_seekable(False)
+    player.seek(12_000)
+
+    player.load("/videos/second-half.mp4")
+    player.set_seekable(True)
+
+    assert player.position() == 0

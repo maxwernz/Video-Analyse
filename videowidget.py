@@ -24,21 +24,17 @@ class VideoWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.video_surface)
 
-        self._playback: Playback | None = None
-        self.set_playback(MediaPlayerPlayback(self))
+        self._player: Playback | None = None
 
     @property
-    def playback(self) -> Playback:
-        assert self._playback is not None
-        return self._playback
+    def player(self) -> Playback:
+        """The one player, backed by real media unless one was supplied."""
+        if self._player is None:
+            self.set_player(MediaPlayerPlayback(self))
+        assert self._player is not None
+        return self._player
 
-    def set_playback(self, playback: Playback) -> None:
-        """Render for another Playback, so tests can supply a fake one."""
-        previous = self._playback
-        if previous is not None:
-            previous.unload()
-            previous.set_video_output(None)
-            previous.deleteLater()
-
-        self._playback = playback
-        playback.set_video_output(self.video_surface)
+    def set_player(self, player: Playback) -> None:
+        """Render for a given Playback, so tests can supply a fake one."""
+        self._player = player
+        player.set_video_output(self.video_surface)

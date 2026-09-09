@@ -63,7 +63,9 @@ MESSAGE_BOX_STYLE_SHEET = """
 UNTITLED_ANALYSIS_LABEL = "No Video"
 
 PLAYBACK_RATES = (0.25, 0.5, 1.0, 2.0)
-"""The rates offered by the speed selector, in the order it lists them."""
+"""The rates the speed selector offers, in the order it lists them."""
+
+DEFAULT_PLAYBACK_RATE = 1.0
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
@@ -78,8 +80,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setupUi(self)
 
         if playback is not None:
-            self.videoWidget.set_playback(playback)
-        self.player = self.videoWidget.playback
+            self.videoWidget.set_player(playback)
+        self.player = self.videoWidget.player
         self.setup_playback_rates()
 
         self.actionLoad_Video.triggered.connect(self.open_video)
@@ -119,7 +121,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         QApplication.instance().installTranslator(translator)
 
     def setup_connections(self):
-        self.playPauseButton.clicked.connect(self.player.play_pause)
+        self.playPauseButton.clicked.connect(self.play_pause)
         self.player.playing_changed.connect(self.show_playing_state)
         self.soundButton.clicked.connect(self.player.toggle_muted)
         self.forwardButton.clicked.connect(self.player.jump_forward)
@@ -245,14 +247,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         return True
 
     def setup_playback_rates(self):
-        """Carry each speed as a number, so nothing parses the label text."""
-        for index, rate in enumerate(PLAYBACK_RATES[: self.speedBox.count()]):
-            self.speedBox.setItemData(index, rate)
+        """Offer each speed as a number, so nothing parses the label text."""
+        with QSignalBlocker(self.speedBox):
+            self.speedBox.clear()
+            for rate in PLAYBACK_RATES:
+                self.speedBox.addItem(f"{rate:g}x", rate)
+            self.speedBox.setCurrentIndex(PLAYBACK_RATES.index(DEFAULT_PLAYBACK_RATE))
         self.apply_playback_rate()
 
     def apply_playback_rate(self):
-        rate = self.speedBox.currentData()
-        self.player.set_playback_rate(1.0 if rate is None else float(rate))
+        self.player.set_playback_rate(float(self.speedBox.currentData()))
+
+    def play_pause(self):
+        """Toggle playback, then report what the player actually does."""
+        self.player.play_pause()
+        self.show_playing_state(self.player.is_playing())
 
     def show_playing_state(self, playing: bool):
         """Keep the play control honest about what the player is doing."""

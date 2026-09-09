@@ -25,6 +25,7 @@ class Playback(QObject):
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._playing = False
+        self._pending_seek: int | None = None
 
     # Implemented by concrete playback
 
@@ -51,14 +52,18 @@ class Playback(QObject):
     def duration(self) -> int:
         raise NotImplementedError
 
-    def seek(self, position_ms: int) -> None:
-        raise NotImplementedError
-
     def playback_rate(self) -> float:
         raise NotImplementedError
 
     def set_playback_rate(self, rate: float) -> None:
         raise NotImplementedError
+
+    def _seek_to(self, position_ms: int) -> None:
+        raise NotImplementedError
+
+    def _can_seek(self) -> bool:
+        """Whether the media will accept a position right now."""
+        return True
 
     def _start_playing(self) -> None:
         raise NotImplementedError
@@ -86,6 +91,20 @@ class Playback(QObject):
     def play_pause(self) -> None:
         self.pause() if self._playing else self.play()
 
+    def seek(self, position_ms: int) -> None:
+        """Move the playhead, holding the seek until the media can take it.
+
+        Media that is still loading discards a position, so navigating to a
+        Clip straight after its Source video is activated would otherwise be
+        lost.
+        """
+        position = self._within_video(position_ms)
+        if self._can_seek():
+            self._pending_seek = None
+            self._seek_to(position)
+        else:
+            self._pending_seek = position
+
     def step_forward(self) -> None:
         self._step_by(STEP_INTERVAL_MS)
 
@@ -93,15 +112,27 @@ class Playback(QObject):
         self._step_by(-STEP_INTERVAL_MS)
 
     def jump_forward(self) -> None:
-        self.seek(self._within_video(self.position() + JUMP_INTERVAL_MS))
+        self.seek(self.position() + JUMP_INTERVAL_MS)
 
     def jump_backward(self) -> None:
-        self.seek(self._within_video(self.position() - JUMP_INTERVAL_MS))
+        self.seek(self.position() - JUMP_INTERVAL_MS)
 
     def _step_by(self, interval_ms: int) -> None:
         """Step a fixed distance, so precision does not depend on the rate."""
         self.pause()
-        self.seek(self._within_video(self.position() + interval_ms))
+        self.seek(self.position() + interval_ms)
+
+    def _apply_pending_seek(self) -> None:
+        """Make the held seek once the media became able to take it."""
+        if self._pending_seek is None or not self._can_seek():
+            return
+        position = self._pending_seek
+        self._pending_seek = None
+        self._seek_to(self._within_video(position))
+
+    def _forget_pending_seek(self) -> None:
+        """A seek belongs to the Source video it was made against."""
+        self._pending_seek = None
 
     def _within_video(self, position_ms: int) -> int:
         """Clamp to the Source video, tolerating a duration not yet known."""
