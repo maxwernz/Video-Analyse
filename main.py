@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from PIL import ImageFont
 from PySide6.QtCore import QFile
@@ -36,6 +38,21 @@ def _run_smoke_check(app: QApplication, log_path: str) -> dict[str, str]:
     return {"status": "ok", "font": str(font_path), "log": log_path}
 
 
+def _publish_smoke_report(report: dict[str, str]) -> None:
+    """Make the smoke report readable however the application was packaged.
+
+    A packaged Windows application has no console attached, so its standard
+    output is discarded. `VIDEO_ANALYSE_SMOKE_REPORT` names a file that receives
+    the same report, which lets a build verify a windowed executable.
+    """
+
+    document = json.dumps(report)
+    requested_report_file = os.environ.get("VIDEO_ANALYSE_SMOKE_REPORT")
+    if requested_report_file:
+        Path(requested_report_file).write_text(document, encoding="utf-8")
+    print(document)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(prog="video-analyse")
@@ -54,7 +71,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         install_exception_logging()
         if options.smoke_test:
             report = _run_smoke_check(app, str(log_path))
-            print(json.dumps(report))
+            _publish_smoke_report(report)
             return 0
 
         from mainwindow import MainWindow

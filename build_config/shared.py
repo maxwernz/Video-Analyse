@@ -15,6 +15,7 @@ from PyInstaller.utils.hooks import copy_metadata
 APPLICATION_NAME = "Video Analyse"
 BUNDLE_IDENTIFIER = "de.maxwernz.videoanalyse"
 ARTIFACT_BASE_NAME = "Video-Analyse"
+PUBLISHER = "maxwernz"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENTRY_SCRIPT = str(PROJECT_ROOT / "main.py")
