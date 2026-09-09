@@ -7,7 +7,7 @@ making one.
 
 It deliberately holds no user-interface types. Everything it needs from a person
 arrives through a :class:`WorkflowPresenter`, and everything the interface needs
-to redraw arrives as one of two notifications, which keeps the whole layer
+to redraw arrives as one of three notifications, which keeps the whole layer
 testable without widgets, dialogs, or media.
 """
 
@@ -32,6 +32,12 @@ UNSAVED_CHANGES_MARKER = "•"
 
 ANALYSIS_FILE_SUFFIX = ".analysis"
 SOURCE_VIDEO_SUFFIXES = (".mp4", ".mov")
+
+#: File-dialog filters, so a dialog and a dropped file accept the same files.
+ANALYSIS_FILE_FILTER = f"Analyse Dateien (*{ANALYSIS_FILE_SUFFIX})"
+SOURCE_VIDEO_FILE_FILTER = "Video Dateien ({})".format(
+    " ".join(f"*{suffix}" for suffix in SOURCE_VIDEO_SUFFIXES)
+)
 
 _FALLBACK_ANALYSIS_FILE_NAME = "Analyse"
 
@@ -114,25 +120,36 @@ class ApplicationWorkflow:
         return True
 
     def open_analysis(self) -> bool:
-        chosen = self._presenter.choose_analysis_to_open()
-        if not chosen:
-            return False
-        return self.open_analysis_file(chosen)
+        """Open an Analysis file chosen from a dialog.
 
-    def open_analysis_file(self, path: str | Path) -> bool:
-        """Open an Analysis file, keeping the current Analysis if it fails.
-
-        The file is decoded into a separate document, so neither a refused
-        prompt nor an unreadable file can disturb what is already open.
+        The unsaved-changes decision comes first, so nobody picks a file only
+        to be asked whether they meant to let their work go.
         """
         if not self.may_replace_analysis():
             return False
+        chosen = self._presenter.choose_analysis_to_open()
+        if not chosen:
+            return False
+        return self._open_decided(chosen)
+
+    def open_analysis_file(self, path: str | Path) -> bool:
+        """Open a named Analysis file, asking about unsaved changes first."""
+        if not self.may_replace_analysis():
+            return False
+        return self._open_decided(path)
+
+    def _open_decided(self, path: str | Path) -> bool:
+        """Load a file the person has already agreed to replace their work with.
+
+        It is decoded into a separate document, so an unreadable or rejected
+        file cannot disturb the Analysis that is already open.
+        """
         opened = AnalysisDocument.new()
         try:
             opened.load(path)
         except AnalysisError as error:
             self._presenter.report_failure(
-                "Analyse konnte nicht geöffnet werden", str(error)
+                "Analysis could not be opened", str(error)
             )
             return False
         self.adopt_document(opened)
@@ -160,7 +177,7 @@ class ApplicationWorkflow:
             write()
         except (AnalysisError, OSError) as error:
             self._presenter.report_failure(
-                "Analyse konnte nicht gespeichert werden", str(error)
+                "Analysis could not be saved", str(error)
             )
             return False
         self._document_changed()
@@ -201,7 +218,7 @@ class ApplicationWorkflow:
                 )
         except AnalysisError as error:
             self._presenter.report_failure(
-                "Video konnte nicht hinzugefügt werden", str(error)
+                "Source video could not be added", str(error)
             )
             return None
         self._document_changed()

@@ -284,6 +284,33 @@ def test_opening_an_analysis_replaces_the_current_one(
     assert events.replacements == 1
 
 
+def test_unsaved_changes_are_settled_before_a_file_is_chosen(
+    workflow: ApplicationWorkflow,
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    """Nobody should pick a file only to be asked whether they meant to."""
+    _analysis_with_work(workflow, tmp_path)
+    asked: list[str] = []
+    presenter.unsaved_choice = UnsavedChangesChoice.CANCEL
+    presenter.analysis_to_open = str(_saved_analysis_file(tmp_path))
+
+    def record_prompt() -> UnsavedChangesChoice:
+        asked.append("unsaved")
+        return UnsavedChangesChoice.CANCEL
+
+    def record_chooser() -> str | None:
+        asked.append("chooser")
+        return presenter.analysis_to_open
+
+    presenter.ask_unsaved_changes = record_prompt  # type: ignore[method-assign]
+    presenter.choose_analysis_to_open = record_chooser  # type: ignore[method-assign]
+
+    assert workflow.open_analysis() is False
+
+    assert asked == ["unsaved"]
+
+
 def test_cancelling_the_open_dialog_changes_nothing(
     workflow: ApplicationWorkflow,
     presenter: FakePresenter,

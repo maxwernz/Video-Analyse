@@ -18,7 +18,11 @@ from analysis import (
     SourceVideo,
     UnsavedChangesChoice,
 )
-from application_workflow import ANALYSIS_FILE_SUFFIX, ApplicationWorkflow
+from application_workflow import (
+    ANALYSIS_FILE_FILTER,
+    SOURCE_VIDEO_FILE_FILTER,
+    ApplicationWorkflow,
+)
 from treewidget_item import ClipItem, ClipTreeItem
 from video_creator import VideoCreator, ProgressLogger
 from util import milliseconds_to_hhmmss
@@ -94,7 +98,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.titleLabel.installEventFilter(self)
 
         self.pending_clip_start = None
-        self.active_source_video_id = None
         self._current_file = None
         self.file_changed.emit(None)
         self._is_saved = True
@@ -102,7 +105,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self,
             on_analysis_replaced=self.analysis_replaced,
             on_document_changed=self.render_analysis,
-            on_source_video_added=self.load_media,
+            on_source_video_added=self.source_video_added,
         )
         self.render_analysis()
 
@@ -214,7 +217,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def analysis_replaced(self):
         """A different Analysis is open now; drop everything transient."""
         self.pending_clip_start = None
-        self.active_source_video_id = None
         self.disable_clip_handler()
         self.disable_edit_handler()
         self.videoWidget.unload_video()
@@ -329,25 +331,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """Add a dropped video, or open a dropped Analysis file."""
         return self.workflow.open_dropped_file(path)
 
+    def source_video_added(self, source_video: SourceVideo):
+        """Show a newly added Source video only when nothing is playing yet.
+
+        Adding footage must never interrupt the video under review. Choosing
+        which of several Source videos is active belongs to the Videos sidebar
+        tab (issue #15), so until it exists the player stays on the first one.
+        """
+        if self.active_source_video() is source_video:
+            self.load_media(source_video)
+
     def load_media(self, source_video: SourceVideo):
-        """Make one Source video the Active Source video of the single player."""
-        self.active_source_video_id = source_video.id
         self.videoWidget.load_video(QUrl.fromLocalFile(source_video.location))
 
     def active_source_video(self) -> SourceVideo | None:
-        """The Source video the player holds; transient and never stored.
-
-        An Analysis can hold several Source videos, so the one that is loaded
-        decides where a new Clip belongs. It falls back to the first Source
-        video, which is what a freshly opened Analysis shows.
-        """
         source_videos = self.analysis.source_videos
-        if not source_videos:
-            return None
-        for source_video in source_videos:
-            if source_video.id == self.active_source_video_id:
-                return source_video
-        return source_videos[0]
+        return source_videos[0] if source_videos else None
 
     def save_analysis(self) -> bool:
         return self.workflow.save()
@@ -372,7 +371,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             QStandardPaths.writableLocation(
                 QStandardPaths.StandardLocation.MoviesLocation
             ),
-            "Video files (*.mp4 *.mov)",
+            SOURCE_VIDEO_FILE_FILTER,
         )[0] or None
 
     def choose_analysis_to_open(self) -> str | None:
@@ -382,7 +381,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             QStandardPaths.writableLocation(
                 QStandardPaths.StandardLocation.DocumentsLocation
             ),
-            "Analyse Dateien (*.analysis)",
+            ANALYSIS_FILE_FILTER,
         )[0] or None
 
     def choose_analysis_destination(self, suggested_name: str) -> str | None:
@@ -393,7 +392,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self,
             "Analyse speichern",
             os.path.join(documents_directory, suggested_name),
-            f"Analyse Dateien (*{ANALYSIS_FILE_SUFFIX})",
+            ANALYSIS_FILE_FILTER,
         )[0] or None
 
     def report_failure(self, title: str, message: str) -> None:

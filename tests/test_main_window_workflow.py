@@ -535,33 +535,19 @@ def test_a_failed_open_leaves_the_current_analysis_untouched(
     assert any(level == "critical" for level, _ in silent_message_boxes)
 
 
-def test_a_clip_belongs_to_the_source_video_the_player_holds(
+def test_adding_a_video_does_not_interrupt_the_one_under_review(
     window: MainWindow,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
+    first_video = _load_video(window, tmp_path)
     second_video = tmp_path / "second-half.mp4"
     second_video.write_bytes(b"not a real video")
+
     window.load_video(str(second_video))
 
-    _create_clip(window, name="Second half break")
+    first = window.analysis.source_videos[0]
+    assert first.location == str(first_video)
+    assert window.active_source_video() == first
 
-    second = window.analysis.source_videos[1]
-    assert window.active_source_video() == second
-    assert window.analysis.clips[0].source_video_id == second.id
-
-
-def test_opening_an_analysis_activates_its_first_source_video(
-    window: MainWindow,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _load_video(window, tmp_path)
-    second_video = tmp_path / "second-half.mp4"
-    second_video.write_bytes(b"not a real video")
-    window.load_video(str(second_video))
-    _save_to(window, tmp_path / "match.analysis", monkeypatch)
-
-    window.load_analysis(str(tmp_path / "match.analysis"))
-
-    assert window.active_source_video() == window.analysis.source_videos[0]
+    _create_clip(window, name="Fast break")
+    assert window.analysis.clips[0].source_video_id == first.id
