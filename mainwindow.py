@@ -23,6 +23,7 @@ from application_workflow import (
     SOURCE_VIDEO_FILE_FILTER,
     ApplicationWorkflow,
 )
+from playback import Playback
 from treewidget_item import ClipItem, ClipTreeItem
 from video_creator import VideoCreator, ProgressLogger
 from util import milliseconds_to_hhmmss
@@ -64,6 +65,9 @@ MESSAGE_BOX_STYLE_SHEET = """
 
 UNTITLED_ANALYSIS_LABEL = "No Video"
 
+PLAYBACK_RATES = (0.25, 0.5, 1.0, 2.0)
+"""The rates offered by the speed selector, in the order it lists them."""
+
 
 class MainWindow(QMainWindow, Ui_MainWindow):
     """Drives one Analysis document; the Analysis owns all durable state."""
@@ -71,16 +75,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     file_changed = Signal(str)
     file_changes_made = Signal(bool)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, playback: Playback | None = None):
         super().__init__()
         # self.set_language('de')
         self.setupUi(self)
+
+        if playback is not None:
+            self.videoWidget.set_playback(playback)
+        self.player = self.videoWidget.playback
+        self.setup_playback_rates()
 
         self.actionClips_Exportieren.triggered.connect(self.export)
         self.actionVideo_Exportieren.triggered.connect(
             lambda: self.export(include_all_clips=True)
         )
-        self.position_slider.sliderMoved.connect(self.videoWidget.set_position)
+        self.position_slider.sliderMoved.connect(self.player.seek)
 
         self.export_timer = QTimer()
 
@@ -115,15 +124,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         QApplication.instance().installTranslator(translator)
 
     def setup_connections(self):
-        self.playPauseButton.clicked.connect(self.videoWidget.play_pause_video)
-        self.videoWidget.video_paused.connect(self.toggle_play_button)
-        self.soundButton.clicked.connect(self.videoWidget.change_sound)
-        self.forwardButton.clicked.connect(self.videoWidget.jump_forward)
-        self.backwardButton.clicked.connect(self.videoWidget.jump_backward)
+        self.playPauseButton.clicked.connect(self.player.play_pause)
+        self.player.playing_changed.connect(self.show_playing_state)
+        self.soundButton.clicked.connect(self.player.toggle_muted)
+        self.forwardButton.clicked.connect(self.player.jump_forward)
+        self.backwardButton.clicked.connect(self.player.jump_backward)
         self.clipButton.toggled.connect(lambda recording: self.clip_started() if recording else self.clip_stopped())
-        self.speedBox.currentIndexChanged.connect(lambda: self.videoWidget.change_speed(self.speedBox.currentText()))
-        self.videoWidget.media_player.positionChanged.connect(self.position_changed)
-        self.videoWidget.media_player.durationChanged.connect(self.duration_changed)
+        self.speedBox.currentIndexChanged.connect(self.apply_playback_rate)
+        self.player.position_changed.connect(self.position_changed)
+        self.player.duration_changed.connect(self.duration_changed)
 
         self.treeWidget.itemClicked.connect(self.jump_to_clip)
         self.treeWidget.export_clips.connect(self.export)
@@ -142,8 +151,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.export_timer.timeout.connect(self.openExportButton.clicked.disconnect)
 
     def setup_shortcuts(self):
-        QShortcut(QKeySequence(Qt.Key_Right), self).activated.connect(self.videoWidget.move_forward)
-        QShortcut(QKeySequence(Qt.Key_Left), self).activated.connect(self.videoWidget.move_backward)
+        QShortcut(QKeySequence(Qt.Key_Right), self).activated.connect(self.player.step_forward)
+        QShortcut(QKeySequence(Qt.Key_Left), self).activated.connect(self.player.step_backward)
         QShortcut(QKeySequence(Qt.Key_Up), self).activated.connect(self.change_speed_up)
         QShortcut(QKeySequence(Qt.Key_Down), self).activated.connect(self.change_speed_down)
         QShortcut(QKeySequence("Ctrl+Shift+R"), self).activated.connect(self.rename_analysis)
@@ -219,7 +228,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pending_clip_start = None
         self.disable_clip_handler()
         self.disable_edit_handler()
-        self.videoWidget.unload_video()
+        self.player.unload()
         self.activate_first_source_video()
 
     def activate_first_source_video(self):
@@ -313,9 +322,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.render_analysis()
         return True
 
-    def toggle_play_button(self):
+    def setup_playback_rates(self):
+        """Carry each speed as a number, so nothing parses the label text."""
+        for index, rate in enumerate(PLAYBACK_RATES[: self.speedBox.count()]):
+            self.speedBox.setItemData(index, rate)
+        self.apply_playback_rate()
+
+    def apply_playback_rate(self):
+        rate = self.speedBox.currentData()
+        self.player.set_playback_rate(1.0 if rate is None else float(rate))
+
+    def show_playing_state(self, playing: bool):
+        """Keep the play control honest about what the player is doing."""
         with QSignalBlocker(self.playPauseButton):
-            self.playPauseButton.click()
+            self.playPauseButton.setChecked(playing)
 
     def open_video(self):
         """Add a Source video chosen from a dialog to the current Analysis."""
@@ -342,7 +362,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.load_media(source_video)
 
     def load_media(self, source_video: SourceVideo):
-        self.videoWidget.load_video(QUrl.fromLocalFile(source_video.location))
+        self.player.load(source_video.location)
 
     def active_source_video(self) -> SourceVideo | None:
         source_videos = self.analysis.source_videos
@@ -413,12 +433,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def clip_started(self):
         """Begin a Pending Clip on the active Source video."""
-        self.pending_clip_start = self.videoWidget.get_position()
+        self.pending_clip_start = self.player.position()
 
     def clip_stopped(self):
-        if self.videoWidget.videoIsPlaying():
-            self.playPauseButton.click()
-        clip_stop = self.videoWidget.get_position()
+        self.player.pause()
+        clip_stop = self.player.position()
         clip_start = self.pending_clip_start
         self.pending_clip_start = None
 
@@ -542,7 +561,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not isinstance(item, ClipTreeItem):
             return
 
-        self.videoWidget.set_position(item.clip_item.start_position)
+        self.player.seek(item.clip_item.start_position)
 
     def export(self, include_all_clips=False):
         source_video = self.active_source_video()
