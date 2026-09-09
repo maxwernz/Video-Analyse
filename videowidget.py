@@ -100,7 +100,6 @@ class VideoWidget(QWidget):
         if new_position <= 0:
             new_position = 0
         self.set_position(new_position)
-
     def move_forward(self):
         if self.is_playing:
             self.pause_video()
@@ -125,33 +124,3 @@ class VideoWidget(QWidget):
             new_position = 0
         
         self.set_position(new_position)
-
-
-if __name__ == "__main__":
-    import sys
-    from PySide6.QtWidgets import QApplication, QMainWindow
-    from PySide6.QtCore import QUrl
-
-    app = QApplication(sys.argv)
-
-    main_window = QMainWindow()
-    media_player = QMediaPlayer()
-    video_widget = QVideoWidget()
-    
-    media_player.setVideoOutput(video_widget)
-
-    # Load a video from a URL (replace with a valid file URL for testing)
-    video_url = QUrl.fromLocalFile("/Users/max/Downloads/IMG_0024.MOV")
-    media_player.setSource(video_url)
-    media_player.play()
-
-    video_widget.setAspectRatioMode(Qt.KeepAspectRatioByExpanding)
-    video_widget.videoSink().videoSizeChanged.connect(lambda: video_widget.resize(video_widget.size()))
-
-
-
-    main_window.setCentralWidget(video_widget)
-    # main_window.resize(1200, 700)
-    main_window.show()
-
-    sys.exit(app.exec())

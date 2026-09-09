@@ -1,0 +1,32 @@
+[project]
+name = "video-analyse"
+version = "0.1.0"
+description = "Desktop application for reviewing Source videos and producing Combined exports"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "moviepy==1.0.3",
+    "numpy==2.2.6",
+    "pillow==11.3.0",
+    "proglog==0.1.12",
+    "pyside6==6.10.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy==1.18.2",
+    "pyinstaller==6.16.0",
+    "pytest==8.4.2",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+check_untyped_defs = true
+follow_imports = "skip"
+ignore_missing_imports = true
+exclude = ["Ui_.*\\.py", "resources_rc\\.py", "prototype/"]

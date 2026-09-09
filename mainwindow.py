@@ -2,7 +2,7 @@ import sys
 import os
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMessageBox, QLabel
 from PySide6 import QtCore, QtGui
-from PySide6.QtCore import QUrl, Qt, QSignalBlocker, Signal, Property, QTranslator, QTimer
+from PySide6.QtCore import QUrl, Qt, QSignalBlocker, Signal, Property, QTranslator, QTimer, QStandardPaths
 from PySide6.QtGui import QKeySequence, QShortcut, QDesktopServices
 from Ui_main_window import Ui_MainWindow
 from clip_handler import CreateClip
@@ -28,7 +28,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionAnalyse_speichern.triggered.connect(self.save_analysis)
         self.actionAnalyse_laden.triggered.connect(self.open_analysis)
         self.actionClips_Exportieren.triggered.connect(self.export)
-        self.actionVideo_Exportieren.triggered.connect(lambda: self.export(full_video=True))
+        self.actionVideo_Exportieren.triggered.connect(
+            lambda: self.export(include_all_clips=True)
+        )
         self.actionAnalyse_entfernen.triggered.connect(self.remove_analysis)
         self.position_slider.sliderMoved.connect(self.videoWidget.set_position)
 
@@ -165,7 +167,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.playPauseButton.click()
 
     def open_video(self):
-        file_name = QFileDialog.getOpenFileName(self, "Open file", "${HOME}", "Video files (*.mp4 *.mov)")[0]
+        file_name = QFileDialog.getOpenFileName(
+            self,
+            "Open file",
+            QStandardPaths.writableLocation(QStandardPaths.StandardLocation.MoviesLocation),
+            "Video files (*.mp4 *.mov)",
+        )[0]
         self.load_video(file_name)
 
     def load_video(self, file_name):
@@ -180,7 +187,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def save_analysis(self):
 
         if self.current_file is None:
-            file_name = QFileDialog.getSaveFileName(self, "Save file", self.titleLabel.text(), "Analyse Dateien (*.analysis)")[0]
+            documents_directory = QStandardPaths.writableLocation(
+                QStandardPaths.StandardLocation.DocumentsLocation
+            )
+            suggested_path = os.path.join(
+                documents_directory,
+                f"{self.titleLabel.text()}.analysis",
+            )
+            file_name = QFileDialog.getSaveFileName(
+                self,
+                "Save file",
+                suggested_path,
+                "Analyse Dateien (*.analysis)",
+            )[0]
             if not file_name:
                 return
             self.current_file = file_name
@@ -191,7 +210,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.is_saved = True
 
     def open_analysis(self):
-        file_name = QFileDialog.getOpenFileName(self, "Open file", "${HOME}", "Analyse Dateien (*.analysis)")[0]
+        file_name = QFileDialog.getOpenFileName(
+            self,
+            "Open file",
+            QStandardPaths.writableLocation(
+                QStandardPaths.StandardLocation.DocumentsLocation
+            ),
+            "Analyse Dateien (*.analysis)",
+        )[0]
         self.load_analysis(file_name)
 
     def load_analysis(self, file_name):
@@ -262,9 +288,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         
         self.videoWidget.set_position(selected_item.clip_item.jump_point())
 
-    def export(self, full_video=False):
+    def export(self, include_all_clips=False):
 
-        if full_video:
+        if include_all_clips:
             selected_clips = self.treeWidget.get_top_level_items()
         else:
             selected_clips = self.treeWidget.selectedItems()
@@ -272,7 +298,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             QMessageBox.information(self, "Info", f"No Clips selected")
             return
 
-        file_name = file_name = QFileDialog.getSaveFileName(self, "Save file", "Clips", "Video Datei (*.mp4)")[0]
+        export_directory = QStandardPaths.writableLocation(
+            QStandardPaths.StandardLocation.MoviesLocation
+        )
+        file_name = QFileDialog.getSaveFileName(
+            self,
+            "Save file",
+            os.path.join(export_directory, "Clips.mp4"),
+            "Video Datei (*.mp4)",
+        )[0]
         if not file_name:
             return
 
@@ -292,7 +326,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         
 
         logger = ProgressLogger()
-        video_creator = VideoCreator(clips, self.file_name, file_name, full_video, logger=logger)
+        video_creator = VideoCreator(
+            clips,
+            self.file_name,
+            file_name,
+            include_analysis_title=include_all_clips,
+            logger=logger,
+        )
         self.progressBar.setVisible(True)
         logger.progress_changed.connect(self.progressBar.setValue)
         logger.export_finished.connect(lambda: self.export_finished(file_name))
@@ -369,4 +409,3 @@ if __name__ == "__main__":
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
-

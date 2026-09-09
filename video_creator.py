@@ -1,13 +1,15 @@
 from PIL import Image, ImageDraw, ImageFont
 from proglog import ProgressBarLogger
 from threading import Thread
-from moviepy.editor import VideoFileClip, concatenate_videoclips, TextClip, CompositeVideoClip, ColorClip, ImageClip
-import os
-import platform
-from PySide6.QtCore import QObject, Signal, QTimer
+from moviepy.editor import VideoFileClip, concatenate_videoclips, CompositeVideoClip, ImageClip
+import logging
+from pathlib import Path
+from PySide6.QtCore import QObject, Signal
 import numpy as np
 from enum import Enum
 import textwrap
+
+from app_runtime import overlay_font_path
 
 class ImageType(Enum):
     CATEGORY = 1
@@ -18,7 +20,14 @@ class ImageType(Enum):
 
 class VideoCreator(Thread, QObject):
 
-    def __init__(self, clips, video_filename, save_filename, full_video, logger):
+    def __init__(
+        self,
+        clips,
+        video_filename,
+        save_filename,
+        include_analysis_title,
+        logger,
+    ):
         Thread.__init__(self)
         QObject.__init__(self)
 
@@ -26,16 +35,14 @@ class VideoCreator(Thread, QObject):
         self.video = VideoFileClip(video_filename)
         self.filename = save_filename
         self.size = self.video.size
-        self.full_video = full_video
+        self.include_analysis_title = include_analysis_title
 
         self.logger = logger
 
-        self.tempfilename = "/tmp/tmp_video_png.png"
-
     def run(self):
         category = self.clips[0].category
-        if self.full_video:
-            video_title = os.path.basename(self.filename).removesuffix('.mp4')
+        if self.include_analysis_title:
+            video_title = Path(self.filename).stem
             subclips = [self.create_category_clip(video_title), self.create_category_clip(category)]
         else:
             subclips = [self.create_category_clip(category)]
@@ -88,10 +95,7 @@ class VideoCreator(Thread, QObject):
         image = Image.new("RGBA", self.size, background)
         draw = ImageDraw.Draw(image)
 
-        if platform.system() == "Darwin":
-            font = ImageFont.truetype("Arial.ttf", font_size)
-        else:
-            font = ImageFont.truetype("arial.ttf", font_size)
+        font = ImageFont.truetype(str(overlay_font_path()), font_size)
 
         lines = text.splitlines()
         text = []
@@ -142,4 +146,3 @@ class ProgressLogger(QObject, ProgressBarLogger):
 
 
         
-

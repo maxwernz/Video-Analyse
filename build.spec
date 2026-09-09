@@ -1,12 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import copy_metadata
+
 exclude_modules = ['QtDBus', 'QtNetwork', 'QtOpenGL', 'QtPdf', 'QtQml', 'QtQmlMeta', 'QtQmlModels', 'QtQmlWorkerScript', 'QtQuick', 'QtSvg', 'QtVirtualKeyboard', 'PySide6.QtDBus']
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('assets/fonts/NotoSans.ttf', 'assets/fonts'),
+        ('assets/fonts/OFL.txt', 'assets/fonts'),
+    ] + copy_metadata('imageio'),
     hiddenimports=['moviepy'],
     hookspath=[],
     hooksconfig={},

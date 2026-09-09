@@ -1,3 +1,5 @@
+# Legacy snapshot only; do not create this environment.
+# pyproject.toml and uv.lock are the authoritative dependency definition.
 name: Video_Analyse
 channels:
   - defaults
@@ -45,4 +47,3 @@ dependencies:
       - shiboken6==6.10.0
       - tqdm==4.67.1
       - urllib3==2.5.0
-prefix: /Users/max/miniforge3/envs/Video_Analyse

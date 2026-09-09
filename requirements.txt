@@ -1,3 +1,5 @@
+# Legacy snapshot only; do not install this file.
+# pyproject.toml and uv.lock are the authoritative dependency definition.
 aiohappyeyeballs==2.4.3
 aiohttp==3.10.10
 aiosignal==1.3.1
