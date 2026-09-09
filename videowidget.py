@@ -89,6 +89,13 @@ class VideoWidget(QWidget):
         self.media_player.setSource(self.content)  # Updated for PySide6
         self.video_loaded = True
 
+    def unload_video(self):
+        self.content = None
+        self.video_loaded = False
+        self.is_playing = False
+        self.media_player.stop()
+        self.media_player.setSource(QUrl())
+
     def set_position(self, position):
         self.media_player.setPosition(position)
 

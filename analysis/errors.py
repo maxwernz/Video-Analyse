@@ -36,3 +36,7 @@ class LegacySourceOverwriteError(AnalysisFileError):
 
 class EmptyAnalysisError(AnalysisFileError):
     """An Analysis without a Source video cannot be saved."""
+
+
+class UnknownEntityError(InvalidAnalysisDataError):
+    """An operation referred to an entity this Analysis does not contain."""

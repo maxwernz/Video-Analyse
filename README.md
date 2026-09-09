@@ -30,7 +30,7 @@ at a writable directory.
 Run all source checks with:
 
 ```console
-uv run mypy main.py app_runtime.py video_creator.py
+uv run mypy main.py app_runtime.py video_creator.py analysis
 uv run python -m pytest
 ```
 

@@ -1,46 +1,15 @@
+from __future__ import annotations
+
+from uuid import UUID
+
 from PySide6.QtWidgets import QTreeWidget, QMenu
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QBrush, QColor
 from PySide6.QtCore import Qt, Signal
-from clip_handler import ClipHandler, EditClip
-from treewidget_item import TreeItem, ClipTreeItem
 
-class TreeWidget(QTreeWidget):
+from analysis import Analysis
+from treewidget_item import CategoryTreeItem, ClipItem, ClipTreeItem
 
-    tree_item_list = []
-    export_clips = Signal()
-    item_changed = Signal(bool)
-    clip_handler_opened = Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        self.sortByColumn(1, Qt.AscendingOrder)
-        self.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.customContextMenuRequested.connect(self.context_menu)
-
-        self.itemDoubleClicked.connect(self.edit_item)
-
-    def set_edit_handler(self, edit_handler):
-        self.edit_handler = edit_handler
-
-    def context_menu(self, event):
-        item = self.itemAt(event)
-        if item:
-            menu = QMenu(self)
-
-            remove_action = QAction("Löschen", self)
-            remove_action.triggered.connect(lambda: self.remove_item(item))
-            menu.addAction(remove_action)
-            
-            if item.parent() is not None:
-                edit_action = QAction("Bearbeiten", self)
-                edit_action.triggered.connect(lambda: self.edit_item(item))
-                menu.addAction(edit_action)
-
-            export_action = QAction("Clips exportieren", self)
-            export_action.triggered.connect(lambda: self.export_clips.emit())
-            menu.addAction(export_action)
-            menu.setStyleSheet("""
+MENU_STYLE_SHEET = """
         QMenu {
             background-color: rgb(178, 178, 178); /* Background color of the menu */
             border: 1px solid #C0C0C0; /* Light gray border */
@@ -65,141 +34,134 @@ class TreeWidget(QTreeWidget):
             background-color: #C0C0C0; /* Color of the separator */
             margin: 5px 0; /* Margin around separator */
         }
-        
-    """)
 
-            menu.exec(self.mapToGlobal(event))
+    """
 
-    def add_clips(self, clip_list):
-        for clip in clip_list:
-            self.add_clip(clip)
 
-    def add_clip(self, clip):
-        TreeWidget.tree_item_list.append(clip)
-        category = clip.category
-        parent = self
-        if category is not None:
-            if category in ClipHandler.categories:
-                category_item = self.get_category_item(category)
-            else:
-                category_item = TreeItem(parent)
-                category_item.setText(0, category)
-                ClipHandler.categories[category] = category_item
-            parent = category_item
-        
-        ClipTreeItem(clip, parent=parent)
+class TreeWidget(QTreeWidget):
+    """Renders the Clips and Categories of an Analysis.
 
-    def edit_item(self, item, _=None):
-        if item is None:
-            return
-        
-        if item.parent() is None:  # TopLevelItem
-            return
-        
-        self.edit_handler.new_clip(item.clip())
-        self.clip_handler_opened.emit()
-        self.edit_handler.setVisible(True)
-        self.edit_handler.acceptButton.clicked.connect(lambda: self.edit_clip(self.edit_handler.clip_item, item))
-        self.edit_handler.cancelButton.clicked.connect(self.disable_clip_handler)
-        
+    The widget owns no durable state: it renders whatever Analysis it is given
+    and reports requested changes by identity, leaving the mutation to the
+    Analysis operations.
+    """
 
-    def edit_clip(self, clip_item, item):
-        clip_item = clip_item
-        item.edit_item(clip_item.clip_name())
-        category = clip_item.category
-        if category not in ClipHandler.categories:
-            parent = self
-            category_item = TreeItem(parent)
-            category_item.setText(0, category)
-            ClipHandler.categories[category] = category_item
-        if item.parent() != ClipHandler.categories[category]:
-            old_parent = item.parent()
-            old_parent.removeChild(item)
-            new_parent = self.get_category_item(category)
-            new_parent.addChild(item)
+    export_clips = Signal()
+    clip_edit_requested = Signal(object)
+    clip_remove_requested = Signal(object)
+    category_edit_requested = Signal(object)
+    category_remove_requested = Signal(object)
 
-            self.check_empty_parent(old_parent)
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.sortByColumn(1, Qt.AscendingOrder)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.context_menu)
+
+        self.itemDoubleClicked.connect(self.request_edit)
+
+    def render_analysis(self, analysis: Analysis) -> None:
+        """Rebuild the tree from the Analysis, keeping the selected Clip selected.
+
+        Every Category of the Analysis is rendered, including one holding no
+        Clips, so that it stays reachable for renaming and removal.
+        """
+        selected_clip_ids = {
+            item.clip_id for item in self._clip_tree_items() if item.isSelected()
+        }
+        self.clear()
+
+        category_names = {category.id: category.name for category in analysis.categories}
+        category_items: dict[UUID, CategoryTreeItem] = {}
+        for category in analysis.categories:
+            category_item = CategoryTreeItem(category.id, category.name, parent=self)
+            color = QColor(category.color)
+            if color.isValid():
+                category_item.setForeground(0, QBrush(color))
+            category_items[category.id] = category_item
+
+        for clip in analysis.clips:
+            parent: QTreeWidget | CategoryTreeItem = self
+            if clip.category_id is not None:
+                parent = category_items[clip.category_id]
+            clip_item = ClipItem.from_clip(
+                clip,
+                None if clip.category_id is None else category_names[clip.category_id],
+            )
+            item = ClipTreeItem(clip_item, parent=parent)
+            if clip.id in selected_clip_ids:
+                item.setSelected(True)
 
         self.fit_tree()
-        self.item_changed.emit(False)
-        self.disable_clip_handler()
 
-    def disable_clip_handler(self):
-        self.edit_handler.setVisible(False)
-        self.edit_handler.acceptButton.clicked.disconnect()
-        self.edit_handler.cancelButton.clicked.disconnect()
-        
-    def get_category_item(self, category):
-        category_item = ClipHandler.categories.get(category)
-        if category_item is None:
-            category_item = TreeItem(self)
-            category_item.setText(0, category)
-            ClipHandler.categories[category] = category_item
-        
-        return category_item
+    def context_menu(self, event):
+        item = self.itemAt(event)
+        if item is None:
+            return
 
-    def remove_item(self, item):
-        parent = item.parent()
-        if parent is None:
-            index = self.indexOfTopLevelItem(item)
-            self.takeTopLevelItem(index)
-            for child in item.children():
-                self.remove_clip_from_list(child)
-        else:
-            parent.removeChild(item)
-            self.remove_clip_from_list(item)
+        menu = QMenu(self)
 
-            self.check_empty_parent(parent)
-        self.item_changed.emit(False)
+        remove_action = QAction("Löschen", self)
+        remove_action.triggered.connect(lambda: self.request_remove(item))
+        menu.addAction(remove_action)
 
-    def check_empty_parent(self, parent):
-        if parent.childCount() == 0:
-            index = self.indexOfTopLevelItem(parent)
-            self.takeTopLevelItem(index)
-            category = parent.text(0)
-            ClipHandler.categories[category] = None
+        edit_action = QAction("Bearbeiten", self)
+        edit_action.triggered.connect(lambda: self.request_edit(item))
+        menu.addAction(edit_action)
 
-    def remove_analysis(self):
-        self.clear()
-        TreeWidget.tree_item_list = []
-        ClipHandler.categories = {"Abwehr": None, "Angriff": None, "Tor": None}
+        export_action = QAction("Clips exportieren", self)
+        export_action.triggered.connect(lambda: self.export_clips.emit())
+        menu.addAction(export_action)
+        menu.setStyleSheet(MENU_STYLE_SHEET)
 
-    def remove_clip_from_list(self, item):
-        clip_item = item.clip()
-        TreeWidget.tree_item_list.remove(clip_item)
+        menu.exec(self.mapToGlobal(event))
 
-    def fit_tree(self):
+    def request_edit(self, item, _=None) -> None:
+        self._request(item, self.clip_edit_requested, self.category_edit_requested)
+
+    def request_remove(self, item) -> None:
+        self._request(item, self.clip_remove_requested, self.category_remove_requested)
+
+    def _request(self, item, clip_signal, category_signal) -> None:
+        """Report a requested change by identity; the Analysis decides the rest."""
+        if isinstance(item, ClipTreeItem):
+            clip_signal.emit(item.clip_id)
+        elif isinstance(item, CategoryTreeItem):
+            category_signal.emit(item.category_id)
+
+    def selected_clip_items(self) -> list[ClipItem]:
+        """The Clips covered by the selection, Category items included."""
+        return self._clip_items_of(self.selectedItems())
+
+    def all_clip_items(self) -> list[ClipItem]:
+        return self._clip_items_of(self.get_top_level_items())
+
+    def fit_tree(self) -> None:
         self.expandAll()
         for col in range(self.columnCount()):
             self.resizeColumnToContents(col)
 
     def get_top_level_items(self):
-        top_level_items = []
-        for i in range(self.topLevelItemCount()):
-            top_level_items.append(self.topLevelItem(i))
-        return top_level_items
+        return [self.topLevelItem(index) for index in range(self.topLevelItemCount())]
 
+    def _clip_items_of(self, items) -> list[ClipItem]:
+        clip_items: list[ClipItem] = []
+        for tree_item in self._flatten(items):
+            if tree_item.clip_item not in clip_items:
+                clip_items.append(tree_item.clip_item)
+        return clip_items
 
-if __name__ == "__main__":
-    import sys
-    from PySide6.QtWidgets import QApplication, QMainWindow
+    def _clip_tree_items(self) -> list[ClipTreeItem]:
+        return self._flatten(self.get_top_level_items())
 
-    app = QApplication(sys.argv)
-    
-    main_window = QMainWindow()
-    tree_widget = TreeWidget()
-    
-    # Add some example items for testing
-    # example_clips = [
-    #     ClipHandler.create_clip("Clip 1", "Category A"),
-    #     ClipHandler.create_clip("Clip 2", "Category B"),
-    #     ClipHandler.create_clip("Clip 3", "Category A")
-    # ]
-    
-    # tree_widget.add_clips(example_clips)
-    
-    main_window.setCentralWidget(tree_widget)
-    main_window.resize(400, 300)
-    main_window.show()
-
-    sys.exit(app.exec())
+    @staticmethod
+    def _flatten(items) -> list[ClipTreeItem]:
+        """The Clip rows covered by these items, Category rows expanded."""
+        clip_rows: list[ClipTreeItem] = []
+        for item in items:
+            candidates = [item] if isinstance(item, ClipTreeItem) else item.children()
+            for candidate in candidates:
+                if candidate not in clip_rows:
+                    clip_rows.append(candidate)
+        return clip_rows
