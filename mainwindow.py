@@ -1,13 +1,14 @@
 import sys
 import os
+from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMessageBox, QLabel
 from PySide6 import QtCore, QtGui
 from PySide6.QtCore import QUrl, Qt, QSignalBlocker, Signal, Property, QTranslator, QTimer, QStandardPaths
 from PySide6.QtGui import QKeySequence, QShortcut, QDesktopServices
 from Ui_main_window import Ui_MainWindow
-from clip_handler import CreateClip
-from treewidget_item import ClipTreeItem
-import pickle
+from analysis import Analysis, AnalysisDocument, AnalysisError
+from clip_handler import ClipHandler, CreateClip
+from treewidget_item import ClipItem, ClipTreeItem
 from treewidget import TreeWidget
 from video_creator import VideoCreator, ProgressLogger
 from util import milliseconds_to_hhmmss
@@ -56,6 +57,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._current_file = None
         self.file_changed.emit(None)
         self._is_saved = True
+        self.analysis_document = AnalysisDocument.new()
 
     def set_language(self, lang_code):
         translator = QTranslator()
@@ -177,36 +179,49 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def load_video(self, file_name):
         if file_name:
-            self.file_name = file_name
             self.remove_analysis()
+            self.file_name = file_name
+            self.analysis_document = AnalysisDocument.new(Path(file_name).stem)
+            self.analysis_document.analysis.add_source_video(
+                Path(file_name).name,
+                file_name,
+            )
             self.videoWidget.media_player.positionChanged.connect(self.position_changed)
             self.videoWidget.media_player.durationChanged.connect(self.duration_changed)
             self.videoWidget.load_video(QUrl.fromLocalFile(self.file_name))
-            self.titleLabel.setText(os.path.basename(file_name).removesuffix('.mp4'))
+            self.titleLabel.setText(Path(file_name).stem)
+            self.is_saved = False
 
     def save_analysis(self):
+        try:
+            self.analysis_document.replace_analysis(self._analysis_from_ui())
+            if (
+                self.analysis_document.path is None
+                or self.analysis_document.requires_save_as
+            ):
+                documents_directory = QStandardPaths.writableLocation(
+                    QStandardPaths.StandardLocation.DocumentsLocation
+                )
+                suggested_path = os.path.join(
+                    documents_directory,
+                    f"{self.titleLabel.text()}.analysis",
+                )
+                file_name = QFileDialog.getSaveFileName(
+                    self,
+                    "Save file",
+                    suggested_path,
+                    "Analyse Dateien (*.analysis)",
+                )[0]
+                if not file_name:
+                    return
+                saved_path = self.analysis_document.save_as(file_name)
+            else:
+                saved_path = self.analysis_document.save()
+        except (AnalysisError, OSError) as error:
+            QMessageBox.critical(self, "Analysis could not be saved", str(error))
+            return
 
-        if self.current_file is None:
-            documents_directory = QStandardPaths.writableLocation(
-                QStandardPaths.StandardLocation.DocumentsLocation
-            )
-            suggested_path = os.path.join(
-                documents_directory,
-                f"{self.titleLabel.text()}.analysis",
-            )
-            file_name = QFileDialog.getSaveFileName(
-                self,
-                "Save file",
-                suggested_path,
-                "Analyse Dateien (*.analysis)",
-            )[0]
-            if not file_name:
-                return
-            self.current_file = file_name
-        else:
-            file_name = self.current_file
-
-        pickle.dump((self.file_name, TreeWidget.tree_item_list), open(file_name, 'wb'))
+        self.current_file = str(saved_path)
         self.is_saved = True
 
     def open_analysis(self):
@@ -221,25 +236,57 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.load_analysis(file_name)
 
     def load_analysis(self, file_name):
-        
         if not file_name:
             return
 
-        video_file, tree_list = pickle.load(open(file_name, 'rb'))
-
-        if os.path.exists(video_file):
-            self.file_name = video_file
-        else:
-            QMessageBox.critical(self, "Error", f"Video URL not found")
+        try:
+            self.analysis_document.load(file_name)
+        except AnalysisError as error:
+            QMessageBox.critical(self, "Analysis could not be opened", str(error))
             return
-        
-        self.load_video(self.file_name)
 
-        self.current_file = file_name
-        
-        self.treeWidget.add_clips(tree_list)
-        
+        analysis = self.analysis_document.analysis
+        source_video = analysis.source_videos[0]
+        categories_by_id = {category.id: category for category in analysis.categories}
+
+        self.treeWidget.remove_analysis()
+        ClipHandler.categories = {category.name: None for category in analysis.categories}
+        self.file_name = source_video.location
+        self.titleLabel.setText(analysis.title)
+        self.current_file = (
+            None
+            if self.analysis_document.path is None
+            else str(self.analysis_document.path)
+        )
+
+        for domain_clip in analysis.clips:
+            category = (
+                None
+                if domain_clip.category_id is None
+                else categories_by_id[domain_clip.category_id].name
+            )
+            clip_item = ClipItem(
+                domain_clip.name,
+                domain_clip.start_ms,
+                domain_clip.end_ms,
+                domain_clip.notes,
+                category,
+            )
+            clip_item.analysis_id = domain_clip.id
+            self.treeWidget.add_clip(clip_item)
+
+        if os.path.exists(self.file_name):
+            self.videoWidget.media_player.positionChanged.connect(self.position_changed)
+            self.videoWidget.media_player.durationChanged.connect(self.duration_changed)
+            self.videoWidget.load_video(QUrl.fromLocalFile(self.file_name))
+        else:
+            QMessageBox.warning(
+                self,
+                "Source video not found",
+                "The Analysis was opened, but its Source video must be relinked.",
+            )
         self.treeWidget.fit_tree()
+        self.is_saved = not self.analysis_document.dirty
 
     def change_speed_up(self):
         current_index = self.speedBox.currentIndex()
@@ -353,7 +400,82 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def remove_analysis(self):
         self.treeWidget.remove_analysis()
+        self.analysis_document = AnalysisDocument.new()
+        self.file_name = None
         self.current_file = None
+        self.is_saved = True
+
+    def _analysis_from_ui(self) -> Analysis:
+        existing = self.analysis_document.analysis
+        analysis = Analysis(self.titleLabel.text(), analysis_id=existing.id)
+
+        if not self.file_name:
+            return analysis
+
+        existing_source = existing.source_videos[0] if existing.source_videos else None
+        source_video = analysis.add_source_video(
+            (
+                existing_source.display_name
+                if existing_source is not None
+                else Path(self.file_name).name
+            ),
+            self.file_name,
+            source_video_id=None if existing_source is None else existing_source.id,
+            relative_path=(
+                None if existing_source is None else existing_source.relative_path
+            ),
+            duration_ms=None if existing_source is None else existing_source.duration_ms,
+            byte_size=None if existing_source is None else existing_source.byte_size,
+            fingerprint=None if existing_source is None else existing_source.fingerprint,
+        )
+
+        existing_categories = {
+            category.name.strip().casefold(): category
+            for category in existing.categories
+        }
+        category_names = [category.name for category in existing.categories]
+        category_names.extend(ClipHandler.categories)
+        category_names.extend(
+            clip.category
+            for clip in TreeWidget.tree_item_list
+            if clip.category is not None
+        )
+        categories_by_name = {}
+        for category_name in category_names:
+            normalized_name = category_name.strip().casefold()
+            if normalized_name in categories_by_name:
+                continue
+            existing_category = existing_categories.get(normalized_name)
+            category = analysis.add_category(
+                category_name,
+                "#808080" if existing_category is None else existing_category.color,
+                category_id=None if existing_category is None else existing_category.id,
+            )
+            categories_by_name[normalized_name] = category
+
+        for position, clip_item in enumerate(TreeWidget.tree_item_list):
+            old_identity = getattr(clip_item, "analysis_id", None)
+            existing_clip = next(
+                (clip for clip in existing.clips if clip.id == old_identity),
+                None,
+            )
+            category_id = None
+            if clip_item.category is not None:
+                category_id = categories_by_name[
+                    clip_item.category.strip().casefold()
+                ].id
+            clip = analysis.add_clip(
+                source_video.id,
+                clip_item.name,
+                clip_item.start_position,
+                clip_item.end_position,
+                notes=clip_item.notes,
+                category_id=category_id,
+                clip_id=None if existing_clip is None else existing_clip.id,
+                creation_order=position,
+            )
+            clip_item.analysis_id = clip.id
+        return analysis
 
     def open_file_explorer(self, path):
         QDesktopServices.openUrl(QUrl.fromLocalFile(path))
