@@ -16,6 +16,7 @@ APPLICATION_NAME = "Video Analyse"
 BUNDLE_IDENTIFIER = "de.maxwernz.videoanalyse"
 ARTIFACT_BASE_NAME = "Video-Analyse"
 MACOS_ARCHITECTURE = "arm64"
+PUBLISHER = "maxwernz"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENTRY_SCRIPT = str(PROJECT_ROOT / "main.py")
