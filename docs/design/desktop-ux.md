@@ -6,6 +6,10 @@ This document records the validated direction from the second throwaway desktop 
 prototype. It guides production UI work but does not make the prototype production
 code.
 
+The timeline scope, the starter-Category count, and Undo/Redo were open when this
+document was first written. All three are now resolved below, together with the scope
+and ordering of the production UI release.
+
 The prototype source and captures are in
 [prototype/video_analyse_desktop_v2](../../prototype/video_analyse_desktop_v2/).
 Its evaluation notes are in
@@ -55,27 +59,31 @@ accepted sport-specific concepts or fields.
 
 ## Timeline
 
-The production workspace uses one compact timeline directly beneath the video.
+The production workspace uses one compact timeline directly beneath the video. It is
+scoped to the **Active Source video** and it replaces the position slider rather than
+sitting beside it, so the workspace has exactly one seek surface. See
+[ADR 0006](../adr/0006-one-compact-timeline-as-the-sole-seek-surface.md).
 
-It provides clickable visible Clip ranges or markers. Activating one:
+Interaction:
 
-1. selects the Clip;
-2. activates its Source video when necessary;
-3. seeks to its start;
-4. emphasizes the selected range with a non-color treatment and its muted Category
-   color;
-5. shows the selected Clip title and timecode near the timeline.
+- Clicking or dragging anywhere on the timeline scrubs the playhead to that time,
+  including on top of a Clip range.
+- Clicking a Clip range additionally selects that Clip without moving the playhead to
+  its start.
+- Double-clicking a Clip range seeks to the Clip start.
+- Selecting a Clip in the Clips sidebar tab activates its Source video and seeks to
+  its start.
+
+A selected range is emphasized with a non-color treatment and its muted Category
+color, and the selected Clip title and timecode appear near the timeline.
+
+Clip ranges render with a minimum width of roughly three pixels: a ninety-minute
+Source video across a twelve-hundred-pixel timeline is about four and a half seconds
+per pixel, so short Clips would otherwise be invisible and unclickable. The timeline
+does not zoom in this direction.
 
 The timeline must not have permanently stacked Source-video lanes or duplicate the
 Clip list.
-
-### Open timeline decision
-
-Before production UI work begins, choose one scope for the compact timeline:
-
-- **Active Source video only**, which is simpler and gives the clearest time scale; or
-- **All currently visible Clips**, which better reflects cross-video filtering but
-  needs a clear representation of unrelated source durations.
 
 ## Responsive and platform validation
 
@@ -93,13 +101,52 @@ window resizing, menus, dialogs, fonts, shortcuts, and video behavior.
 - Treating the throw-origin or goal-target prototype placeholders as accepted data
   concepts.
 
-## Open product conflicts
+## Resolved product conflicts
 
-These decisions need explicit resolution before their implementation tickets are
-completed:
+1. **Starter Categories.** The three-Category default template from ADR 0003 and
+   issue #18 stands: `Abwehr`, `Angriff`, `Tor`. The ten-Category set requested in the
+   design discussion is deferred, not rejected. The template is installation-local,
+   editable, restorable, and by design never propagates into existing Analyses, so
+   growing it later is a template-content change rather than a code change and harms
+   nobody who has already started work. Decide the ten from real handball coding.
+2. **Undo and Redo.** Out of scope for the production UI release, as issue #12 already
+   states. Undo/Redo constrains every durable mutation rather than adding a UI
+   control, and the mutation seam ADR 0003 reserved (`Analysis.transaction()`) stays
+   in place for it. The protections available meanwhile are confirmation on
+   Source-video removal, Category removal leaving Clips intact and uncategorized, and
+   Recovery snapshots (issue #19).
 
-1. The design discussion requested ten starter handball Categories, while ADR 0003
-   and issue #18 currently specify a restorable three-Category default template.
-2. The design discussion requested Undo and Redo, while issue #12 currently leaves
-   full Undo/Redo out of scope.
+## Production UI release
+
+The smallest release that reproduces this direction on top of `AnalysisDocument` is,
+in order:
+
+1. **Deepen playback** into an explicit player seam: load/unload, play/pause, seek,
+   position, duration, rate, and stepping, with no widget construction inside it and a
+   fake implementation for controller tests. Stepping uses a fixed interval
+   independent of playback rate. Playback state stays transient and never dirties the
+   Analysis document.
+2. **Deepen application workflow**: New, Open, Save, Save As, Close, the
+   unsaved-changes decision flow, additive video adding by dialog and drag-and-drop,
+   the window title and dirty indicator, menus, and shortcuts. Recovery snapshots
+   (#19), relinking (#17), and a recent-files list are excluded.
+3. **Workspace shell**, replacing `main_window.ui`. See
+   [ADR 0005](../adr/0005-compose-the-workspace-in-code.md). An Analysis with no
+   Source videos renders as the normal workspace with an empty player, empty sidebar
+   tabs, and an add-video call to action, not as a separate welcome screen.
+4. **Clips/Videos sidebar and multi-video Clip work** (issue #15), which owns the
+   sidebar rather than the thumbnail strip its original text described.
+5. **Clip-editing state**: one editor serves both creating a Clip and editing an
+   existing one. Cancelling a newly marked Clip discards the Pending Clip, which is
+   not part of the Analysis. Clip boundaries are editable in the form.
+6. **Compact timeline**, as described above.
+
+Issues #16, #17, #19, and #20 follow against the finished interface. Category
+management (#18) also follows: the release ships on the existing behavior where
+typing an unknown Category name creates it.
+
+The behavioral tests in `tests/test_main_window_workflow.py` are the regression
+contract for this release and must stay green. Reproduction is verified through
+controller behavior, not by comparing screenshots against the throwaway prototype.
+Interactive validation on real macOS and Windows machines remains a pre-release step.
 

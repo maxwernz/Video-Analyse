@@ -32,12 +32,16 @@ _Avoid_: Autosave, backup
 A video recording referenced by an Analysis but stored outside its Analysis file. It has an editable display name, and its identity remains stable when the media file is moved and relinked.
 _Avoid_: Video file, media asset
 
+**Active Source video**:
+The single Source video currently loaded in the one player. Navigating to a Clip makes that Clip's Source video active. It is transient presentation state and is never stored in an Analysis file.
+_Avoid_: Current video, selected video
+
 **Clip**:
 A named, editable time interval belonging to exactly one Source video, with optional notes and an optional Category.
 _Avoid_: Segment, marker
 
 **Pending Clip**:
-A temporary Clip boundary state after a start has been set on the active Source video but before an end has been set. It is not part of the Analysis and cannot move to another Source video.
+A temporary Clip boundary state after a start has been set on the Active Source video but before an end has been set. It is not part of the Analysis and cannot move to another Source video.
 _Avoid_: Recording, unsaved Clip
 
 **Category**:
