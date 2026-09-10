@@ -24,6 +24,7 @@ from application_workflow import (
     ApplicationWorkflow,
 )
 from playback import Playback
+from timeline import TimelineRange
 from visual_system import MESSAGE_BOX_STYLE_SHEET
 from workspace import WorkspaceShell
 from treewidget_item import ClipItem, ClipTreeItem
@@ -36,6 +37,9 @@ PLAYBACK_RATES = (0.25, 0.5, 1.0, 2.0)
 """The rates the speed selector offers, in the order it lists them."""
 
 DEFAULT_PLAYBACK_RATE = 1.0
+
+SELECTED_CLIP_FORMAT = "{name}  ·  {start} – {end}"
+"""How the Clip selected on the timeline is named beneath it."""
 
 
 class MainWindow(WorkspaceShell):
@@ -67,6 +71,8 @@ class MainWindow(WorkspaceShell):
         self.titleLabel.installEventFilter(self)
 
         self.pending_clip_start = None
+        self._active_source_video_id = None
+        self._selected_clip_id = None
         self._current_file = None
         self.file_changed.emit(None)
         self._is_saved = True
@@ -93,6 +99,10 @@ class MainWindow(WorkspaceShell):
         self.speedBox.currentIndexChanged.connect(self.apply_playback_rate)
         self.player.position_changed.connect(self.position_changed)
         self.player.duration_changed.connect(self.duration_changed)
+
+        self.timeline.scrubbed.connect(self.player.seek)
+        self.timeline.clip_selected.connect(self.select_clip)
+        self.timeline.clip_activated.connect(self.navigate_to_clip)
 
         self.addVideoButton.clicked.connect(self.open_video)
 
@@ -192,6 +202,8 @@ class MainWindow(WorkspaceShell):
     def analysis_replaced(self):
         """A different Analysis is open now; drop everything transient."""
         self.pending_clip_start = None
+        self._active_source_video_id = None
+        self._selected_clip_id = None
         self.disable_clip_handler()
         self.disable_edit_handler()
         self.player.unload()
@@ -250,6 +262,7 @@ class MainWindow(WorkspaceShell):
         self.titleLabel.setText(analysis.title or UNTITLED_ANALYSIS_TITLE)
         self.treeWidget.render_analysis(analysis)
         self.render_player_state()
+        self.render_timeline()
         self.refresh_document_state()
 
     def render_player_state(self):
@@ -262,6 +275,51 @@ class MainWindow(WorkspaceShell):
         has_source_videos = bool(self.analysis.source_videos)
         self.playerStack.setCurrentWidget(
             self.videoWidget if has_source_videos else self.emptyPlayerHint
+        )
+
+    def render_timeline(self):
+        """Scope the timeline to the Active Source video, and to it alone."""
+        source_video = self.active_source_video()
+        ranges = () if source_video is None else self.timeline_ranges(source_video)
+        self.timeline.show_ranges(ranges)
+        self.timeline.set_duration(self.player.duration())
+        self.timeline.set_position(self.player.position())
+        self.select_clip(
+            self._selected_clip_id
+            if any(shown.clip_id == self._selected_clip_id for shown in ranges)
+            else None
+        )
+
+    def timeline_ranges(self, source_video: SourceVideo) -> tuple[TimelineRange, ...]:
+        return tuple(
+            TimelineRange(
+                clip.id,
+                clip.start_ms,
+                clip.end_ms,
+                self.category_color(clip.category_id),
+            )
+            for clip in self.analysis.clips_of_source_video(source_video.id)
+        )
+
+    def category_color(self, category_id):
+        if category_id is None:
+            return None
+        try:
+            return self.analysis.category(category_id).color
+        except AnalysisError:
+            return None
+
+    def render_selected_clip(self):
+        """Name the selected Clip and its interval directly under the strip."""
+        clip = self.selected_clip()
+        self.selectedClipLabel.setText(
+            ""
+            if clip is None
+            else SELECTED_CLIP_FORMAT.format(
+                name=clip.name,
+                start=milliseconds_to_hhmmss(clip.start_ms),
+                end=milliseconds_to_hhmmss(clip.end_ms),
+            )
         )
 
     def refresh_document_state(self):
@@ -351,8 +409,67 @@ class MainWindow(WorkspaceShell):
         self.player.load(source_video.location)
 
     def active_source_video(self) -> SourceVideo | None:
+        """The Source video the one player shows; transient, never stored."""
         source_videos = self.analysis.source_videos
+        active = next(
+            (
+                source_video
+                for source_video in source_videos
+                if source_video.id == self._active_source_video_id
+            ),
+            None,
+        )
+        if active is not None:
+            return active
         return source_videos[0] if source_videos else None
+
+    def activate_source_video(self, source_video_id):
+        """Load a Source video into the one player and rescope the timeline.
+
+        The Source video already under review is never reloaded: that would
+        drop the frame being watched and the duration the timeline draws on.
+        """
+        active = self.active_source_video()
+        if active is not None and active.id == source_video_id:
+            self._active_source_video_id = source_video_id
+            return
+        try:
+            source_video = self.analysis.source_video(source_video_id)
+        except AnalysisError:
+            return
+        self._active_source_video_id = source_video_id
+        self.load_media(source_video)
+        self.render_player_state()
+        self.render_timeline()
+
+    def navigate_to_clip(self, clip_id):
+        """Go to a Clip: activate its Source video and seek to its start.
+
+        This is the one way into a Clip from anywhere in the workspace, so the
+        Clips sidebar tab (#15) and a double-click on the timeline arrive the
+        same way and the timeline follows either.
+        """
+        try:
+            clip = self.analysis.clip(clip_id)
+        except AnalysisError:
+            return
+        self.activate_source_video(clip.source_video_id)
+        self.select_clip(clip_id)
+        self.player.seek(clip.start_ms)
+
+    def select_clip(self, clip_id):
+        """Select a Clip without moving the playhead; selection is transient."""
+        self._selected_clip_id = clip_id
+        self.timeline.set_selected_clip(clip_id)
+        self.render_selected_clip()
+
+    def selected_clip(self):
+        if self._selected_clip_id is None:
+            return None
+        try:
+            return self.analysis.clip(self._selected_clip_id)
+        except AnalysisError:
+            return None
 
     def save_analysis(self) -> bool:
         return self.workflow.save()
@@ -547,7 +664,7 @@ class MainWindow(WorkspaceShell):
         if not isinstance(item, ClipTreeItem):
             return
 
-        self.player.seek(item.clip_item.start_position)
+        self.navigate_to_clip(item.clip_item.clip_id)
 
     def export(self, include_all_clips=False):
         source_video = self.active_source_video()
@@ -631,9 +748,11 @@ class MainWindow(WorkspaceShell):
 
     def position_changed(self, position):
         self.set_position_label(position)
+        self.timeline.set_position(position)
 
     def duration_changed(self, duration):
         self.set_duration_label(duration)
+        self.timeline.set_duration(duration)
 
     def set_position_label(self, position):
         self.position_label.setText(f"{milliseconds_to_hhmmss(position)}")

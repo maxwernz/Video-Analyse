@@ -8,7 +8,8 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint  # noqa: E402
+from PySide6.QtCore import QPoint, Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtGui import QColor, QKeySequence  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
 
@@ -782,3 +783,154 @@ def test_a_category_color_is_rendered_muted_without_changing_the_analysis(
 
     assert rendered.saturation() < QColor(category.color).saturation()
     assert category.color == "#EF4444"
+
+
+TIMELINE_WIDTH = 600
+"""The width the timeline tests scrub across, so pixels map to round times."""
+
+
+def _timeline_at(window: MainWindow, x: int) -> QPoint:
+    """A point on the timeline, at a width both platforms agree on."""
+    window.timeline.resize(TIMELINE_WIDTH, window.timeline.height())
+    return QPoint(x, window.timeline.height() // 2)
+
+
+def _timeline_click(window: MainWindow, x: int) -> None:
+    QTest.mouseClick(
+        window.timeline, Qt.MouseButton.LeftButton, pos=_timeline_at(window, x)
+    )
+
+
+def _prepared_timeline(
+    window: MainWindow,
+    tmp_path: Path,
+    duration_ms: int = 60_000,
+) -> None:
+    _load_video(window, tmp_path)
+    window.player.set_duration(duration_ms)
+
+
+def test_the_timeline_shows_the_clips_of_the_active_source_video_only(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _prepared_timeline(window, tmp_path)
+    _create_clip(window, name="Fast break", start_ms=30_000, end_ms=40_000)
+    second_video = tmp_path / "second-half.mp4"
+    second_video.write_bytes(b"not a real video")
+    window.load_video(str(second_video))
+    first, second = window.analysis.source_videos
+
+    window.activate_source_video(second.id)
+
+    assert window.active_source_video() == second
+    assert window.timeline.range_at(_timeline_at(window, 350).x()) is None
+
+    window.activate_source_video(first.id)
+    window.player.set_duration(60_000)
+
+    on_timeline = window.timeline.range_at(_timeline_at(window, 350).x())
+    assert on_timeline is not None
+    assert on_timeline.clip_id == window.analysis.clips[0].id
+
+
+def test_clicking_the_timeline_scrubs_the_player_to_that_time(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _prepared_timeline(window, tmp_path)
+
+    _timeline_click(window, TIMELINE_WIDTH // 2)
+
+    assert window.player.position() == 30_000
+
+
+def test_clicking_a_clip_range_selects_it_without_moving_the_playhead(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _prepared_timeline(window, tmp_path)
+    _create_clip(window, name="Fast break", start_ms=30_000, end_ms=40_000)
+
+    _timeline_click(window, 350)
+
+    clip = window.analysis.clips[0]
+    assert window.selected_clip() == clip
+    assert window.player.position() == 35_000
+    assert "Fast break" in window.selectedClipLabel.text()
+    assert "00:00:30" in window.selectedClipLabel.text()
+    assert "00:00:40" in window.selectedClipLabel.text()
+
+
+def test_double_clicking_a_clip_range_seeks_to_the_clip_start(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _prepared_timeline(window, tmp_path)
+    _create_clip(window, start_ms=30_000, end_ms=40_000)
+
+    QTest.mouseDClick(
+        window.timeline, Qt.MouseButton.LeftButton, pos=_timeline_at(window, 350)
+    )
+
+    assert window.player.position() == 30_000
+    assert window.selected_clip() == window.analysis.clips[0]
+
+
+def test_navigating_to_a_clip_activates_its_source_video_and_the_timeline_follows(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """The seam the Clips sidebar tab (#15) navigates through."""
+    _prepared_timeline(window, tmp_path)
+    second_video = tmp_path / "second-half.mp4"
+    second_video.write_bytes(b"not a real video")
+    window.load_video(str(second_video))
+    second = window.analysis.source_videos[1]
+    window.analysis.add_clip(second.id, "Counter", 20_000, 25_000)
+    window.render_analysis()
+
+    window.navigate_to_clip(window.analysis.clips[0].id)
+
+    assert window.active_source_video() == second
+    assert window.player.location() == str(second_video)
+    assert window.player.position() == 20_000
+    assert window.timeline.selected_clip() == window.analysis.clips[0].id
+    window.player.set_duration(60_000)
+    shown = window.timeline.range_at(_timeline_at(window, 220).x())
+    assert shown is not None and shown.clip_id == window.analysis.clips[0].id
+
+
+def test_the_timeline_never_dirties_the_analysis_document(
+    window: MainWindow,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Selection and playhead are transient, exactly like playback state."""
+    _prepared_timeline(window, tmp_path)
+    _create_clip(window, start_ms=30_000, end_ms=40_000)
+    _save_to(window, tmp_path / "match.analysis", monkeypatch)
+    assert window.is_saved is True
+
+    _timeline_click(window, 350)
+    QTest.mouseDClick(
+        window.timeline, Qt.MouseButton.LeftButton, pos=_timeline_at(window, 350)
+    )
+    window.activate_source_video(window.analysis.source_videos[0].id)
+
+    assert window.document.dirty is False
+    assert window.is_saved is True
+
+
+def test_navigating_within_the_active_source_video_does_not_reload_it(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """Reloading would drop the frame under review and the known duration."""
+    _prepared_timeline(window, tmp_path)
+    _create_clip(window, start_ms=30_000, end_ms=40_000)
+
+    window.navigate_to_clip(window.analysis.clips[0].id)
+
+    assert window.player.duration() == 60_000
+    assert window.player.position() == 30_000
