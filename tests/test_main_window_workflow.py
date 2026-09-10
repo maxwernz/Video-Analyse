@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
 
@@ -7,7 +8,8 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtGui import QKeySequence  # noqa: E402
+from PySide6.QtCore import QPoint  # noqa: E402
+from PySide6.QtGui import QColor, QKeySequence  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
 
 import mainwindow as mainwindow_module  # noqa: E402
@@ -657,3 +659,126 @@ def test_the_play_button_does_not_claim_to_play_with_no_video_loaded(
 
     assert window.player.is_playing() is False
     assert window.playPauseButton.isChecked() is False
+
+
+def test_the_workspace_is_composed_in_code_without_the_designer_window() -> None:
+    """The Designer main window is retired; see ADR 0005."""
+    repository_root = Path(mainwindow_module.__file__).parent
+
+    assert importlib.util.find_spec("Ui_main_window") is None
+    assert not (repository_root / "main_window.ui").exists()
+    assert not (repository_root / "Ui_main_window.py").exists()
+
+
+def test_an_analysis_without_source_videos_renders_the_normal_workspace(
+    window: MainWindow,
+) -> None:
+    """There is no separate welcome screen; only the player's place changes."""
+    assert window.analysis.source_videos == ()
+
+    assert [
+        window.sidebarTabs.tabText(index)
+        for index in range(window.sidebarTabs.count())
+    ] == ["Clips", "Videos"]
+    assert window.sidebar.isVisibleTo(window) is True
+    assert window.timelineArea.isVisibleTo(window) is True
+    assert window.playerStack.currentWidget() is window.emptyPlayerHint
+
+
+def test_the_call_to_action_adds_a_video_and_gives_way_to_the_player(
+    window: MainWindow,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video_path = tmp_path / "first-half.mp4"
+    video_path.write_bytes(b"not a real video")
+    monkeypatch.setattr(window, "choose_source_video", lambda: str(video_path))
+
+    window.addVideoButton.click()
+
+    assert [source.location for source in window.analysis.source_videos] == [
+        str(video_path)
+    ]
+    assert window.playerStack.currentWidget() is window.videoWidget
+
+
+def _corner_in_window(window: MainWindow, widget) -> QPoint:
+    return widget.mapTo(window, QPoint(0, 0))
+
+
+def test_the_workspace_lays_the_areas_out_as_the_validated_direction_asks(
+    window: MainWindow,
+    application: QApplication,
+) -> None:
+    """Sidebar left of the video, compact timeline directly beneath it."""
+    window.resize(1280, 720)
+    window.show()
+    application.processEvents()
+
+    sidebar = _corner_in_window(window, window.sidebar)
+    video = _corner_in_window(window, window.playerStack)
+    timeline = _corner_in_window(window, window.timelineArea)
+
+    assert sidebar.x() + window.sidebar.width() <= video.x()
+    assert timeline.y() >= video.y() + window.playerStack.height()
+    assert window.timelineArea.height() < window.playerStack.height()
+    assert window.height() <= 720 and window.width() <= 1280
+
+
+def test_the_workspace_stays_usable_at_a_small_laptop_size(
+    window: MainWindow,
+) -> None:
+    """It opens at that size, and stays usable when made smaller still."""
+    assert window.size().width() <= 1280
+    assert window.size().height() <= 720
+    assert window.minimumSizeHint().width() <= 1280
+    assert window.minimumSizeHint().height() <= 720
+
+
+def test_the_clip_editing_state_takes_its_room_beside_the_video(
+    window: MainWindow,
+    tmp_path: Path,
+    application: QApplication,
+) -> None:
+    """During normal review the editing area takes none of the video's width."""
+    _load_video(window, tmp_path)
+    window.resize(1280, 720)
+    window.show()
+    application.processEvents()
+    assert window.clipEditorArea.width() == 0
+
+    window.player.seek(30_000)
+    window.clip_started()
+    window.player.seek(35_000)
+    window.clip_stopped()
+    application.processEvents()
+
+    assert window.clipHandler.isVisibleTo(window) is True
+    assert window.clipEditorArea.width() > 0
+    assert _corner_in_window(window, window.clipEditorArea).x() >= (
+        _corner_in_window(window, window.playerStack).x() + window.playerStack.width()
+    )
+
+
+def test_the_timeline_area_reports_where_the_player_is(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    window.duration_changed(5_400_000)
+
+    window.player.seek(12_000)
+
+    assert window.position_label.text() == "00:00:12"
+    assert window.duration_label.text() == "01:30:00"
+
+
+def test_a_category_color_is_rendered_muted_without_changing_the_analysis(
+    window: MainWindow,
+) -> None:
+    """Color informs; the Category name and the selection carry the meaning."""
+    category = window.analysis.category_named("Angriff")
+    rendered = _category_row(window, "Angriff").foreground(0).color()
+
+    assert rendered.saturation() < QColor(category.color).saturation()
+    assert category.color == "#EF4444"
