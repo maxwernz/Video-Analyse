@@ -213,6 +213,48 @@ def test_editing_a_clips_boundaries_moves_it_in_the_analysis(
     assert window.editHandler.isVisibleTo(window) is False
 
 
+def test_boundaries_the_model_rejects_are_reported_and_change_nothing(
+    window: MainWindow,
+    tmp_path: Path,
+    silent_message_boxes: list[tuple[str, str]],
+) -> None:
+    """The interval invariant is the Analysis's; the form only reports it."""
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    clip = window.analysis.clips[0]
+
+    window.edit_clip(clip.id)
+    _set_boundaries(window.editHandler, 9_000, 4_000)
+    window.editHandler.acceptButton.click()
+
+    assert window.analysis.clip(clip.id) == clip
+    assert any(level == "critical" for level, _ in silent_message_boxes)
+    assert window.editHandler.isVisibleTo(window) is True
+
+
+def test_cancelling_an_edit_leaves_the_clip_and_the_workspace_as_they_were(
+    window: MainWindow,
+    tmp_path: Path,
+    application: QApplication,
+) -> None:
+    """Leaving the editing state gives the video area its full width back."""
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    clip = window.analysis.clips[0]
+    window.resize(1280, 720)
+    window.show()
+
+    window.edit_clip(clip.id)
+    window.editHandler.clipNameLine.setText("Never applied")
+    _set_boundaries(window.editHandler, 4_000, 9_500)
+    window.editHandler.cancelButton.click()
+    application.processEvents()
+
+    assert window.analysis.clip(clip.id) == clip
+    assert window.editHandler.isVisibleTo(window) is False
+    assert window.clipEditorArea.width() == 0
+
+
 def test_an_invalid_clip_edit_is_reported_and_changes_nothing(
     window: MainWindow,
     tmp_path: Path,
