@@ -600,7 +600,7 @@ class MainWindow(WorkspaceShell):
 
     def clip_stopped(self):
         """Complete the second boundary of the Pending Clip, and describe it."""
-        self.player.pause()
+        self.pause_for_clip_editing()
         if self.pending_clip is None:
             return
 
@@ -610,7 +610,7 @@ class MainWindow(WorkspaceShell):
             self.player.position(),
             self.category_names(),
         )
-        self.clipHandler.setVisible(True)
+        self.show_clip_form(self.clipHandler)
 
     def discard_pending_clip(self):
         """Drop the Pending Clip; it was never part of the Analysis.
@@ -656,23 +656,30 @@ class MainWindow(WorkspaceShell):
         if self.apply_analysis_change(add_clip, "Clip could not be created"):
             self.discard_pending_clip()
 
+    def pause_for_clip_editing(self):
+        """The Clip-editing state keeps a paused frame; the transport follows."""
+        self.player.pause()
+        self.show_playing_state(self.player.is_playing())
+
     def edit_clip(self, clip_id):
+        """Open the one Clip editor on a Clip the Analysis already holds."""
         try:
             clip = self.analysis.clip(clip_id)
         except AnalysisError:
             return
+        self.pause_for_clip_editing()
+        self.discard_pending_clip()
         category_name = (
             None
             if clip.category_id is None
             else self.analysis.category(clip.category_id).name
         )
 
-        self.disable_clip_handler()
         self.editHandler.new_clip(
             ClipItem.from_clip(clip, category_name),
             self.category_names(),
         )
-        self.editHandler.setVisible(True)
+        self.show_clip_form(self.editHandler)
 
     def apply_clip_edit(self, draft):
         if draft.clip_id is None:
@@ -683,6 +690,8 @@ class MainWindow(WorkspaceShell):
                 self.analysis.update_clip(
                     draft.clip_id,
                     name=draft.name,
+                    start_ms=draft.start_ms,
+                    end_ms=draft.end_ms,
                     notes=draft.notes,
                     category_id=self.category_id_for(draft.category_name),
                 )
@@ -722,10 +731,10 @@ class MainWindow(WorkspaceShell):
         )
 
     def disable_clip_handler(self):
-        self.clipHandler.setVisible(False)
+        self.hide_clip_form(self.clipHandler)
 
     def disable_edit_handler(self):
-        self.editHandler.setVisible(False)
+        self.hide_clip_form(self.editHandler)
 
     def export(self, include_all_clips=False):
         source_video = self.active_source_video()

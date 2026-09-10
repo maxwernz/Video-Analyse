@@ -33,13 +33,33 @@ class ClipHandler(QWidget, Ui_Dialog):
         QWidget.__init__(self, parent)
         self.setupUi(self)
 
-        self.start_time = 0
-        self.stop_time = 0
+        self.start_ms = 0
+        self.end_ms = 0
 
         self.clipNameLine.textChanged.connect(
             lambda text: self.acceptButton.setEnabled(bool(text.strip()))
         )
+        self.startTimeEdit.millisecondsChanged.connect(self._set_duration_label)
+        self.endTimeEdit.millisecondsChanged.connect(self._set_duration_label)
         self.acceptButton.clicked.connect(self._submit)
+
+    @property
+    def start_ms(self) -> int:
+        """The Clip start; the boundary fields are where the form keeps it."""
+        return self.startTimeEdit.milliseconds()
+
+    @start_ms.setter
+    def start_ms(self, milliseconds: int) -> None:
+        self.startTimeEdit.setMilliseconds(milliseconds)
+
+    @property
+    def end_ms(self) -> int:
+        """The Clip end; likewise editable, and likewise the Analysis's to judge."""
+        return self.endTimeEdit.milliseconds()
+
+    @end_ms.setter
+    def end_ms(self, milliseconds: int) -> None:
+        self.endTimeEdit.setMilliseconds(milliseconds)
 
     def set_categories(
         self,
@@ -55,17 +75,17 @@ class ClipHandler(QWidget, Ui_Dialog):
         return category or None
 
     def _set_duration_label(self) -> None:
-        label_start = milliseconds_to_hhmmss(self.start_time)
-        label_stop = milliseconds_to_hhmmss(self.stop_time)
-        self.clipDuration.setText(f"{label_start} / {label_stop}")
+        """How long the Clip is; the boundaries themselves are their own fields."""
+        length = max(self.end_ms - self.start_ms, 0)
+        self.clipDuration.setText(milliseconds_to_hhmmss(length))
 
     def _draft(self) -> ClipDraft:
         return ClipDraft(
             name=self.clipNameLine.text().strip(),
             notes=self.notesText.toPlainText(),
             category_name=self.current_category_name(),
-            start_ms=self.start_time,
-            end_ms=self.stop_time,
+            start_ms=self.start_ms,
+            end_ms=self.end_ms,
         )
 
     def _submit(self) -> None:
@@ -85,8 +105,8 @@ class CreateClip(ClipHandler):
         clip_stop: int,
         category_names: Iterable[str] = (),
     ) -> None:
-        self.start_time = clip_start
-        self.stop_time = clip_stop
+        self.start_ms = clip_start
+        self.end_ms = clip_stop
 
         self.clipNameLine.setText("")
         self.notesText.setText("")
@@ -117,7 +137,7 @@ class EditClip(ClipHandler):
         category_names: Iterable[str] = (),
     ) -> None:
         self.clip_id = clip_item.clip_id
-        self.start_time, self.stop_time = clip_item.clip_times()
+        self.start_ms, self.end_ms = clip_item.clip_times()
         self._set_duration_label()
 
         self.clipNameLine.setText(clip_item.name)

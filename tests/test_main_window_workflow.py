@@ -188,6 +188,158 @@ def test_editing_a_clip_updates_the_analysis_in_place(
     assert _category_row(window, "Angriff").childCount() == 0
 
 
+def _set_boundaries(handler: ClipHandler, start_ms: int, end_ms: int) -> None:
+    """Type new boundaries into the editing form, the way a person does."""
+    handler.startTimeEdit.setMilliseconds(start_ms)
+    handler.endTimeEdit.setMilliseconds(end_ms)
+
+
+def test_editing_a_clips_boundaries_moves_it_in_the_analysis(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """The boundaries are part of the form, and the Analysis accepts them."""
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    clip = window.analysis.clips[0]
+
+    window.edit_clip(clip.id)
+    _set_boundaries(window.editHandler, 4_000, 9_500)
+    window.editHandler.acceptButton.click()
+
+    updated = window.analysis.clip(clip.id)
+    assert (updated.start_ms, updated.end_ms) == (4_000, 9_500)
+    assert updated.name == clip.name
+    assert window.editHandler.isVisibleTo(window) is False
+
+
+def test_editing_boundaries_is_not_limited_to_a_24_hour_clock(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """Media positions are durations, so their hours may exceed one day."""
+    _load_video(window, tmp_path)
+    clip = window.analysis.add_clip(
+        window.analysis.source_videos[0].id,
+        "Long recording",
+        90_000_000,
+        90_005_000,
+    )
+
+    window.edit_clip(clip.id)
+
+    assert window.editHandler.start_ms == 90_000_000
+    assert window.editHandler.startTimeEdit.lineEdit().text() == "25:00:00.000"
+
+    _set_boundaries(window.editHandler, 93_600_000, 93_605_000)
+    window.editHandler.acceptButton.click()
+
+    updated = window.analysis.clip(clip.id)
+    assert (updated.start_ms, updated.end_ms) == (93_600_000, 93_605_000)
+
+
+def test_boundaries_the_model_rejects_are_reported_and_change_nothing(
+    window: MainWindow,
+    tmp_path: Path,
+    silent_message_boxes: list[tuple[str, str]],
+) -> None:
+    """The interval invariant is the Analysis's; the form only reports it."""
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    clip = window.analysis.clips[0]
+
+    window.edit_clip(clip.id)
+    _set_boundaries(window.editHandler, 9_000, 4_000)
+    window.editHandler.acceptButton.click()
+
+    assert window.analysis.clip(clip.id) == clip
+    assert any(level == "critical" for level, _ in silent_message_boxes)
+    assert window.editHandler.isVisibleTo(window) is True
+
+
+def test_cancelling_an_edit_leaves_the_clip_and_the_workspace_as_they_were(
+    window: MainWindow,
+    tmp_path: Path,
+    application: QApplication,
+) -> None:
+    """Leaving the editing state gives the video area its full width back."""
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    clip = window.analysis.clips[0]
+    window.resize(1280, 720)
+    window.show()
+
+    window.edit_clip(clip.id)
+    window.editHandler.clipNameLine.setText("Never applied")
+    _set_boundaries(window.editHandler, 4_000, 9_500)
+    window.editHandler.cancelButton.click()
+    application.processEvents()
+
+    assert window.analysis.clip(clip.id) == clip
+    assert window.editHandler.isVisibleTo(window) is False
+    assert window.clipEditorArea.width() == 0
+
+
+def test_editing_a_clip_from_the_clips_tab_opens_the_paused_editing_state(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """One editor serves both paths, and it keeps a paused frame beside it."""
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    clip = window.analysis.clips[0]
+    window.player.play()
+
+    window.treeWidget.clip_edit_requested.emit(clip.id)
+
+    assert window.player.is_playing() is False
+    assert window.playPauseButton.isChecked() is False
+    assert window.editHandler.isVisibleTo(window) is True
+    assert window.editHandler.clip_id == clip.id
+
+
+def test_editing_an_existing_clip_abandons_the_pending_clip(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """The workspace is in one editing state at a time, and the record control
+    says so."""
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    clip = window.analysis.clips[0]
+    window.player.seek(30_000)
+    window.clipButton.setChecked(True)
+
+    window.treeWidget.clip_edit_requested.emit(clip.id)
+
+    assert window.pending_clip is None
+    assert window.clipButton.isChecked() is False
+    assert window.clipHandler.isVisibleTo(window) is False
+    assert window.editHandler.isVisibleTo(window) is True
+
+
+def test_the_editing_form_carries_the_whole_clip(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """Title, Category, both boundaries and notes all survive the round trip."""
+    _load_video(window, tmp_path)
+    _create_clip(window, name="Fast break", category="Angriff")
+    clip = window.analysis.clips[0]
+
+    window.edit_clip(clip.id)
+    window.editHandler.notesText.setText("Left wing")
+    _set_boundaries(window.editHandler, 4_000, 9_500)
+    window.editHandler.acceptButton.click()
+
+    window.edit_clip(clip.id)
+    form = window.editHandler
+    assert form.clipNameLine.text() == "Fast break"
+    assert form.categoryBox.currentText() == "Angriff"
+    assert (form.start_ms, form.end_ms) == (4_000, 9_500)
+    assert form.notesText.toPlainText() == "Left wing"
+
+
 def test_an_invalid_clip_edit_is_reported_and_changes_nothing(
     window: MainWindow,
     tmp_path: Path,
@@ -591,7 +743,7 @@ def test_a_clip_is_marked_against_the_player_position(
 
     assert window.player.is_playing() is False
     assert window.clipHandler.isVisibleTo(window) is True
-    assert (window.clipHandler.start_time, window.clipHandler.stop_time) == (
+    assert (window.clipHandler.start_ms, window.clipHandler.end_ms) == (
         30_000,
         35_000,
     )

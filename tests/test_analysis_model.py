@@ -144,6 +144,23 @@ def test_clip_updates_enforce_the_interval_invariant() -> None:
     assert analysis.clip(clip.id) == clip
 
 
+def test_rejected_boundaries_leave_the_analysis_untouched() -> None:
+    """A rejected boundary change must not even advance the revision.
+
+    The Analysis document reads the revision to decide it has unsaved work, so
+    a boundary the model refuses would otherwise leave a dirty Analysis behind.
+    """
+    analysis = _analysis_with_source()
+    clip = analysis.add_clip(analysis.source_videos[0].id, "Fast break", 1_000, 2_000)
+    revision = analysis.revision
+
+    with pytest.raises(InvalidAnalysisDataError):
+        analysis.update_clip(clip.id, start_ms=9_000, end_ms=4_000)
+
+    assert analysis.clip(clip.id) == clip
+    assert analysis.revision == revision
+
+
 def test_clip_updates_reject_an_unknown_category() -> None:
     from uuid import uuid4
 

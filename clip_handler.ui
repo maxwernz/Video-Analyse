@@ -61,6 +61,20 @@ QTextEdit {
     font: 14px &quot;Segoe UI&quot;, sans-serif;
 }
 
+/* DurationEdit styling (Clip boundary fields) */
+DurationEdit {
+    background-color: rgb(45, 45, 45);
+    color: white;
+    border: 2px solid rgb(65, 65, 65);
+    border-radius: 5px;
+    padding: 5px;
+    font: 14px &quot;Segoe UI&quot;, sans-serif;
+}
+
+DurationEdit::up-button, DurationEdit::down-button {
+    width: 14px;
+}
+
 /* QComboBox styling */
 QComboBox {
     border: 2px solid rgb(65, 65, 65); /* Border for combo box */
@@ -182,6 +196,44 @@ QMenu::separator {
     <widget class="QLineEdit" name="clipNameLine"/>
    </item>
    <item>
+    <widget class="QLabel" name="label">
+     <property name="text">
+      <string>Kategorie</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QComboBox" name="categoryBox">
+     <property name="editable">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="boundariesLabel">
+     <property name="text">
+      <string>Grenzen</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="boundariesLayout">
+     <item>
+      <widget class="DurationEdit" name="startTimeEdit"/>
+     </item>
+     <item>
+      <widget class="QLabel" name="boundarySeparator">
+       <property name="text">
+        <string>bis</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="DurationEdit" name="endTimeEdit"/>
+     </item>
+    </layout>
+   </item>
+   <item>
     <widget class="QLabel" name="label_2">
      <property name="text">
       <string>Notizen</string>
@@ -205,18 +257,17 @@ QMenu::separator {
     </widget>
    </item>
    <item>
-    <widget class="QLabel" name="label">
-     <property name="text">
-      <string>Kategorie</string>
+    <spacer name="optionalFieldsSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
      </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QComboBox" name="categoryBox">
-     <property name="editable">
-      <bool>true</bool>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>0</height>
+      </size>
      </property>
-    </widget>
+    </spacer>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout_2">
@@ -260,6 +311,13 @@ QMenu::separator {
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>DurationEdit</class>
+   <extends>QAbstractSpinBox</extends>
+   <header>duration_edit</header>
+  </customwidget>
+ </customwidgets>
  <resources>
   <include location="resources.qrc"/>
  </resources>
