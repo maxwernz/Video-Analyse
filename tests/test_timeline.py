@@ -120,7 +120,7 @@ def test_clicking_a_clip_range_selects_that_clip(timeline: Timeline) -> None:
     _click(timeline, 350)
 
     assert selected == [clip_range.clip_id]
-    assert timeline.selected_clip() == clip_range.clip_id
+    assert timeline.selected_clip_id() == clip_range.clip_id
 
 
 def test_clicking_beside_every_clip_range_selects_nothing(
@@ -133,7 +133,7 @@ def test_clicking_beside_every_clip_range_selects_nothing(
     _click(timeline, 100)
 
     assert selected == []
-    assert timeline.selected_clip() is None
+    assert timeline.selected_clip_id() is None
 
 
 def test_double_clicking_a_clip_range_reports_it_for_navigation(
@@ -176,7 +176,7 @@ def test_showing_the_ranges_of_another_source_video_drops_the_selection(
 
     timeline.show_ranges([_range(1_000, 2_000)])
 
-    assert timeline.selected_clip() is None
+    assert timeline.selected_clip_id() is None
 
 
 def test_the_selected_range_is_emphasized_beyond_its_category_color(

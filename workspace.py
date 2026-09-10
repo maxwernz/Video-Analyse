@@ -263,7 +263,6 @@ class WorkspaceShell(QMainWindow):
         self.position_label = _label("00:00:00", "time")
         self.duration_label = _label("00:00:00", "time")
         self.timeline = Timeline()
-        self.timeline.setProperty("role", "timeline")
 
         strip = QHBoxLayout()
         strip.setContentsMargins(0, 0, 0, 0)

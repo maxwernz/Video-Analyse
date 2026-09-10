@@ -42,8 +42,10 @@ RANGE_HEIGHT = 10
 SELECTED_RANGE_HEIGHT = 18
 PLAYHEAD_WIDTH = 2
 
-TRACK = SURFACE_ACTIVE
-UNCATEGORIZED_RANGE = TEXT_MUTED
+TRACK_BACKGROUND = SURFACE_ACTIVE
+"""The ground the strip is drawn on; the widget paints it rather than the sheet."""
+
+UNCATEGORIZED_RANGE_COLOR = TEXT_MUTED
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +107,7 @@ class Timeline(QWidget):
         self._selected_clip_id = clip_id
         self.update()
 
-    def selected_clip(self) -> UUID | None:
+    def selected_clip_id(self) -> UUID | None:
         return self._selected_clip_id
 
     # --- Time and pixels ---------------------------------------------------
@@ -156,7 +158,7 @@ class Timeline(QWidget):
         color = (
             muted_category_color(clip_range.color)
             if clip_range.color
-            else QColor(UNCATEGORIZED_RANGE)
+            else QColor(UNCATEGORIZED_RANGE_COLOR)
         )
         return RangeAppearance(
             fill=color,
@@ -168,7 +170,7 @@ class Timeline(QWidget):
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(TRACK))
+        painter.fillRect(self.rect(), QColor(TRACK_BACKGROUND))
         for clip_range in self._ranges:
             self._paint_range(painter, clip_range)
         self._paint_playhead(painter)

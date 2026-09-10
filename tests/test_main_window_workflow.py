@@ -895,7 +895,7 @@ def test_navigating_to_a_clip_activates_its_source_video_and_the_timeline_follow
     assert window.active_source_video() == second
     assert window.player.location() == str(second_video)
     assert window.player.position() == 20_000
-    assert window.timeline.selected_clip() == window.analysis.clips[0].id
+    assert window.timeline.selected_clip_id() == window.analysis.clips[0].id
     window.player.set_duration(60_000)
     shown = window.timeline.range_at(_timeline_at(window, 220).x())
     assert shown is not None and shown.clip_id == window.analysis.clips[0].id

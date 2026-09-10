@@ -284,10 +284,17 @@ class MainWindow(WorkspaceShell):
         self.timeline.show_ranges(ranges)
         self.timeline.set_duration(self.player.duration())
         self.timeline.set_position(self.player.position())
-        self.select_clip(
-            self._selected_clip_id
-            if any(shown.clip_id == self._selected_clip_id for shown in ranges)
-            else None
+        self.select_clip(self.selection_within(ranges))
+
+    def selection_within(self, ranges):
+        """Keep the selected Clip only while the timeline still shows it."""
+        return next(
+            (
+                shown.clip_id
+                for shown in ranges
+                if shown.clip_id == self._selected_clip_id
+            ),
+            None,
         )
 
     def timeline_ranges(self, source_video: SourceVideo) -> tuple[TimelineRange, ...]:
