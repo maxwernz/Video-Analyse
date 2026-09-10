@@ -176,10 +176,22 @@ QTabBar::tab:selected {{
     border-bottom: 2px solid {ACCENT};
     color: {TEXT};
 }}
-QTreeView {{
+QTreeView, SourceVideoList {{
     background-color: {SURFACE};
     border: none;
     outline: none;
+}}
+SourceVideoList::item {{
+    border: none;
+    padding: 6px 10px;
+}}
+SourceVideoList::item:hover {{
+    background-color: {SURFACE_RAISED};
+}}
+SourceVideoList::item:selected {{
+    background-color: {SURFACE_ACTIVE};
+    border-left: 2px solid {ACCENT};
+    color: {TEXT};
 }}
 QHeaderView::section {{
     background-color: {SURFACE_RAISED};

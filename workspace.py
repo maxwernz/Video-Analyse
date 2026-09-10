@@ -9,7 +9,7 @@ window mixed with it stays the controller, and every change to the Analysis
 still goes through Analysis operations.
 
 One area is deliberately left empty here, because it is composed by its own
-ticket against this shell: the Clips and Videos sidebar panes (#15).
+ticket against this shell: the Clip-editing state beside the video (#26).
 """
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 
 from application_workflow import UNTITLED_ANALYSIS_TITLE
 from clip_handler import CreateClip, EditClip
+from source_video_list import SourceVideoList
 from timeline import Timeline
 from treewidget import TreeWidget
 from videowidget import VideoWidget
@@ -57,7 +58,9 @@ VIDEO_MINIMUM_SIZE = QSize(360, 220)
 CLIP_EDITOR_WIDTH = 380
 SELECTED_CLIP_HEIGHT = 14
 
-CLIP_COLUMN_LABELS = ("Clip", "Start", "Stop")
+SOURCE_VIDEO_COLUMN_LABEL = "Video"
+#: The Clip list keeps its Source-video cue, so it reads without the Videos tab.
+CLIP_COLUMN_LABELS = ("Clip", "Start", "Stop", SOURCE_VIDEO_COLUMN_LABEL)
 
 def _rule(orientation: Qt.Orientation = Qt.Orientation.Horizontal) -> QFrame:
     """One thin separator; the workspace has no other pane divider."""
@@ -162,7 +165,12 @@ class WorkspaceShell(QMainWindow):
         return self.splitter
 
     def _compose_sidebar(self) -> QWidget:
-        """The Clips and Videos tabs. Issue #15 fills the panes."""
+        """The Clips and Videos tabs: the dense Clip list, and the video selector.
+
+        The two panes are separate tabs rather than one list, so the Clip list
+        stays dense; each Clip row carries its own Source-video cue, so the
+        Clips tab stays readable while the Videos tab is not visible.
+        """
         self.sidebar = QFrame()
         self.sidebar.setProperty("role", "pane")
         self.sidebar.setMinimumWidth(220)
@@ -183,11 +191,12 @@ class WorkspaceShell(QMainWindow):
         clips_layout.setContentsMargins(0, 0, 0, 0)
         clips_layout.addWidget(self.treeWidget)
 
+        self.sourceVideoList = SourceVideoList()
+
         self.videosTab = QWidget()
         videos_layout = QVBoxLayout(self.videosTab)
-        videos_layout.setContentsMargins(12, 12, 12, 12)
-        videos_layout.setSpacing(8)
-        videos_layout.addStretch(1)
+        videos_layout.setContentsMargins(0, 0, 0, 0)
+        videos_layout.addWidget(self.sourceVideoList)
 
         self.sidebarTabs = QTabWidget()
         self.sidebarTabs.setDocumentMode(True)

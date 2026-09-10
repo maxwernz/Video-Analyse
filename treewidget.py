@@ -47,6 +47,7 @@ class TreeWidget(QTreeWidget):
     Analysis operations.
     """
 
+    clip_activated = Signal(object)
     export_clips = Signal()
     clip_edit_requested = Signal(object)
     clip_remove_requested = Signal(object)
@@ -60,6 +61,7 @@ class TreeWidget(QTreeWidget):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.context_menu)
 
+        self.itemClicked.connect(self.request_navigation)
         self.itemDoubleClicked.connect(self.request_edit)
 
     def render_analysis(self, analysis: Analysis) -> None:
@@ -74,6 +76,10 @@ class TreeWidget(QTreeWidget):
         self.clear()
 
         category_names = {category.id: category.name for category in analysis.categories}
+        source_video_names = {
+            source_video.id: source_video.display_name
+            for source_video in analysis.source_videos
+        }
         category_items: dict[UUID, CategoryTreeItem] = {}
         for category in analysis.categories:
             category_item = CategoryTreeItem(category.id, category.name, parent=self)
@@ -89,6 +95,7 @@ class TreeWidget(QTreeWidget):
             clip_item = ClipItem.from_clip(
                 clip,
                 None if clip.category_id is None else category_names[clip.category_id],
+                source_video_names.get(clip.source_video_id),
             )
             item = ClipTreeItem(clip_item, parent=parent)
             if clip.id in selected_clip_ids:
@@ -117,6 +124,11 @@ class TreeWidget(QTreeWidget):
         menu.setStyleSheet(MENU_STYLE_SHEET)
 
         menu.exec(self.mapToGlobal(event))
+
+    def request_navigation(self, item, _=None) -> None:
+        """Report a chosen Clip by identity; the window navigates to it."""
+        if isinstance(item, ClipTreeItem):
+            self.clip_activated.emit(item.clip_id)
 
     def request_edit(self, item, _=None) -> None:
         self._request(item, self.clip_edit_requested, self.category_edit_requested)

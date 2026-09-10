@@ -1,5 +1,7 @@
 import sys
 import os
+from dataclasses import dataclass
+from uuid import UUID
 from PySide6.QtWidgets import (
     QApplication,
     QInputDialog,
@@ -27,7 +29,7 @@ from playback import Playback
 from timeline import TimelineRange
 from visual_system import MESSAGE_BOX_STYLE_SHEET
 from workspace import WorkspaceShell
-from treewidget_item import ClipItem, ClipTreeItem
+from treewidget_item import ClipItem
 from video_creator import VideoCreator, ProgressLogger
 from util import milliseconds_to_hhmmss
 
@@ -40,6 +42,19 @@ DEFAULT_PLAYBACK_RATE = 1.0
 
 SELECTED_CLIP_FORMAT = "{name}  ·  {start} – {end}"
 """How the Clip selected on the timeline is named beneath it."""
+
+
+@dataclass(frozen=True)
+class PendingClip:
+    """A Clip boundary marked on one Source video, before it is a Clip.
+
+    It is not part of the Analysis, and it carries the identity of the Source
+    video its start was marked on, so the Clip it becomes belongs there and
+    nowhere else.
+    """
+
+    source_video_id: UUID
+    start_ms: int
 
 
 class MainWindow(WorkspaceShell):
@@ -70,7 +85,7 @@ class MainWindow(WorkspaceShell):
 
         self.titleLabel.installEventFilter(self)
 
-        self.pending_clip_start = None
+        self.pending_clip: PendingClip | None = None
         self._active_source_video_id = None
         self._selected_clip_id = None
         self._position_ms = 0
@@ -108,7 +123,9 @@ class MainWindow(WorkspaceShell):
 
         self.addVideoButton.clicked.connect(self.open_video)
 
-        self.treeWidget.itemClicked.connect(self.jump_to_clip)
+        self.sourceVideoList.source_video_activated.connect(self.activate_source_video)
+
+        self.treeWidget.clip_activated.connect(self.navigate_to_clip)
         self.treeWidget.export_clips.connect(self.export)
         self.treeWidget.clip_edit_requested.connect(self.edit_clip)
         self.treeWidget.clip_remove_requested.connect(self.remove_clip)
@@ -116,7 +133,7 @@ class MainWindow(WorkspaceShell):
         self.treeWidget.category_remove_requested.connect(self.remove_category)
 
         self.clipHandler.clip_submitted.connect(self.create_clip)
-        self.clipHandler.cancelButton.clicked.connect(self.disable_clip_handler)
+        self.clipHandler.cancelButton.clicked.connect(self.discard_pending_clip)
         self.editHandler.clip_submitted.connect(self.apply_clip_edit)
         self.editHandler.cancelButton.clicked.connect(self.disable_edit_handler)
 
@@ -203,12 +220,11 @@ class MainWindow(WorkspaceShell):
 
     def analysis_replaced(self):
         """A different Analysis is open now; drop everything transient."""
-        self.pending_clip_start = None
         self._active_source_video_id = None
         self._selected_clip_id = None
         self._position_ms = 0
         self._duration_ms = 0
-        self.disable_clip_handler()
+        self.discard_pending_clip()
         self.disable_edit_handler()
         self.player.unload()
         self.activate_first_source_video()
@@ -265,9 +281,22 @@ class MainWindow(WorkspaceShell):
         analysis = self.analysis
         self.titleLabel.setText(analysis.title or UNTITLED_ANALYSIS_TITLE)
         self.treeWidget.render_analysis(analysis)
+        self.render_source_videos()
         self.render_player_state()
         self.render_timeline()
         self.refresh_document_state()
+
+    def render_source_videos(self):
+        """Show every Source video of the Analysis, the active one chosen.
+
+        The Active Source video is resolved rather than read, because with
+        nothing activated yet it is the first Source video of the Analysis,
+        and that is the one the player shows.
+        """
+        active = self.active_source_video()
+        self.sourceVideoList.render_analysis(
+            self.analysis, None if active is None else active.id
+        )
 
     def render_player_state(self):
         """Show the call to action while the Analysis has no Source video.
@@ -409,9 +438,9 @@ class MainWindow(WorkspaceShell):
     def source_video_added(self, source_video: SourceVideo):
         """Show a newly added Source video only when nothing is playing yet.
 
-        Adding footage must never interrupt the video under review. Choosing
-        which of several Source videos is active belongs to the Videos sidebar
-        tab (issue #15), so until it exists the player stays on the first one.
+        Adding footage must never interrupt the video under review, so the
+        player stays where it is; the Videos sidebar tab is where a person
+        chooses which Source video to switch to.
         """
         if self.active_source_video() is source_video:
             self.load_media(source_video)
@@ -455,10 +484,13 @@ class MainWindow(WorkspaceShell):
         try:
             source_video = self.analysis.source_video(source_video_id)
         except AnalysisError:
+            self.render_source_videos()
             return
+        self.discard_pending_clip()
         self._active_source_video_id = source_video_id
         self.load_media(source_video)
         self.render_player_state()
+        self.render_source_videos()
         self.render_timeline()
 
     def navigate_to_clip(self, clip_id):
@@ -554,28 +586,43 @@ class MainWindow(WorkspaceShell):
         self.speedBox.setCurrentIndex(current_index - 1)
 
     def clip_started(self):
-        """Begin a Pending Clip on the active Source video."""
-        self.pending_clip_start = self.player.position()
-
-    def clip_stopped(self):
-        self.player.pause()
-        clip_stop = self.player.position()
-        clip_start = self.pending_clip_start
-        self.pending_clip_start = None
-
-        if clip_start is None:
-            return
-        if self.active_source_video() is None:
+        """Begin a Pending Clip, bound to the Active Source video."""
+        source_video = self.active_source_video()
+        if source_video is None:
+            self.discard_pending_clip()
             QMessageBox.information(
                 self,
                 "Kein Video",
                 "Ein Clip braucht ein geladenes Video.",
             )
             return
+        self.pending_clip = PendingClip(source_video.id, self.player.position())
+
+    def clip_stopped(self):
+        """Complete the second boundary of the Pending Clip, and describe it."""
+        self.player.pause()
+        if self.pending_clip is None:
+            return
 
         self.disable_edit_handler()
-        self.clipHandler.new_clip(clip_start, clip_stop, self.category_names())
+        self.clipHandler.new_clip(
+            self.pending_clip.start_ms,
+            self.player.position(),
+            self.category_names(),
+        )
         self.clipHandler.setVisible(True)
+
+    def discard_pending_clip(self):
+        """Drop the Pending Clip; it was never part of the Analysis.
+
+        Switching the player to another Source video abandons the mark, so
+        the workspace can never assemble a Clip out of two Source videos. The
+        record control follows, which is where the abandoning is seen.
+        """
+        self.pending_clip = None
+        with QSignalBlocker(self.clipButton):
+            self.clipButton.setChecked(False)
+        self.disable_clip_handler()
 
     def category_names(self) -> list[str]:
         return [category.name for category in self.analysis.categories]
@@ -590,14 +637,15 @@ class MainWindow(WorkspaceShell):
         return self.analysis.add_category(category_name).id
 
     def create_clip(self, draft):
-        source_video = self.active_source_video()
-        if source_video is None:
+        """Add the described Clip to the Source video its mark began on."""
+        if self.pending_clip is None:
             return
+        source_video_id = self.pending_clip.source_video_id
 
         def add_clip():
             with self.analysis.transaction():
                 self.analysis.add_clip(
-                    source_video.id,
+                    source_video_id,
                     draft.name,
                     draft.start_ms,
                     draft.end_ms,
@@ -606,7 +654,7 @@ class MainWindow(WorkspaceShell):
                 )
 
         if self.apply_analysis_change(add_clip, "Clip could not be created"):
-            self.disable_clip_handler()
+            self.discard_pending_clip()
 
     def edit_clip(self, clip_id):
         try:
@@ -678,12 +726,6 @@ class MainWindow(WorkspaceShell):
 
     def disable_edit_handler(self):
         self.editHandler.setVisible(False)
-
-    def jump_to_clip(self, item, _column=0):
-        if not isinstance(item, ClipTreeItem):
-            return
-
-        self.navigate_to_clip(item.clip_item.clip_id)
 
     def export(self, include_all_clips=False):
         source_video = self.active_source_video()

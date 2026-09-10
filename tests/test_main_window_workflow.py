@@ -20,6 +20,11 @@ from playback import FakePlayback  # noqa: E402
 from mainwindow import MainWindow  # noqa: E402
 from treewidget import TreeWidget  # noqa: E402
 from treewidget_item import ClipTreeItem  # noqa: E402
+from workspace import (  # noqa: E402
+    CLIP_COLUMN_LABELS,
+    SIDEBAR_WIDTH,
+    SOURCE_VIDEO_COLUMN_LABEL,
+)
 
 
 @pytest.fixture(scope="session")
@@ -85,8 +90,11 @@ def _create_clip(
     start_ms: int = 1_000,
     end_ms: int = 2_000,
 ) -> None:
-    window.clipHandler.new_clip(start_ms, end_ms, window.category_names())
-    window.clipHandler.setVisible(True)
+    """Mark a Clip the way the transport does: two boundaries, then the form."""
+    window.player.seek(start_ms)
+    window.clipButton.setChecked(True)
+    window.player.seek(end_ms)
+    window.clipButton.setChecked(False)
     window.clipHandler.clipNameLine.setText(name)
     window.clipHandler.categoryBox.setCurrentText("" if category is None else category)
     window.clipHandler.acceptButton.click()
@@ -296,7 +304,7 @@ def test_playback_position_and_selection_do_not_dirty_the_document(
     _clip_rows(window)[0].setSelected(True)
     window.treeWidget.sortByColumn(0, mainwindow_module.Qt.DescendingOrder)
     window.treeWidget.collapseAll()
-    window.jump_to_clip(_clip_rows(window)[0])
+    window.navigate_to_clip(_clip_rows(window)[0].clip_id)
 
     assert window.document.dirty is False
     assert window.is_saved is True
@@ -564,7 +572,7 @@ def test_navigating_to_a_clip_seeks_the_player_to_its_start(
     _load_video(window, tmp_path)
     _create_clip(window, start_ms=12_000, end_ms=14_000)
 
-    window.jump_to_clip(_clip_rows(window)[0])
+    _click_clip_row(window, "Fast break")
 
     assert window.player.position() == 12_000
 
@@ -1018,3 +1026,262 @@ def test_a_previous_source_videos_length_never_scales_the_active_one(
     finally:
         window.document = new_analysis_document()
         window.close()
+
+
+# --- The Clips and Videos sidebar (#15) -----------------------------------
+
+
+SIDEBAR_LIST_SIZE = (SIDEBAR_WIDTH, 240)
+
+
+def _add_video(window: MainWindow, tmp_path: Path, name: str) -> Path:
+    video_path = tmp_path / name
+    video_path.write_bytes(b"not a real video")
+    window.load_video(str(video_path))
+    return video_path
+
+
+def _video_rows(window: MainWindow) -> list[str]:
+    videos = window.sourceVideoList
+    return [videos.item(row).text() for row in range(videos.count())]
+
+
+def _click_video_row(window: MainWindow, row: int) -> None:
+    """Select a Source video the way a person does, at a size both platforms agree on."""
+    videos = window.sourceVideoList
+    videos.resize(*SIDEBAR_LIST_SIZE)
+    QTest.mouseClick(
+        videos.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=videos.visualItemRect(videos.item(row)).center(),
+    )
+
+
+def test_the_videos_tab_lists_every_source_video_of_the_analysis(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    _add_video(window, tmp_path, "second-half.mp4")
+
+    assert window.videosTab.isAncestorOf(window.sourceVideoList)
+    assert _video_rows(window) == ["first-half.mp4", "second-half.mp4"]
+
+
+def test_selecting_a_source_video_switches_the_player_to_it(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    second_video = _add_video(window, tmp_path, "second-half.mp4")
+
+    _click_video_row(window, 1)
+
+    assert window.active_source_video() == window.analysis.source_videos[1]
+    assert window.player.location() == str(second_video)
+
+
+def test_moving_through_the_videos_tab_by_keyboard_switches_the_player(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    second_video = _add_video(window, tmp_path, "second-half.mp4")
+    videos = window.sourceVideoList
+    videos.resize(*SIDEBAR_LIST_SIZE)
+
+    QTest.keyClick(videos, Qt.Key.Key_Down)
+
+    assert window.active_source_video() == window.analysis.source_videos[1]
+    assert window.player.location() == str(second_video)
+
+
+def test_marking_a_clip_without_a_video_leaves_the_transport_honest(
+    window: MainWindow,
+    silent_message_boxes: list[tuple[str, str]],
+) -> None:
+    window.clipButton.setChecked(True)
+
+    assert window.pending_clip is None
+    assert window.clipButton.isChecked() is False
+    assert any(level == "information" for level, _ in silent_message_boxes)
+
+
+def test_each_clip_row_names_the_source_video_it_belongs_to(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """The cue that keeps the Clips tab readable while Videos is not visible."""
+    _load_video(window, tmp_path)
+    _create_clip(window, name="Fast break")
+    _add_video(window, tmp_path, "second-half.mp4")
+    window.activate_source_video(window.analysis.source_videos[1].id)
+    _create_clip(window, name="Counter", start_ms=3_000, end_ms=4_000)
+
+    cue = CLIP_COLUMN_LABELS.index(SOURCE_VIDEO_COLUMN_LABEL)
+    assert {row.text(0): row.text(cue) for row in _clip_rows(window)} == {
+        "Fast break": "first-half.mp4",
+        "Counter": "second-half.mp4",
+    }
+
+
+def _click_clip_row(window: MainWindow, name: str) -> None:
+    """Choose a Clip the way a person does, at a size both platforms agree on."""
+    clips = window.treeWidget
+    clips.resize(*SIDEBAR_LIST_SIZE)
+    row = next(item for item in _clip_rows(window) if item.text(0) == name)
+    QTest.mouseClick(
+        clips.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=clips.visualItemRect(row).center(),
+    )
+
+
+def test_selecting_a_clip_in_the_clips_tab_activates_its_source_video(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    first_video = _load_video(window, tmp_path)
+    _create_clip(window, name="Fast break", start_ms=12_000, end_ms=14_000)
+    _add_video(window, tmp_path, "second-half.mp4")
+    window.activate_source_video(window.analysis.source_videos[1].id)
+
+    _click_clip_row(window, "Fast break")
+
+    assert window.active_source_video() == window.analysis.source_videos[0]
+    assert window.player.location() == str(first_video)
+    assert window.player.position() == 12_000
+    assert window.selected_clip() == window.analysis.clips[0]
+
+
+def test_a_new_clip_is_bound_to_the_source_video_it_was_marked_on(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    _add_video(window, tmp_path, "second-half.mp4")
+    second = window.analysis.source_videos[1]
+    window.activate_source_video(second.id)
+
+    _create_clip(window, name="Counter", start_ms=10_000, end_ms=12_000)
+
+    clip = window.analysis.clips[0]
+    assert clip.source_video_id == second.id
+    assert (clip.start_ms, clip.end_ms) == (10_000, 12_000)
+
+
+def test_a_pending_clip_cannot_produce_a_clip_on_another_source_video(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """A Pending Clip belongs to the Source video its start was marked on."""
+    _load_video(window, tmp_path)
+    _add_video(window, tmp_path, "second-half.mp4")
+    window.player.seek(30_000)
+    window.clipButton.setChecked(True)
+
+    _click_video_row(window, 1)
+    window.player.seek(5_000)
+    window.clipButton.setChecked(False)
+
+    assert window.analysis.clips == ()
+    assert window.clipHandler.isVisibleTo(window) is False
+    assert window.clipButton.isChecked() is False
+
+
+def test_switching_source_video_discards_a_clip_that_was_never_created(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    _add_video(window, tmp_path, "second-half.mp4")
+    window.player.seek(30_000)
+    window.clipButton.setChecked(True)
+    window.player.seek(35_000)
+    window.clipButton.setChecked(False)
+    assert window.clipHandler.isVisibleTo(window) is True
+
+    _click_video_row(window, 1)
+
+    assert window.clipHandler.isVisibleTo(window) is False
+    window.clipHandler.clipNameLine.setText("Counter")
+    window.clipHandler.acceptButton.click()
+    assert window.analysis.clips == ()
+
+
+def test_cancelling_a_marked_clip_leaves_nothing_behind(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    window.player.seek(30_000)
+    window.clipButton.setChecked(True)
+    window.player.seek(35_000)
+    window.clipButton.setChecked(False)
+
+    window.clipHandler.cancelButton.click()
+
+    assert window.analysis.clips == ()
+    assert window.clipHandler.isVisibleTo(window) is False
+    assert window.clipButton.isChecked() is False
+    assert window.pending_clip is None
+
+
+def test_several_source_videos_and_their_clips_survive_save_and_reopen(
+    window: MainWindow,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_video = _load_video(window, tmp_path)
+    _create_clip(window, name="Fast break")
+    second_video = _add_video(window, tmp_path, "second-half.mp4")
+    window.activate_source_video(window.analysis.source_videos[1].id)
+    _create_clip(window, name="Counter", start_ms=10_000, end_ms=12_000)
+    belongs_to = {
+        clip.name: window.analysis.source_video(clip.source_video_id).display_name
+        for clip in window.analysis.clips
+    }
+    analysis_path = tmp_path / "match.analysis"
+    _save_to(window, analysis_path, monkeypatch)
+
+    window.document = new_analysis_document()
+    window.load_analysis(str(analysis_path))
+
+    assert [Path(source.location) for source in window.analysis.source_videos] == [
+        first_video,
+        second_video,
+    ]
+    assert {
+        clip.name: window.analysis.source_video(clip.source_video_id).display_name
+        for clip in window.analysis.clips
+    } == belongs_to
+    cue = CLIP_COLUMN_LABELS.index(SOURCE_VIDEO_COLUMN_LABEL)
+    assert {row.text(0): row.text(cue) for row in _clip_rows(window)} == belongs_to
+
+
+def test_the_sidebar_tab_and_the_active_source_video_are_never_stored(
+    window: MainWindow,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Display state is not analytical work: it neither dirties nor persists."""
+    _load_video(window, tmp_path)
+    _create_clip(window, name="Fast break")
+    _add_video(window, tmp_path, "second-half.mp4")
+    analysis_path = tmp_path / "match.analysis"
+    _save_to(window, analysis_path, monkeypatch)
+    assert window.is_saved is True
+
+    window.sidebarTabs.setCurrentWidget(window.videosTab)
+    _click_video_row(window, 1)
+    window.treeWidget.sortByColumn(0, Qt.SortOrder.DescendingOrder)
+    _click_clip_row(window, "Fast break")
+
+    assert window.document.dirty is False
+    assert window.is_saved is True
+
+    window.document = new_analysis_document()
+    window.load_analysis(str(analysis_path))
+
+    assert window.active_source_video() == window.analysis.source_videos[0]
+    assert window.player.location() == window.analysis.source_videos[0].location
