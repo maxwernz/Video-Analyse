@@ -61,6 +61,20 @@ QTextEdit {
     font: 14px &quot;Segoe UI&quot;, sans-serif;
 }
 
+/* QTimeEdit styling (Clip boundary fields) */
+QTimeEdit {
+    background-color: rgb(45, 45, 45);
+    color: white;
+    border: 2px solid rgb(65, 65, 65);
+    border-radius: 5px;
+    padding: 5px;
+    font: 14px &quot;Segoe UI&quot;, sans-serif;
+}
+
+QTimeEdit::up-button, QTimeEdit::down-button {
+    width: 14px;
+}
+
 /* QComboBox styling */
 QComboBox {
     border: 2px solid rgb(65, 65, 65); /* Border for combo box */
@@ -182,6 +196,52 @@ QMenu::separator {
     <widget class="QLineEdit" name="clipNameLine"/>
    </item>
    <item>
+    <widget class="QLabel" name="label">
+     <property name="text">
+      <string>Kategorie</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QComboBox" name="categoryBox">
+     <property name="editable">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="boundariesLabel">
+     <property name="text">
+      <string>Grenzen</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="boundariesLayout">
+     <item>
+      <widget class="QTimeEdit" name="startTimeEdit">
+       <property name="displayFormat">
+        <string>HH:mm:ss.zzz</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="boundarySeparator">
+       <property name="text">
+        <string>bis</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QTimeEdit" name="endTimeEdit">
+       <property name="displayFormat">
+        <string>HH:mm:ss.zzz</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
     <widget class="QLabel" name="label_2">
      <property name="text">
       <string>Notizen</string>
@@ -205,18 +265,17 @@ QMenu::separator {
     </widget>
    </item>
    <item>
-    <widget class="QLabel" name="label">
-     <property name="text">
-      <string>Kategorie</string>
+    <spacer name="optionalFieldsSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
      </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QComboBox" name="categoryBox">
-     <property name="editable">
-      <bool>true</bool>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>0</height>
+      </size>
      </property>
-    </widget>
+    </spacer>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout_2">

@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from uuid import UUID
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QTime, Signal
 from PySide6.QtWidgets import QWidget
 
 from Ui_clip_handler import Ui_Dialog
@@ -39,7 +39,26 @@ class ClipHandler(QWidget, Ui_Dialog):
         self.clipNameLine.textChanged.connect(
             lambda text: self.acceptButton.setEnabled(bool(text.strip()))
         )
+        self.startTimeEdit.timeChanged.connect(self._set_duration_label)
+        self.endTimeEdit.timeChanged.connect(self._set_duration_label)
         self.acceptButton.clicked.connect(self._submit)
+
+    @property
+    def start_time(self) -> int:
+        """The Clip start, which the form itself holds and lets a person edit."""
+        return self.startTimeEdit.time().msecsSinceStartOfDay()
+
+    @start_time.setter
+    def start_time(self, milliseconds: int) -> None:
+        self.startTimeEdit.setTime(QTime.fromMSecsSinceStartOfDay(milliseconds))
+
+    @property
+    def stop_time(self) -> int:
+        return self.endTimeEdit.time().msecsSinceStartOfDay()
+
+    @stop_time.setter
+    def stop_time(self, milliseconds: int) -> None:
+        self.endTimeEdit.setTime(QTime.fromMSecsSinceStartOfDay(milliseconds))
 
     def set_categories(
         self,
@@ -55,9 +74,9 @@ class ClipHandler(QWidget, Ui_Dialog):
         return category or None
 
     def _set_duration_label(self) -> None:
-        label_start = milliseconds_to_hhmmss(self.start_time)
-        label_stop = milliseconds_to_hhmmss(self.stop_time)
-        self.clipDuration.setText(f"{label_start} / {label_stop}")
+        """How long the Clip is; the boundaries themselves are their own fields."""
+        length = max(self.stop_time - self.start_time, 0)
+        self.clipDuration.setText(milliseconds_to_hhmmss(length))
 
     def _draft(self) -> ClipDraft:
         return ClipDraft(

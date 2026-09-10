@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'clip_handler.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.8.0
+## Created by: Qt User Interface Compiler version 6.10.0
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -17,7 +17,8 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QComboBox, QDialog, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QSizePolicy,
-    QSpacerItem, QTextEdit, QVBoxLayout, QWidget)
+    QSpacerItem, QTextEdit, QTimeEdit, QVBoxLayout,
+    QWidget)
 import resources_rc
 
 class Ui_Dialog(object):
@@ -70,6 +71,20 @@ class Ui_Dialog(object):
 "    font: 14px \"Segoe UI\", sans-serif;\n"
 "}\n"
 "\n"
+"/* QTimeEdit styling (Clip boundary fields) */\n"
+"QTimeEdit {\n"
+"    background-color: rgb(45, 45, 45);\n"
+"    color: white;\n"
+"    border: 2px solid rgb(65, 65, 65);\n"
+"    border-radius: 5px;\n"
+"    padding: 5px;\n"
+"    font: 14px \"Segoe UI\", sans-serif;\n"
+"}\n"
+"\n"
+"QTimeEdit::up-button, QTimeEdit::down-button {\n"
+"    width: 14px;\n"
+"}\n"
+"\n"
 "/* QComboBox styling */\n"
 "QComboBox {\n"
 "    border: 2px solid rgb(65, 65, 65); /* Border for combo box */\n"
@@ -82,7 +97,8 @@ class Ui_Dialog(object):
 "\n"
 "QComboBox::drop-down {\n"
 "    border: none;\n"
-"    width: 30px;                    /* Width of the drop-down button */\n"
+"    wi"
+                        "dth: 30px;                    /* Width of the drop-down button */\n"
 "}\n"
 "\n"
 "QComboBox::down-arrow {\n"
@@ -94,8 +110,7 @@ class Ui_Dialog(object):
 "QComboBox QAbstractItemView {\n"
 "    background-color: rgb(31, 31, 31); /* Background of the drop-down list */\n"
 "    color: white; /* Text color */\n"
-""
-                        "    border: 2px solid rgb(65, 65, 65); /* Border around drop-down */\n"
+"    border: 2px solid rgb(65, 65, 65); /* Border around drop-down */\n"
 "    selection-background-color: rgb(66, 65, 64); /* Highlight color for selected item */\n"
 "}\n"
 "\n"
@@ -111,7 +126,8 @@ class Ui_Dialog(object):
 "\n"
 "QPushButton:hover {\n"
 "    background-color: rgb(66, 65, 64); /* Change background on hover */\n"
-"    border: 2px solid rgb(80, 80, 80); /* Slightly lighter border on hover */\n"
+"    border: 2px solid rgb(80,"
+                        " 80, 80); /* Slightly lighter border on hover */\n"
 "}\n"
 "\n"
 "QPushButton:pressed {\n"
@@ -121,8 +137,7 @@ class Ui_Dialog(object):
 "\n"
 "QPushButton:disabled {\n"
 "    background-color: rgb(60, 60, 60); /* Darker background when disabled */\n"
-"    color: rgb(100, 100, 100); /* Lig"
-                        "ht gray text for disabled state */\n"
+"    color: rgb(100, 100, 100); /* Light gray text for disabled state */\n"
 "    border: 2px solid rgb(80, 80, 80); /* Lighter border when disabled */\n"
 "}\n"
 "\n"
@@ -144,7 +159,8 @@ class Ui_Dialog(object):
 "}\n"
 "\n"
 "QMenu::item:selected {\n"
-"    	background-color: #007AFF; /* Selected item background color */\n"
+"    	background-color: #007AFF; /* Selected it"
+                        "em background color */\n"
 "    	color: white; /* Selected item text color */\n"
 " 	border-radius: 4px; /* Large border radius for selected items */\n"
 "}\n"
@@ -182,6 +198,42 @@ class Ui_Dialog(object):
 
         self.verticalLayout.addWidget(self.clipNameLine)
 
+        self.label = QLabel(Dialog)
+        self.label.setObjectName(u"label")
+
+        self.verticalLayout.addWidget(self.label)
+
+        self.categoryBox = QComboBox(Dialog)
+        self.categoryBox.setObjectName(u"categoryBox")
+        self.categoryBox.setEditable(True)
+
+        self.verticalLayout.addWidget(self.categoryBox)
+
+        self.boundariesLabel = QLabel(Dialog)
+        self.boundariesLabel.setObjectName(u"boundariesLabel")
+
+        self.verticalLayout.addWidget(self.boundariesLabel)
+
+        self.boundariesLayout = QHBoxLayout()
+        self.boundariesLayout.setObjectName(u"boundariesLayout")
+        self.startTimeEdit = QTimeEdit(Dialog)
+        self.startTimeEdit.setObjectName(u"startTimeEdit")
+
+        self.boundariesLayout.addWidget(self.startTimeEdit)
+
+        self.boundarySeparator = QLabel(Dialog)
+        self.boundarySeparator.setObjectName(u"boundarySeparator")
+
+        self.boundariesLayout.addWidget(self.boundarySeparator)
+
+        self.endTimeEdit = QTimeEdit(Dialog)
+        self.endTimeEdit.setObjectName(u"endTimeEdit")
+
+        self.boundariesLayout.addWidget(self.endTimeEdit)
+
+
+        self.verticalLayout.addLayout(self.boundariesLayout)
+
         self.label_2 = QLabel(Dialog)
         self.label_2.setObjectName(u"label_2")
 
@@ -195,16 +247,9 @@ class Ui_Dialog(object):
 
         self.verticalLayout.addWidget(self.notesText)
 
-        self.label = QLabel(Dialog)
-        self.label.setObjectName(u"label")
+        self.optionalFieldsSpacer = QSpacerItem(20, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
-        self.verticalLayout.addWidget(self.label)
-
-        self.categoryBox = QComboBox(Dialog)
-        self.categoryBox.setObjectName(u"categoryBox")
-        self.categoryBox.setEditable(True)
-
-        self.verticalLayout.addWidget(self.categoryBox)
+        self.verticalLayout.addItem(self.optionalFieldsSpacer)
 
         self.horizontalLayout_2 = QHBoxLayout()
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
@@ -239,8 +284,12 @@ class Ui_Dialog(object):
         Dialog.setWindowTitle(QCoreApplication.translate("Dialog", u"Dialog", None))
         self.label_3.setText(QCoreApplication.translate("Dialog", u"Clip Titel", None))
         self.clipDuration.setText(QCoreApplication.translate("Dialog", u"TextLabel", None))
-        self.label_2.setText(QCoreApplication.translate("Dialog", u"Notizen", None))
         self.label.setText(QCoreApplication.translate("Dialog", u"Kategorie", None))
+        self.boundariesLabel.setText(QCoreApplication.translate("Dialog", u"Grenzen", None))
+        self.startTimeEdit.setDisplayFormat(QCoreApplication.translate("Dialog", u"HH:mm:ss.zzz", None))
+        self.boundarySeparator.setText(QCoreApplication.translate("Dialog", u"bis", None))
+        self.endTimeEdit.setDisplayFormat(QCoreApplication.translate("Dialog", u"HH:mm:ss.zzz", None))
+        self.label_2.setText(QCoreApplication.translate("Dialog", u"Notizen", None))
         self.cancelButton.setText(QCoreApplication.translate("Dialog", u"Cancel", None))
         self.acceptButton.setText(QCoreApplication.translate("Dialog", u"OK", None))
 #if QT_CONFIG(shortcut)

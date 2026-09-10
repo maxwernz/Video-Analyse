@@ -683,6 +683,8 @@ class MainWindow(WorkspaceShell):
                 self.analysis.update_clip(
                     draft.clip_id,
                     name=draft.name,
+                    start_ms=draft.start_ms,
+                    end_ms=draft.end_ms,
                     notes=draft.notes,
                     category_id=self.category_id_for(draft.category_name),
                 )

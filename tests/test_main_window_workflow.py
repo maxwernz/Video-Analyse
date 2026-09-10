@@ -8,7 +8,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint, QPointF, Qt  # noqa: E402
+from PySide6.QtCore import QPoint, QPointF, Qt, QTime  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtGui import QColor, QKeySequence, QMouseEvent  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
@@ -186,6 +186,31 @@ def test_editing_a_clip_updates_the_analysis_in_place(
     assert window.editHandler.isVisibleTo(window) is False
     assert _category_row(window, "Abwehr").child(0).clip_id == clip.id
     assert _category_row(window, "Angriff").childCount() == 0
+
+
+def _set_boundaries(handler: ClipHandler, start_ms: int, end_ms: int) -> None:
+    """Type new boundaries into the editing form, the way a person does."""
+    handler.startTimeEdit.setTime(QTime.fromMSecsSinceStartOfDay(start_ms))
+    handler.endTimeEdit.setTime(QTime.fromMSecsSinceStartOfDay(end_ms))
+
+
+def test_editing_a_clips_boundaries_moves_it_in_the_analysis(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """The boundaries are part of the form, and the Analysis accepts them."""
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    clip = window.analysis.clips[0]
+
+    window.edit_clip(clip.id)
+    _set_boundaries(window.editHandler, 4_000, 9_500)
+    window.editHandler.acceptButton.click()
+
+    updated = window.analysis.clip(clip.id)
+    assert (updated.start_ms, updated.end_ms) == (4_000, 9_500)
+    assert updated.name == clip.name
+    assert window.editHandler.isVisibleTo(window) is False
 
 
 def test_an_invalid_clip_edit_is_reported_and_changes_nothing(
