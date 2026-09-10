@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMainWindow,
     QProgressBar,
     QPushButton,
     QSizePolicy,
@@ -49,6 +50,8 @@ VIDEOS_TAB_LABEL = "Videos"
 ADD_VIDEO_LABEL = "Video hinzufügen"
 EMPTY_PLAYER_HINT = "Diese Analyse hat noch kein Quellvideo."
 
+#: The workspace opens at the smallest size the direction was validated at.
+WORKSPACE_SIZE = (1280, 720)
 SIDEBAR_WIDTH = 320
 VIDEO_MINIMUM_SIZE = QSize(360, 220)
 CLIP_EDITOR_WIDTH = 380
@@ -56,16 +59,16 @@ TIMELINE_HEIGHT = 26
 
 CLIP_COLUMN_LABELS = ("Clip", "Start", "Stop")
 
-def _rule(orientation: Qt.Orientation = Qt.Horizontal) -> QFrame:
+def _rule(orientation: Qt.Orientation = Qt.Orientation.Horizontal) -> QFrame:
     """One thin separator; the workspace has no other pane divider."""
     rule = QFrame()
     rule.setFrameShape(
-        QFrame.Shape.HLine if orientation == Qt.Horizontal else QFrame.Shape.VLine
+        QFrame.Shape.HLine if orientation == Qt.Orientation.Horizontal else QFrame.Shape.VLine
     )
     rule.setFrameShadow(QFrame.Shadow.Plain)
     rule.setLineWidth(1)
     rule.setStyleSheet(f"color: {RULE}; background-color: {RULE};")
-    if orientation == Qt.Horizontal:
+    if orientation == Qt.Orientation.Horizontal:
         rule.setFixedHeight(1)
     else:
         rule.setFixedWidth(1)
@@ -97,18 +100,18 @@ def _icon(off: str, on: str | None = None) -> QIcon:
     return icon
 
 
-class WorkspaceShell:
-    """Composes the workspace onto the main window this is mixed into.
+class WorkspaceShell(QMainWindow):
+    """The window the production workspace is composed into.
 
-    Every widget it creates is named on the window, so the controller and its
-    behavioral suite reach the workspace the same way they reached the Designer
-    window it replaces.
+    It is the hand-written replacement for the generated Designer window, and
+    it plays the same part: the controller derives from it and reaches every
+    widget by name, but no behavior lives here.
     """
 
     def compose_workspace(self) -> None:
         self.setStyleSheet(WORKSPACE_STYLE_SHEET)
         self.setAcceptDrops(True)
-        self.resize(1440, 900)
+        self.resize(*WORKSPACE_SIZE)
 
         self.centralwidget = QWidget(self)
         self.setCentralWidget(self.centralwidget)
@@ -148,7 +151,7 @@ class WorkspaceShell:
     # --- Body: sidebar, video area, Clip-editing state ---------------------
 
     def _compose_body(self) -> QWidget:
-        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.setChildrenCollapsible(False)
         self.splitter.setHandleWidth(1)
         self.splitter.addWidget(self._compose_sidebar())
@@ -184,7 +187,6 @@ class WorkspaceShell:
         videos_layout = QVBoxLayout(self.videosTab)
         videos_layout.setContentsMargins(12, 12, 12, 12)
         videos_layout.setSpacing(8)
-        videos_layout.addWidget(_label("QUELLVIDEOS", "section"))
         videos_layout.addStretch(1)
 
         self.sidebarTabs = QTabWidget()
@@ -215,7 +217,6 @@ class WorkspaceShell:
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(video_column, 1)
-        layout.addWidget(_rule(Qt.Vertical))
         layout.addWidget(self._compose_clip_editor())
         return area
 
@@ -239,9 +240,9 @@ class WorkspaceShell:
         hint_layout.setSpacing(12)
         hint_layout.addStretch(1)
         hint = _label(EMPTY_PLAYER_HINT, "muted")
-        hint.setAlignment(Qt.AlignHCenter)
+        hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         hint_layout.addWidget(hint)
-        hint_layout.addWidget(self.addVideoButton, 0, Qt.AlignHCenter)
+        hint_layout.addWidget(self.addVideoButton, 0, Qt.AlignmentFlag.AlignHCenter)
         hint_layout.addStretch(1)
 
         self.playerStack = QStackedWidget()
@@ -322,7 +323,7 @@ class WorkspaceShell:
         normal review keeps the full video width.
         """
         self.clipEditorArea = QFrame()
-        self.clipEditorArea.setProperty("role", "pane")
+        self.clipEditorArea.setProperty("role", "editor")
         self.clipEditorArea.setMaximumWidth(CLIP_EDITOR_WIDTH)
 
         self.clipHandler = CreateClip()

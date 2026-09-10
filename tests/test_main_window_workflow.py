@@ -725,9 +725,12 @@ def test_the_workspace_lays_the_areas_out_as_the_validated_direction_asks(
     assert window.height() <= 720 and window.width() <= 1280
 
 
-def test_the_workspace_stays_usable_when_the_window_is_made_small(
+def test_the_workspace_stays_usable_at_a_small_laptop_size(
     window: MainWindow,
 ) -> None:
+    """It opens at that size, and stays usable when made smaller still."""
+    assert window.size().width() <= 1280
+    assert window.size().height() <= 720
     assert window.minimumSizeHint().width() <= 1280
     assert window.minimumSizeHint().height() <= 720
 

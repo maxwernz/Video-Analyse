@@ -24,7 +24,7 @@ from application_workflow import (
     ApplicationWorkflow,
 )
 from playback import Playback
-from visual_system import SURFACE, TEXT
+from visual_system import MESSAGE_BOX_STYLE_SHEET
 from workspace import WorkspaceShell
 from treewidget_item import ClipItem, ClipTreeItem
 from video_creator import VideoCreator, ProgressLogger
@@ -32,35 +32,13 @@ from util import milliseconds_to_hhmmss
 
 basedir = os.path.dirname(__file__)
 
-MESSAGE_BOX_STYLE_SHEET = f"""
-    QMessageBox {{
-        background-color: {SURFACE};
-        color: {TEXT};
-    }}
-
-    QMessageBox QLabel {{
-        color: {TEXT};
-    }}
-
-    QMessageBox QPushButton {{
-        background-color: #2C2F33;
-        border: 1px solid #4A4D52;
-        border-radius: 2px;
-        padding: 6px 14px;
-    }}
-
-    QMessageBox QPushButton:hover {{
-        background-color: #363A3F;
-    }}
-"""
-
 PLAYBACK_RATES = (0.25, 0.5, 1.0, 2.0)
 """The rates the speed selector offers, in the order it lists them."""
 
 DEFAULT_PLAYBACK_RATE = 1.0
 
 
-class MainWindow(QMainWindow, WorkspaceShell):
+class MainWindow(WorkspaceShell):
     """Drives one Analysis document; the Analysis owns all durable state."""
 
     file_changed = Signal(str)
@@ -86,7 +64,6 @@ class MainWindow(QMainWindow, WorkspaceShell):
         self.openExportButton.setVisible(False)
         self.exportFinishedLabel.setVisible(False)
 
-        self.setAcceptDrops(True)
         self.titleLabel.installEventFilter(self)
 
         self.pending_clip_start = None
@@ -282,9 +259,9 @@ class MainWindow(QMainWindow, WorkspaceShell):
         changes, so the first video arriving is a repaint and not a different
         screen with different rules.
         """
-        has_footage = bool(self.analysis.source_videos)
+        has_source_videos = bool(self.analysis.source_videos)
         self.playerStack.setCurrentWidget(
-            self.videoWidget if has_footage else self.emptyPlayerHint
+            self.videoWidget if has_source_videos else self.emptyPlayerHint
         )
 
     def refresh_document_state(self):

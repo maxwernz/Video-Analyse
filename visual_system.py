@@ -22,6 +22,20 @@ RULE = "#3B3F45"
 TEXT = "#F0F0EE"
 TEXT_MUTED = "#A1A4A8"
 ACCENT = "#5D8FC7"
+ACCENT_BRIGHT = "#719BC8"
+STAGE = "#101113"
+ACCENT_TEXT = "#101820"
+
+#: The chrome every control shares, so no second sheet re-invents it.
+CONTROL_SURFACE = "#2C2F33"
+CONTROL_BORDER = "#4A4D52"
+CONTROL_HOVER = "#363A3F"
+CONTROL_HOVER_BORDER = "#62666B"
+CONTROL_DISABLED_SURFACE = "#25282B"
+CONTROL_DISABLED_BORDER = "#36393D"
+CONTROL_DISABLED_TEXT = "#6F7276"
+FIELD_SURFACE = "#1E2023"
+FIELD_SELECTION = "#496B90"
 
 WORKSPACE_STYLE_SHEET = f"""
 QMainWindow, QWidget {{
@@ -37,8 +51,12 @@ QFrame[role="header"] {{
 QFrame[role="pane"] {{
     background-color: {SURFACE};
 }}
+QFrame[role="editor"] {{
+    background-color: {SURFACE};
+    border-left: 1px solid {RULE};
+}}
 QFrame[role="stage"] {{
-    background-color: #101113;
+    background-color: {STAGE};
 }}
 QWidget[role="timeline"] {{
     background-color: transparent;
@@ -66,32 +84,32 @@ QLabel[role="muted"] {{
     color: {TEXT_MUTED};
 }}
 QLabel[role="time"] {{
-    color: #D2D3D4;
+    color: {TEXT};
     font-family: "SF Mono", "Consolas", monospace;
 }}
 QPushButton {{
-    background-color: #2C2F33;
-    border: 1px solid #4A4D52;
+    background-color: {CONTROL_SURFACE};
+    border: 1px solid {CONTROL_BORDER};
     border-radius: 2px;
     padding: 5px 10px;
 }}
 QPushButton:hover {{
-    background-color: #363A3F;
-    border-color: #62666B;
+    background-color: {CONTROL_HOVER};
+    border-color: {CONTROL_HOVER_BORDER};
 }}
 QPushButton:disabled {{
-    background-color: #25282B;
-    border-color: #36393D;
-    color: #6F7276;
+    background-color: {CONTROL_DISABLED_SURFACE};
+    border-color: {CONTROL_DISABLED_BORDER};
+    color: {CONTROL_DISABLED_TEXT};
 }}
 QPushButton[role="primary"] {{
     background-color: {ACCENT};
-    border-color: #719BC8;
-    color: #101820;
+    border-color: {ACCENT_BRIGHT};
+    color: {ACCENT_TEXT};
     font-weight: 700;
 }}
 QPushButton[role="primary"]:hover {{
-    background-color: #719BC8;
+    background-color: {ACCENT_BRIGHT};
 }}
 QPushButton[role="transport"] {{
     background-color: transparent;
@@ -112,11 +130,11 @@ QPushButton[role="link"] {{
     padding: 4px 2px;
 }}
 QComboBox {{
-    background-color: #1E2023;
-    border: 1px solid #4A4D52;
+    background-color: {FIELD_SURFACE};
+    border: 1px solid {CONTROL_BORDER};
     border-radius: 2px;
     padding: 4px 6px;
-    selection-background-color: #496B90;
+    selection-background-color: {FIELD_SELECTION};
 }}
 QComboBox QAbstractItemView {{
     background-color: {SURFACE_RAISED};
@@ -133,8 +151,8 @@ QComboBox::down-arrow {{
     height: 12px;
 }}
 QProgressBar {{
-    background-color: #1E2023;
-    border: 1px solid #4A4D52;
+    background-color: {FIELD_SURFACE};
+    border: 1px solid {CONTROL_BORDER};
     border-radius: 2px;
     font-size: 10px;
     max-width: 120px;
@@ -206,7 +224,7 @@ QScrollBar:vertical {{
     width: 8px;
 }}
 QScrollBar::handle:vertical {{
-    background-color: #4A4D52;
+    background-color: {CONTROL_BORDER};
     min-height: 28px;
 }}
 QScrollBar::add-line, QScrollBar::sub-line {{
@@ -235,3 +253,23 @@ def muted_category_color(color: str) -> QColor:
         min(rendered.saturation(), CATEGORY_SATURATION),
         min(max(rendered.value(), CATEGORY_BRIGHTNESS), 255),
     )
+
+
+MESSAGE_BOX_STYLE_SHEET = f"""
+QMessageBox {{
+    background-color: {SURFACE};
+}}
+QMessageBox QLabel {{
+    color: {TEXT};
+}}
+QMessageBox QPushButton {{
+    background-color: {CONTROL_SURFACE};
+    border: 1px solid {CONTROL_BORDER};
+    border-radius: 2px;
+    padding: 6px 14px;
+}}
+QMessageBox QPushButton:hover {{
+    background-color: {CONTROL_HOVER};
+    border-color: {CONTROL_HOVER_BORDER};
+}}
+"""

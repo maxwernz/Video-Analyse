@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from PySide6.QtWidgets import QTreeWidget, QMenu
-from PySide6.QtGui import QAction, QBrush, QColor
+from PySide6.QtGui import QAction, QBrush
 from PySide6.QtCore import Qt, Signal
 
 from analysis import Analysis
