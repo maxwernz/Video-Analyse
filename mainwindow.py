@@ -610,8 +610,7 @@ class MainWindow(WorkspaceShell):
             self.player.position(),
             self.category_names(),
         )
-        self.clipHandler.setVisible(True)
-        self.render_clip_editing_state()
+        self.show_clip_form(self.clipHandler)
 
     def discard_pending_clip(self):
         """Drop the Pending Clip; it was never part of the Analysis.
@@ -680,8 +679,7 @@ class MainWindow(WorkspaceShell):
             ClipItem.from_clip(clip, category_name),
             self.category_names(),
         )
-        self.editHandler.setVisible(True)
-        self.render_clip_editing_state()
+        self.show_clip_form(self.editHandler)
 
     def apply_clip_edit(self, draft):
         if draft.clip_id is None:
@@ -733,22 +731,10 @@ class MainWindow(WorkspaceShell):
         )
 
     def disable_clip_handler(self):
-        self.clipHandler.setVisible(False)
-        self.render_clip_editing_state()
+        self.hide_clip_form(self.clipHandler)
 
     def disable_edit_handler(self):
-        self.editHandler.setVisible(False)
-        self.render_clip_editing_state()
-
-    def render_clip_editing_state(self):
-        """Let the editing area take room only while one of its forms is shown.
-
-        Hiding a form does not by itself make the area beside the video give
-        the width back that it grew to, so its layout is asked again. Leaving
-        the Clip-editing state is what returns the video to its full size.
-        """
-        self.clipEditorArea.layout().invalidate()
-        self.clipEditorArea.updateGeometry()
+        self.hide_clip_form(self.editHandler)
 
     def export(self, include_all_clips=False):
         source_video = self.active_source_video()

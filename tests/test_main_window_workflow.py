@@ -273,7 +273,7 @@ def test_editing_a_clip_from_the_clips_tab_opens_the_paused_editing_state(
     assert window.editHandler.clip_id == clip.id
 
 
-def test_editing_an_existing_clip_abandons_a_clip_that_was_only_marked(
+def test_editing_an_existing_clip_abandons_the_pending_clip(
     window: MainWindow,
     tmp_path: Path,
 ) -> None:
@@ -311,7 +311,7 @@ def test_the_editing_form_carries_the_whole_clip(
     form = window.editHandler
     assert form.clipNameLine.text() == "Fast break"
     assert form.categoryBox.currentText() == "Angriff"
-    assert (form.start_time, form.stop_time) == (4_000, 9_500)
+    assert (form.start_ms, form.end_ms) == (4_000, 9_500)
     assert form.notesText.toPlainText() == "Left wing"
 
 
@@ -718,7 +718,7 @@ def test_a_clip_is_marked_against_the_player_position(
 
     assert window.player.is_playing() is False
     assert window.clipHandler.isVisibleTo(window) is True
-    assert (window.clipHandler.start_time, window.clipHandler.stop_time) == (
+    assert (window.clipHandler.start_ms, window.clipHandler.end_ms) == (
         30_000,
         35_000,
     )

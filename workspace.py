@@ -8,8 +8,9 @@ composes the widget tree and carries the visual system recorded in
 window mixed with it stays the controller, and every change to the Analysis
 still goes through Analysis operations.
 
-One area is deliberately left empty here, because it is composed by its own
-ticket against this shell: the Clip-editing state beside the video (#26).
+The Clip-editing state beside the video is composed here too, and the shell
+owns how much room it takes: the window mixed with it decides *when* a form
+is shown, never how wide the area beside the video is then.
 """
 
 from __future__ import annotations
@@ -355,3 +356,23 @@ class WorkspaceShell(QMainWindow):
         layout.addWidget(self.editHandler)
         layout.addStretch(1)
         return self.clipEditorArea
+
+    def show_clip_form(self, form: QWidget) -> None:
+        """Enter the Clip-editing state, this form beside the paused frame."""
+        form.setVisible(True)
+        self._resize_clip_editor_area()
+
+    def hide_clip_form(self, form: QWidget) -> None:
+        """Leave the Clip-editing state; the video area takes its room back."""
+        form.setVisible(False)
+        self._resize_clip_editor_area()
+
+    def _resize_clip_editor_area(self) -> None:
+        """Ask the editing area again how wide it wants to be.
+
+        Showing or hiding a form does not on its own make the area give back
+        the width it grew to, so it would keep that width through normal
+        review; asking its layout again is what makes the area follow.
+        """
+        self.clipEditorArea.layout().invalidate()
+        self.clipEditorArea.updateGeometry()
