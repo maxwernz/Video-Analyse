@@ -293,6 +293,28 @@ def test_editing_an_existing_clip_abandons_a_clip_that_was_only_marked(
     assert window.editHandler.isVisibleTo(window) is True
 
 
+def test_the_editing_form_carries_the_whole_clip(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """Title, Category, both boundaries and notes all survive the round trip."""
+    _load_video(window, tmp_path)
+    _create_clip(window, name="Fast break", category="Angriff")
+    clip = window.analysis.clips[0]
+
+    window.edit_clip(clip.id)
+    window.editHandler.notesText.setText("Left wing")
+    _set_boundaries(window.editHandler, 4_000, 9_500)
+    window.editHandler.acceptButton.click()
+
+    window.edit_clip(clip.id)
+    form = window.editHandler
+    assert form.clipNameLine.text() == "Fast break"
+    assert form.categoryBox.currentText() == "Angriff"
+    assert (form.start_time, form.stop_time) == (4_000, 9_500)
+    assert form.notesText.toPlainText() == "Left wing"
+
+
 def test_an_invalid_clip_edit_is_reported_and_changes_nothing(
     window: MainWindow,
     tmp_path: Path,
