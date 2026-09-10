@@ -90,8 +90,11 @@ def _create_clip(
     start_ms: int = 1_000,
     end_ms: int = 2_000,
 ) -> None:
-    window.clipHandler.new_clip(start_ms, end_ms, window.category_names())
-    window.clipHandler.setVisible(True)
+    """Mark a Clip the way the transport does: two boundaries, then the form."""
+    window.player.seek(start_ms)
+    window.clipButton.setChecked(True)
+    window.player.seek(end_ms)
+    window.clipButton.setChecked(False)
     window.clipHandler.clipNameLine.setText(name)
     window.clipHandler.categoryBox.setCurrentText("" if category is None else category)
     window.clipHandler.acceptButton.click()
@@ -1123,3 +1126,76 @@ def test_selecting_a_clip_in_the_clips_tab_activates_its_source_video(
     assert window.player.location() == str(first_video)
     assert window.player.position() == 12_000
     assert window.selected_clip() == window.analysis.clips[0]
+
+
+def test_a_new_clip_is_bound_to_the_source_video_it_was_marked_on(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    _add_video(window, tmp_path, "second-half.mp4")
+    second = window.analysis.source_videos[1]
+    window.activate_source_video(second.id)
+
+    _create_clip(window, name="Counter", start_ms=10_000, end_ms=12_000)
+
+    clip = window.analysis.clips[0]
+    assert clip.source_video_id == second.id
+    assert (clip.start_ms, clip.end_ms) == (10_000, 12_000)
+
+
+def test_a_pending_clip_cannot_produce_a_clip_on_another_source_video(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """A Pending Clip belongs to the Source video its start was marked on."""
+    _load_video(window, tmp_path)
+    _add_video(window, tmp_path, "second-half.mp4")
+    window.player.seek(30_000)
+    window.clipButton.setChecked(True)
+
+    _click_video_row(window, 1)
+    window.player.seek(5_000)
+    window.clipButton.setChecked(False)
+
+    assert window.analysis.clips == ()
+    assert window.clipHandler.isVisibleTo(window) is False
+    assert window.clipButton.isChecked() is False
+
+
+def test_switching_source_video_discards_a_clip_that_was_never_created(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    _add_video(window, tmp_path, "second-half.mp4")
+    window.player.seek(30_000)
+    window.clipButton.setChecked(True)
+    window.player.seek(35_000)
+    window.clipButton.setChecked(False)
+    assert window.clipHandler.isVisibleTo(window) is True
+
+    _click_video_row(window, 1)
+
+    assert window.clipHandler.isVisibleTo(window) is False
+    window.clipHandler.clipNameLine.setText("Counter")
+    window.clipHandler.acceptButton.click()
+    assert window.analysis.clips == ()
+
+
+def test_cancelling_a_marked_clip_leaves_nothing_behind(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    window.player.seek(30_000)
+    window.clipButton.setChecked(True)
+    window.player.seek(35_000)
+    window.clipButton.setChecked(False)
+
+    window.clipHandler.cancelButton.click()
+
+    assert window.analysis.clips == ()
+    assert window.clipHandler.isVisibleTo(window) is False
+    assert window.clipButton.isChecked() is False
+    assert window.pending_clip is None
