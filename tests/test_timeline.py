@@ -219,3 +219,28 @@ def test_the_timeline_paints_its_ranges_and_its_playhead(
 
     painted = {image.pixelColor(x, timeline.height() // 2).name() for x in range(0, TIMELINE_WIDTH, 5)}
     assert len(painted) > 1
+
+
+def test_the_playhead_follows_the_cursor_without_waiting_for_the_player(
+    timeline: Timeline,
+) -> None:
+    """Media that is still loading holds a seek; the strip must not look dead."""
+    _click(timeline, TIMELINE_WIDTH // 4)
+
+    assert timeline.position() == VIDEO_DURATION_MS // 4
+
+
+def test_the_selected_range_is_drawn_after_the_ranges_it_overlaps(
+    timeline: Timeline,
+) -> None:
+    selected = _range(30_000, 40_000)
+    timeline.show_ranges([selected, _range(30_000, 45_000, "#22C55E")])
+    timeline.set_selected_clip(selected.clip_id)
+    image = QImage(timeline.size(), QImage.Format.Format_ARGB32)
+    image.fill(Qt.GlobalColor.transparent)
+
+    timeline.render(image)
+
+    left, width = timeline.range_geometry(selected)
+    middle = image.pixelColor(left + width // 2, timeline.height() // 2)
+    assert middle.name() == timeline.range_appearance(selected).fill.name()

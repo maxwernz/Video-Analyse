@@ -93,6 +93,14 @@ class Timeline(QWidget):
         self._position_ms = max(0, position_ms)
         self.update()
 
+    def position(self) -> int:
+        """Where the playhead is drawn, which is what the person is shown."""
+        return self._position_ms
+
+    def duration(self) -> int:
+        """The time scale the strip is drawn on: the Active Source video's."""
+        return self._duration_ms
+
     def show_ranges(self, ranges: Iterable[TimelineRange]) -> None:
         """Show the Clip ranges of the Active Source video, and no others.
 
@@ -171,10 +179,22 @@ class Timeline(QWidget):
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor(TRACK_BACKGROUND))
-        for clip_range in self._ranges:
+        for clip_range in self._painting_order():
             self._paint_range(painter, clip_range)
         self._paint_playhead(painter)
         painter.end()
+
+    def _painting_order(self) -> tuple[TimelineRange, ...]:
+        """Draw the selected range last, so nothing overlapping swallows it."""
+        return tuple(
+            clip_range
+            for clip_range in self._ranges
+            if clip_range.clip_id != self._selected_clip_id
+        ) + tuple(
+            clip_range
+            for clip_range in self._ranges
+            if clip_range.clip_id == self._selected_clip_id
+        )
 
     def _paint_range(self, painter: QPainter, clip_range: TimelineRange) -> None:
         left, width = self.range_geometry(clip_range)
@@ -234,9 +254,17 @@ class Timeline(QWidget):
         self._scrub_to(event.position().x())
 
     def _scrub_to(self, x: float) -> None:
+        """Move the playhead where it was asked to go, then report it.
+
+        The playhead follows the cursor without waiting for the player: media
+        that is still loading holds a seek, and the strip would otherwise
+        appear not to have taken the click at all.
+        """
         if self._duration_ms <= 0:
             return
-        self.scrubbed.emit(self.time_at(int(x)))
+        position_ms = self.time_at(int(x))
+        self.set_position(position_ms)
+        self.scrubbed.emit(position_ms)
 
 
 def _clamp(value: int, lowest: int, highest: int) -> int:

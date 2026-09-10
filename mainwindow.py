@@ -73,6 +73,8 @@ class MainWindow(WorkspaceShell):
         self.pending_clip_start = None
         self._active_source_video_id = None
         self._selected_clip_id = None
+        self._position_ms = 0
+        self._duration_ms = 0
         self._current_file = None
         self.file_changed.emit(None)
         self._is_saved = True
@@ -204,6 +206,8 @@ class MainWindow(WorkspaceShell):
         self.pending_clip_start = None
         self._active_source_video_id = None
         self._selected_clip_id = None
+        self._position_ms = 0
+        self._duration_ms = 0
         self.disable_clip_handler()
         self.disable_edit_handler()
         self.player.unload()
@@ -282,8 +286,8 @@ class MainWindow(WorkspaceShell):
         source_video = self.active_source_video()
         ranges = () if source_video is None else self.timeline_ranges(source_video)
         self.timeline.show_ranges(ranges)
-        self.timeline.set_duration(self.player.duration())
-        self.timeline.set_position(self.player.position())
+        self.timeline.set_duration(self._duration_ms)
+        self.timeline.set_position(self._position_ms)
         self.select_clip(self.selection_within(ranges))
 
     def selection_within(self, ranges):
@@ -413,6 +417,14 @@ class MainWindow(WorkspaceShell):
             self.load_media(source_video)
 
     def load_media(self, source_video: SourceVideo):
+        """Show a Source video, whose length only the player can report.
+
+        Until it does, the workspace draws no length at all: keeping the one
+        the previous Source video had would put the timeline's Clip ranges on
+        the wrong time scale.
+        """
+        self.duration_changed(0)
+        self.position_changed(0)
         self.player.load(source_video.location)
 
     def active_source_video(self) -> SourceVideo | None:
@@ -754,10 +766,12 @@ class MainWindow(WorkspaceShell):
             event.ignore()
 
     def position_changed(self, position):
+        self._position_ms = position
         self.set_position_label(position)
         self.timeline.set_position(position)
 
     def duration_changed(self, duration):
+        self._duration_ms = duration
         self.set_duration_label(duration)
         self.timeline.set_duration(duration)
 

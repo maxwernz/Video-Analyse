@@ -8,9 +8,9 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint, Qt  # noqa: E402
+from PySide6.QtCore import QPoint, QPointF, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtGui import QColor, QKeySequence  # noqa: E402
+from PySide6.QtGui import QColor, QKeySequence, QMouseEvent  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
 
 import mainwindow as mainwindow_module  # noqa: E402
@@ -934,3 +934,87 @@ def test_navigating_within_the_active_source_video_does_not_reload_it(
 
     assert window.player.duration() == 60_000
     assert window.player.position() == 30_000
+
+
+def _drag_timeline_to(window: MainWindow, x: int) -> None:
+    """One move of a held drag; ``QTest.mouseMove`` carries no button state."""
+    position = QPointF(_timeline_at(window, x))
+    QApplication.sendEvent(
+        window.timeline,
+        QMouseEvent(
+            QMouseEvent.Type.MouseMove,
+            position,
+            QPointF(window.timeline.mapToGlobal(_timeline_at(window, x))),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+
+
+def test_dragging_along_the_timeline_scrubs_the_player_continuously(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _prepared_timeline(window, tmp_path)
+
+    QTest.mousePress(
+        window.timeline, Qt.MouseButton.LeftButton, pos=_timeline_at(window, 60)
+    )
+    assert window.player.position() == 6_000
+
+    _drag_timeline_to(window, 300)
+    assert window.player.position() == 30_000
+
+    QTest.mouseRelease(
+        window.timeline, Qt.MouseButton.LeftButton, pos=_timeline_at(window, 300)
+    )
+    assert window.player.position() == 30_000
+
+
+class LateDurationPlayback(FakePlayback):
+    """Media that still reports the previous length just after it is loaded.
+
+    Real media behaves this way: the player announces the new duration a
+    moment after its source is set.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._stale_duration = 0
+
+    def load(self, location: str) -> None:
+        previous_duration = self.duration()
+        super().load(location)
+        self._stale_duration = previous_duration
+
+    def set_duration(self, duration_ms: int) -> None:
+        self._stale_duration = 0
+        super().set_duration(duration_ms)
+
+    def duration(self) -> int:
+        return self._stale_duration or super().duration()
+
+
+def test_a_previous_source_videos_length_never_scales_the_active_one(
+    application: QApplication,
+    tmp_path: Path,
+) -> None:
+    """The timeline draws no time scale until the player reports one."""
+    window = MainWindow(playback=LateDurationPlayback())
+    try:
+        first_video = _load_video(window, tmp_path)
+        window.player.set_duration(5_400_000)
+        second_video = tmp_path / "second-half.mp4"
+        second_video.write_bytes(b"not a real video")
+        window.load_video(str(second_video))
+        assert first_video.exists()
+
+        window.activate_source_video(window.analysis.source_videos[1].id)
+
+        assert window.player.duration() == 5_400_000
+        assert window.timeline.duration() == 0
+        assert window.duration_label.text() == "00:00:00"
+    finally:
+        window.document = new_analysis_document()
+        window.close()
