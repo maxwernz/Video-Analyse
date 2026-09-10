@@ -20,7 +20,11 @@ from playback import FakePlayback  # noqa: E402
 from mainwindow import MainWindow  # noqa: E402
 from treewidget import TreeWidget  # noqa: E402
 from treewidget_item import ClipTreeItem  # noqa: E402
-from workspace import SIDEBAR_WIDTH  # noqa: E402
+from workspace import (  # noqa: E402
+    CLIP_COLUMN_LABELS,
+    SIDEBAR_WIDTH,
+    SOURCE_VIDEO_COLUMN_LABEL,
+)
 
 
 @pytest.fixture(scope="session")
@@ -1072,3 +1076,21 @@ def test_selecting_a_source_video_switches_the_player_to_it(
 
     assert window.active_source_video() == window.analysis.source_videos[1]
     assert window.player.location() == str(second_video)
+
+
+def test_each_clip_row_names_the_source_video_it_belongs_to(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """The cue that keeps the Clips tab readable while Videos is not visible."""
+    _load_video(window, tmp_path)
+    _create_clip(window, name="Fast break")
+    _add_video(window, tmp_path, "second-half.mp4")
+    window.activate_source_video(window.analysis.source_videos[1].id)
+    _create_clip(window, name="Counter", start_ms=3_000, end_ms=4_000)
+
+    cue = CLIP_COLUMN_LABELS.index(SOURCE_VIDEO_COLUMN_LABEL)
+    assert {row.text(0): row.text(cue) for row in _clip_rows(window)} == {
+        "Fast break": "first-half.mp4",
+        "Counter": "second-half.mp4",
+    }

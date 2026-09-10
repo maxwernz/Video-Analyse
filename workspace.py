@@ -58,7 +58,9 @@ VIDEO_MINIMUM_SIZE = QSize(360, 220)
 CLIP_EDITOR_WIDTH = 380
 SELECTED_CLIP_HEIGHT = 14
 
-CLIP_COLUMN_LABELS = ("Clip", "Start", "Stop")
+SOURCE_VIDEO_COLUMN_LABEL = "Video"
+#: The Clip list keeps its Source-video cue, so it reads without the Videos tab.
+CLIP_COLUMN_LABELS = ("Clip", "Start", "Stop", SOURCE_VIDEO_COLUMN_LABEL)
 
 def _rule(orientation: Qt.Orientation = Qt.Orientation.Horizontal) -> QFrame:
     """One thin separator; the workspace has no other pane divider."""

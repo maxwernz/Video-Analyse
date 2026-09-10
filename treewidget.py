@@ -74,6 +74,10 @@ class TreeWidget(QTreeWidget):
         self.clear()
 
         category_names = {category.id: category.name for category in analysis.categories}
+        source_video_names = {
+            source_video.id: source_video.display_name
+            for source_video in analysis.source_videos
+        }
         category_items: dict[UUID, CategoryTreeItem] = {}
         for category in analysis.categories:
             category_item = CategoryTreeItem(category.id, category.name, parent=self)
@@ -89,6 +93,7 @@ class TreeWidget(QTreeWidget):
             clip_item = ClipItem.from_clip(
                 clip,
                 None if clip.category_id is None else category_names[clip.category_id],
+                source_video_names.get(clip.source_video_id),
             )
             item = ClipTreeItem(clip_item, parent=parent)
             if clip.id in selected_clip_ids:

@@ -23,9 +23,15 @@ class ClipItem:
     notes: str
     category: str | None = None
     clip_id: UUID | None = None
+    source_video: str | None = None
 
     @classmethod
-    def from_clip(cls, clip: Clip, category_name: str | None) -> "ClipItem":
+    def from_clip(
+        cls,
+        clip: Clip,
+        category_name: str | None,
+        source_video_name: str | None = None,
+    ) -> "ClipItem":
         return cls(
             name=clip.name,
             start_position=clip.start_ms,
@@ -33,6 +39,7 @@ class ClipItem:
             notes=clip.notes,
             category=category_name,
             clip_id=clip.id,
+            source_video=source_video_name,
         )
 
     def clip_times(self) -> tuple[int, int]:
@@ -41,11 +48,13 @@ class ClipItem:
     def clip_times_s(self) -> tuple[float, float]:
         return self.start_position / 1000, self.end_position / 1000
 
-    def tree_values(self) -> tuple[str, str, str]:
+    def tree_values(self) -> tuple[str, str, str, str]:
+        """What one Clip row shows, its Source-video cue included."""
         return (
             self.name,
             milliseconds_to_hhmmss(self.start_position),
             milliseconds_to_hhmmss(self.end_position),
+            self.source_video or "",
         )
 
 
