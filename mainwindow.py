@@ -108,6 +108,8 @@ class MainWindow(WorkspaceShell):
 
         self.addVideoButton.clicked.connect(self.open_video)
 
+        self.sourceVideoList.source_video_activated.connect(self.activate_source_video)
+
         self.treeWidget.itemClicked.connect(self.jump_to_clip)
         self.treeWidget.export_clips.connect(self.export)
         self.treeWidget.clip_edit_requested.connect(self.edit_clip)
@@ -265,9 +267,17 @@ class MainWindow(WorkspaceShell):
         analysis = self.analysis
         self.titleLabel.setText(analysis.title or UNTITLED_ANALYSIS_TITLE)
         self.treeWidget.render_analysis(analysis)
+        self.render_source_videos()
         self.render_player_state()
         self.render_timeline()
         self.refresh_document_state()
+
+    def render_source_videos(self):
+        """Show every Source video of the Analysis, the active one chosen."""
+        active = self.active_source_video()
+        self.sourceVideoList.render_analysis(
+            self.analysis, None if active is None else active.id
+        )
 
     def render_player_state(self):
         """Show the call to action while the Analysis has no Source video.
@@ -459,6 +469,7 @@ class MainWindow(WorkspaceShell):
         self._active_source_video_id = source_video_id
         self.load_media(source_video)
         self.render_player_state()
+        self.render_source_videos()
         self.render_timeline()
 
     def navigate_to_clip(self, clip_id):

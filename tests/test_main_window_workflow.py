@@ -20,6 +20,7 @@ from playback import FakePlayback  # noqa: E402
 from mainwindow import MainWindow  # noqa: E402
 from treewidget import TreeWidget  # noqa: E402
 from treewidget_item import ClipTreeItem  # noqa: E402
+from workspace import SIDEBAR_WIDTH  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -1018,3 +1019,56 @@ def test_a_previous_source_videos_length_never_scales_the_active_one(
     finally:
         window.document = new_analysis_document()
         window.close()
+
+
+# --- The Clips and Videos sidebar (#15) -----------------------------------
+
+
+SIDEBAR_LIST_SIZE = (SIDEBAR_WIDTH, 240)
+
+
+def _add_video(window: MainWindow, tmp_path: Path, name: str) -> Path:
+    video_path = tmp_path / name
+    video_path.write_bytes(b"not a real video")
+    window.load_video(str(video_path))
+    return video_path
+
+
+def _video_rows(window: MainWindow) -> list[str]:
+    videos = window.sourceVideoList
+    return [videos.item(row).text() for row in range(videos.count())]
+
+
+def _click_video_row(window: MainWindow, row: int) -> None:
+    """Select a Source video the way a person does, at a size both platforms agree on."""
+    videos = window.sourceVideoList
+    videos.resize(*SIDEBAR_LIST_SIZE)
+    QTest.mouseClick(
+        videos.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=videos.visualItemRect(videos.item(row)).center(),
+    )
+
+
+def test_the_videos_tab_lists_every_source_video_of_the_analysis(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    _add_video(window, tmp_path, "second-half.mp4")
+
+    assert window.videosTab.isAncestorOf(window.sourceVideoList)
+    assert _video_rows(window) == ["first-half.mp4", "second-half.mp4"]
+
+
+def test_selecting_a_source_video_switches_the_player_to_it(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    second_video = _add_video(window, tmp_path, "second-half.mp4")
+
+    _click_video_row(window, 1)
+
+    assert window.active_source_video() == window.analysis.source_videos[1]
+    assert window.player.location() == str(second_video)
