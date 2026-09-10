@@ -61,8 +61,8 @@ QTextEdit {
     font: 14px &quot;Segoe UI&quot;, sans-serif;
 }
 
-/* QTimeEdit styling (Clip boundary fields) */
-QTimeEdit {
+/* DurationEdit styling (Clip boundary fields) */
+DurationEdit {
     background-color: rgb(45, 45, 45);
     color: white;
     border: 2px solid rgb(65, 65, 65);
@@ -71,7 +71,7 @@ QTimeEdit {
     font: 14px &quot;Segoe UI&quot;, sans-serif;
 }
 
-QTimeEdit::up-button, QTimeEdit::down-button {
+DurationEdit::up-button, DurationEdit::down-button {
     width: 14px;
 }
 
@@ -219,11 +219,7 @@ QMenu::separator {
    <item>
     <layout class="QHBoxLayout" name="boundariesLayout">
      <item>
-      <widget class="QTimeEdit" name="startTimeEdit">
-       <property name="displayFormat">
-        <string>HH:mm:ss.zzz</string>
-       </property>
-      </widget>
+      <widget class="DurationEdit" name="startTimeEdit"/>
      </item>
      <item>
       <widget class="QLabel" name="boundarySeparator">
@@ -233,11 +229,7 @@ QMenu::separator {
       </widget>
      </item>
      <item>
-      <widget class="QTimeEdit" name="endTimeEdit">
-       <property name="displayFormat">
-        <string>HH:mm:ss.zzz</string>
-       </property>
-      </widget>
+      <widget class="DurationEdit" name="endTimeEdit"/>
      </item>
     </layout>
    </item>
@@ -319,6 +311,13 @@ QMenu::separator {
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>DurationEdit</class>
+   <extends>QAbstractSpinBox</extends>
+   <header>duration_edit</header>
+  </customwidget>
+ </customwidgets>
  <resources>
   <include location="resources.qrc"/>
  </resources>

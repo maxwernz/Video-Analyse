@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from uuid import UUID
 
-from PySide6.QtCore import QTime, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget
 
 from Ui_clip_handler import Ui_Dialog
@@ -39,27 +39,27 @@ class ClipHandler(QWidget, Ui_Dialog):
         self.clipNameLine.textChanged.connect(
             lambda text: self.acceptButton.setEnabled(bool(text.strip()))
         )
-        self.startTimeEdit.timeChanged.connect(self._set_duration_label)
-        self.endTimeEdit.timeChanged.connect(self._set_duration_label)
+        self.startTimeEdit.millisecondsChanged.connect(self._set_duration_label)
+        self.endTimeEdit.millisecondsChanged.connect(self._set_duration_label)
         self.acceptButton.clicked.connect(self._submit)
 
     @property
     def start_ms(self) -> int:
         """The Clip start; the boundary fields are where the form keeps it."""
-        return self.startTimeEdit.time().msecsSinceStartOfDay()
+        return self.startTimeEdit.milliseconds()
 
     @start_ms.setter
     def start_ms(self, milliseconds: int) -> None:
-        self.startTimeEdit.setTime(QTime.fromMSecsSinceStartOfDay(milliseconds))
+        self.startTimeEdit.setMilliseconds(milliseconds)
 
     @property
     def end_ms(self) -> int:
         """The Clip end; likewise editable, and likewise the Analysis's to judge."""
-        return self.endTimeEdit.time().msecsSinceStartOfDay()
+        return self.endTimeEdit.milliseconds()
 
     @end_ms.setter
     def end_ms(self, milliseconds: int) -> None:
-        self.endTimeEdit.setTime(QTime.fromMSecsSinceStartOfDay(milliseconds))
+        self.endTimeEdit.setMilliseconds(milliseconds)
 
     def set_categories(
         self,

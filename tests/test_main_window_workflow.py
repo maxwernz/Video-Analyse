@@ -8,7 +8,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint, QPointF, Qt, QTime  # noqa: E402
+from PySide6.QtCore import QPoint, QPointF, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtGui import QColor, QKeySequence, QMouseEvent  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
@@ -190,8 +190,8 @@ def test_editing_a_clip_updates_the_analysis_in_place(
 
 def _set_boundaries(handler: ClipHandler, start_ms: int, end_ms: int) -> None:
     """Type new boundaries into the editing form, the way a person does."""
-    handler.startTimeEdit.setTime(QTime.fromMSecsSinceStartOfDay(start_ms))
-    handler.endTimeEdit.setTime(QTime.fromMSecsSinceStartOfDay(end_ms))
+    handler.startTimeEdit.setMilliseconds(start_ms)
+    handler.endTimeEdit.setMilliseconds(end_ms)
 
 
 def test_editing_a_clips_boundaries_moves_it_in_the_analysis(
@@ -211,6 +211,31 @@ def test_editing_a_clips_boundaries_moves_it_in_the_analysis(
     assert (updated.start_ms, updated.end_ms) == (4_000, 9_500)
     assert updated.name == clip.name
     assert window.editHandler.isVisibleTo(window) is False
+
+
+def test_editing_boundaries_is_not_limited_to_a_24_hour_clock(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """Media positions are durations, so their hours may exceed one day."""
+    _load_video(window, tmp_path)
+    clip = window.analysis.add_clip(
+        window.analysis.source_videos[0].id,
+        "Long recording",
+        90_000_000,
+        90_005_000,
+    )
+
+    window.edit_clip(clip.id)
+
+    assert window.editHandler.start_ms == 90_000_000
+    assert window.editHandler.startTimeEdit.lineEdit().text() == "25:00:00.000"
+
+    _set_boundaries(window.editHandler, 93_600_000, 93_605_000)
+    window.editHandler.acceptButton.click()
+
+    updated = window.analysis.clip(clip.id)
+    assert (updated.start_ms, updated.end_ms) == (93_600_000, 93_605_000)
 
 
 def test_boundaries_the_model_rejects_are_reported_and_change_nothing(
