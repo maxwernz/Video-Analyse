@@ -58,9 +58,6 @@ QFrame[role="editor"] {{
 QFrame[role="stage"] {{
     background-color: {STAGE};
 }}
-QWidget[role="timeline"] {{
-    background-color: transparent;
-}}
 QLabel {{
     background-color: transparent;
 }}

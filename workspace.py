@@ -8,9 +8,8 @@ composes the widget tree and carries the visual system recorded in
 window mixed with it stays the controller, and every change to the Analysis
 still goes through Analysis operations.
 
-Two areas are deliberately left empty here, because they are composed by their
-own tickets against this shell: the Clips and Videos sidebar panes (#15) and
-the compact timeline (#27) that will live in the strip beneath the video.
+One area is deliberately left empty here, because it is composed by its own
+ticket against this shell: the Clips and Videos sidebar panes (#15).
 """
 
 from __future__ import annotations
@@ -37,6 +36,7 @@ from PySide6.QtWidgets import (
 
 from application_workflow import UNTITLED_ANALYSIS_TITLE
 from clip_handler import CreateClip, EditClip
+from timeline import Timeline
 from treewidget import TreeWidget
 from videowidget import VideoWidget
 from visual_system import RULE, WORKSPACE_STYLE_SHEET
@@ -55,7 +55,7 @@ WORKSPACE_SIZE = (1280, 720)
 SIDEBAR_WIDTH = 320
 VIDEO_MINIMUM_SIZE = QSize(360, 220)
 CLIP_EDITOR_WIDTH = 380
-TIMELINE_HEIGHT = 26
+SELECTED_CLIP_HEIGHT = 14
 
 CLIP_COLUMN_LABELS = ("Clip", "Start", "Stop")
 
@@ -251,26 +251,34 @@ class WorkspaceShell(QMainWindow):
         return self.playerStack
 
     def _compose_timeline_area(self) -> QWidget:
-        """The compact strip directly beneath the video. Issue #27 fills it."""
+        """The compact strip directly beneath the video: the one seek surface.
+
+        ADR 0006 gives the workspace a single timeline scoped to the Active
+        Source video, and the selected Clip is named directly under it so the
+        strip itself stays compact.
+        """
         self.timelineArea = QFrame()
         self.timelineArea.setProperty("role", "pane")
 
         self.position_label = _label("00:00:00", "time")
         self.duration_label = _label("00:00:00", "time")
-        self.timelineHost = QWidget()
-        self.timelineHost.setProperty("role", "timeline")
-        self.timelineHost.setFixedHeight(TIMELINE_HEIGHT)
-        self.timelineHost.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        host_layout = QHBoxLayout(self.timelineHost)
-        host_layout.setContentsMargins(0, 0, 0, 0)
-        host_layout.setSpacing(0)
+        self.timeline = Timeline()
 
-        layout = QHBoxLayout(self.timelineArea)
+        strip = QHBoxLayout()
+        strip.setContentsMargins(0, 0, 0, 0)
+        strip.setSpacing(10)
+        strip.addWidget(self.position_label)
+        strip.addWidget(self.timeline, 1)
+        strip.addWidget(self.duration_label)
+
+        self.selectedClipLabel = _label("", "muted")
+        self.selectedClipLabel.setFixedHeight(SELECTED_CLIP_HEIGHT)
+
+        layout = QVBoxLayout(self.timelineArea)
         layout.setContentsMargins(14, 6, 14, 6)
-        layout.setSpacing(10)
-        layout.addWidget(self.position_label)
-        layout.addWidget(self.timelineHost, 1)
-        layout.addWidget(self.duration_label)
+        layout.setSpacing(2)
+        layout.addLayout(strip)
+        layout.addWidget(self.selectedClipLabel)
         return self.timelineArea
 
     def _compose_transport(self) -> QWidget:
