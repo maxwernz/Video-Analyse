@@ -433,9 +433,9 @@ class MainWindow(WorkspaceShell):
     def source_video_added(self, source_video: SourceVideo):
         """Show a newly added Source video only when nothing is playing yet.
 
-        Adding footage must never interrupt the video under review. Choosing
-        which of several Source videos is active belongs to the Videos sidebar
-        tab (issue #15), so until it exists the player stays on the first one.
+        Adding footage must never interrupt the video under review, so the
+        player stays where it is; the Videos sidebar tab is where a person
+        chooses which Source video to switch to.
         """
         if self.active_source_video() is source_video:
             self.load_media(source_video)

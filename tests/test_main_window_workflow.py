@@ -1199,3 +1199,63 @@ def test_cancelling_a_marked_clip_leaves_nothing_behind(
     assert window.clipHandler.isVisibleTo(window) is False
     assert window.clipButton.isChecked() is False
     assert window.pending_clip is None
+
+
+def test_several_source_videos_and_their_clips_survive_save_and_reopen(
+    window: MainWindow,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_video = _load_video(window, tmp_path)
+    _create_clip(window, name="Fast break")
+    second_video = _add_video(window, tmp_path, "second-half.mp4")
+    window.activate_source_video(window.analysis.source_videos[1].id)
+    _create_clip(window, name="Counter", start_ms=10_000, end_ms=12_000)
+    belongs_to = {
+        clip.name: window.analysis.source_video(clip.source_video_id).display_name
+        for clip in window.analysis.clips
+    }
+    analysis_path = tmp_path / "match.analysis"
+    _save_to(window, analysis_path, monkeypatch)
+
+    window.document = new_analysis_document()
+    window.load_analysis(str(analysis_path))
+
+    assert [Path(source.location) for source in window.analysis.source_videos] == [
+        first_video,
+        second_video,
+    ]
+    assert {
+        clip.name: window.analysis.source_video(clip.source_video_id).display_name
+        for clip in window.analysis.clips
+    } == belongs_to
+    cue = CLIP_COLUMN_LABELS.index(SOURCE_VIDEO_COLUMN_LABEL)
+    assert {row.text(0): row.text(cue) for row in _clip_rows(window)} == belongs_to
+
+
+def test_the_sidebar_tab_and_the_active_source_video_are_never_stored(
+    window: MainWindow,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Display state is not analytical work: it neither dirties nor persists."""
+    _load_video(window, tmp_path)
+    _create_clip(window, name="Fast break")
+    _add_video(window, tmp_path, "second-half.mp4")
+    analysis_path = tmp_path / "match.analysis"
+    _save_to(window, analysis_path, monkeypatch)
+    assert window.is_saved is True
+
+    window.sidebarTabs.setCurrentWidget(window.videosTab)
+    _click_video_row(window, 1)
+    window.treeWidget.sortByColumn(0, Qt.SortOrder.DescendingOrder)
+    _click_clip_row(window, "Fast break")
+
+    assert window.document.dirty is False
+    assert window.is_saved is True
+
+    window.document = new_analysis_document()
+    window.load_analysis(str(analysis_path))
+
+    assert window.active_source_video() == window.analysis.source_videos[0]
+    assert window.player.location() == window.analysis.source_videos[0].location
