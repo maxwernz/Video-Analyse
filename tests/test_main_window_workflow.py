@@ -255,6 +255,44 @@ def test_cancelling_an_edit_leaves_the_clip_and_the_workspace_as_they_were(
     assert window.clipEditorArea.width() == 0
 
 
+def test_editing_a_clip_from_the_clips_tab_opens_the_paused_editing_state(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """One editor serves both paths, and it keeps a paused frame beside it."""
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    clip = window.analysis.clips[0]
+    window.player.play()
+
+    window.treeWidget.clip_edit_requested.emit(clip.id)
+
+    assert window.player.is_playing() is False
+    assert window.playPauseButton.isChecked() is False
+    assert window.editHandler.isVisibleTo(window) is True
+    assert window.editHandler.clip_id == clip.id
+
+
+def test_editing_an_existing_clip_abandons_a_clip_that_was_only_marked(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    """The workspace is in one editing state at a time, and the record control
+    says so."""
+    _load_video(window, tmp_path)
+    _create_clip(window)
+    clip = window.analysis.clips[0]
+    window.player.seek(30_000)
+    window.clipButton.setChecked(True)
+
+    window.treeWidget.clip_edit_requested.emit(clip.id)
+
+    assert window.pending_clip is None
+    assert window.clipButton.isChecked() is False
+    assert window.clipHandler.isVisibleTo(window) is False
+    assert window.editHandler.isVisibleTo(window) is True
+
+
 def test_an_invalid_clip_edit_is_reported_and_changes_nothing(
     window: MainWindow,
     tmp_path: Path,
