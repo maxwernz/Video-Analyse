@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
 from PySide6 import QtCore
 from PySide6.QtCore import QUrl, QEvent, Qt, QSignalBlocker, Signal, Property, QTranslator, QTimer, QStandardPaths
 from PySide6.QtGui import QAction, QKeySequence, QShortcut, QDesktopServices
-from Ui_main_window import Ui_MainWindow
 from analysis import (
     Analysis,
     AnalysisDocument,
@@ -21,49 +20,39 @@ from analysis import (
 from application_workflow import (
     ANALYSIS_FILE_FILTER,
     SOURCE_VIDEO_FILE_FILTER,
+    UNTITLED_ANALYSIS_TITLE,
     ApplicationWorkflow,
 )
 from playback import Playback
+from visual_system import SURFACE, TEXT
+from workspace import WorkspaceShell
 from treewidget_item import ClipItem, ClipTreeItem
 from video_creator import VideoCreator, ProgressLogger
 from util import milliseconds_to_hhmmss
 
 basedir = os.path.dirname(__file__)
 
-MESSAGE_BOX_STYLE_SHEET = """
-    QMessageBox {
-        background-color: rgb(31, 31, 31); /* Dark background for the message box */
-        border: 2px solid rgb(65, 65, 65); /* Border around the message box */
-        border-radius: 10px; /* Rounded corners */
-        color: white; /* Text color */
-    }
+MESSAGE_BOX_STYLE_SHEET = f"""
+    QMessageBox {{
+        background-color: {SURFACE};
+        color: {TEXT};
+    }}
 
-    /* Style the QLabel (main text in the box) */
-    QMessageBox QLabel {
-        color: white; /* Main text color */
-        font: 14px "Segoe UI", sans-serif;
-    }
+    QMessageBox QLabel {{
+        color: {TEXT};
+    }}
 
-    /* Style for the QPushButton within the QMessageBox */
-    QMessageBox QPushButton {
-        background-color: rgb(45, 45, 45); /* Button background */
-        color: white; /* Button text color */
-        border: 2px solid rgb(65, 65, 65); /* Button border */
-        border-radius: 5px;
-        padding: 5px 10px;
-        font: 14px "Segoe UI", sans-serif;
-    }
+    QMessageBox QPushButton {{
+        background-color: #2C2F33;
+        border: 1px solid #4A4D52;
+        border-radius: 2px;
+        padding: 6px 14px;
+    }}
 
-    QMessageBox QPushButton:hover {
-        background-color: rgb(66, 65, 64); /* Background color on hover */
-    }
-
-    QMessageBox QPushButton:pressed {
-        background-color: rgb(80, 80, 80); /* Darker color when pressed */
-    }
+    QMessageBox QPushButton:hover {{
+        background-color: #363A3F;
+    }}
 """
-
-UNTITLED_ANALYSIS_LABEL = "No Video"
 
 PLAYBACK_RATES = (0.25, 0.5, 1.0, 2.0)
 """The rates the speed selector offers, in the order it lists them."""
@@ -71,7 +60,7 @@ PLAYBACK_RATES = (0.25, 0.5, 1.0, 2.0)
 DEFAULT_PLAYBACK_RATE = 1.0
 
 
-class MainWindow(QMainWindow, Ui_MainWindow):
+class MainWindow(QMainWindow, WorkspaceShell):
     """Drives one Analysis document; the Analysis owns all durable state."""
 
     file_changed = Signal(str)
@@ -80,18 +69,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self, parent=None, playback: Playback | None = None):
         super().__init__()
         # self.set_language('de')
-        self.setupUi(self)
+        self.compose_workspace()
 
         if playback is not None:
             self.videoWidget.set_player(playback)
         self.player = self.videoWidget.player
         self.setup_playback_rates()
-
-        self.actionClips_Exportieren.triggered.connect(self.export)
-        self.actionVideo_Exportieren.triggered.connect(
-            lambda: self.export(include_all_clips=True)
-        )
-        self.position_slider.sliderMoved.connect(self.player.seek)
 
         self.export_timer = QTimer()
 
@@ -102,8 +85,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.progressBar.setVisible(False)
         self.openExportButton.setVisible(False)
         self.exportFinishedLabel.setVisible(False)
-        self.clipHandler.setVisible(False)
-        self.editHandler.setVisible(False)
 
         self.setAcceptDrops(True)
         self.titleLabel.installEventFilter(self)
@@ -136,6 +117,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.player.position_changed.connect(self.position_changed)
         self.player.duration_changed.connect(self.duration_changed)
 
+        self.addVideoButton.clicked.connect(self.open_video)
+
         self.treeWidget.itemClicked.connect(self.jump_to_clip)
         self.treeWidget.export_clips.connect(self.export)
         self.treeWidget.clip_edit_requested.connect(self.edit_clip)
@@ -160,25 +143,27 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         QShortcut(QKeySequence("Ctrl+Shift+R"), self).activated.connect(self.rename_analysis)
 
     def setup_document_commands(self):
-        """Give the Analysis document commands menu entries and shortcuts.
+        """Name, shortcut, and order every command of the File menu.
 
-        The Designer file still describes the original single-video menu, so
-        the commands are named, shortcut, and ordered here. Issue #25 retires
-        that file and this stays the definition.
+        The commands keep the attribute names the Designer window gave them,
+        so that the behavioral suite still reaches them by the same handles.
         """
-        self.actionAnalyse_entfernen.setText("Neue Analyse")
+        self.actionAnalyse_entfernen = QAction("Neue Analyse", self)
         self.actionAnalyse_entfernen.setShortcut(QKeySequence.StandardKey.New)
-        self.actionAnalyse_laden.setText("Analyse öffnen …")
+        self.actionAnalyse_laden = QAction("Analyse öffnen …", self)
         self.actionAnalyse_laden.setShortcut(QKeySequence.StandardKey.Open)
-        self.actionAnalyse_speichern.setText("Analyse speichern")
+        self.actionAnalyse_speichern = QAction("Analyse speichern", self)
         self.actionAnalyse_speichern.setShortcut(QKeySequence.StandardKey.Save)
-        self.actionLoad_Video.setText("Video hinzufügen …")
-        self.actionLoad_Video.setShortcut(QKeySequence("Ctrl+Shift+O"))
-
         self.actionAnalyse_speichern_unter = QAction("Analyse speichern unter …", self)
         self.actionAnalyse_speichern_unter.setShortcut(QKeySequence.StandardKey.SaveAs)
         self.actionAnalyse_schliessen = QAction("Schließen", self)
         self.actionAnalyse_schliessen.setShortcut(QKeySequence.StandardKey.Close)
+        self.actionLoad_Video = QAction("Video hinzufügen …", self)
+        self.actionLoad_Video.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        self.actionClips_Exportieren = QAction("Clips exportieren", self)
+        self.actionClips_Exportieren.setShortcut(QKeySequence("Ctrl+E"))
+        self.actionVideo_Exportieren = QAction("Video exportieren", self)
+        self.actionVideo_Exportieren.setShortcut(QKeySequence("Ctrl+Shift+E"))
 
         self.actionAnalyse_entfernen.triggered.connect(self.new_analysis)
         self.actionAnalyse_laden.triggered.connect(self.open_analysis)
@@ -186,8 +171,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionAnalyse_speichern_unter.triggered.connect(self.save_analysis_as)
         self.actionLoad_Video.triggered.connect(self.open_video)
         self.actionAnalyse_schliessen.triggered.connect(self.close)
+        self.actionClips_Exportieren.triggered.connect(self.export)
+        self.actionVideo_Exportieren.triggered.connect(
+            lambda: self.export(include_all_clips=True)
+        )
 
-        self.menuFile.clear()
+        self.menubar = self.menuBar()
+        self.menuFile = self.menubar.addMenu("Datei")
         self.menuFile.addAction(self.actionAnalyse_entfernen)
         self.menuFile.addAction(self.actionAnalyse_laden)
         self.menuFile.addAction(self.actionAnalyse_speichern)
@@ -199,9 +189,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.menuFile.addAction(self.actionVideo_Exportieren)
         self.menuFile.addSeparator()
         self.menuFile.addAction(self.actionAnalyse_schliessen)
-
-        # Every entry it held has moved into the File menu.
-        self.menubar.removeAction(self.menuBearbeiten.menuAction())
 
     @property
     def document(self) -> AnalysisDocument:
@@ -283,9 +270,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def render_analysis(self):
         """Render the Analysis; it stays the single source of truth."""
         analysis = self.analysis
-        self.titleLabel.setText(analysis.title or UNTITLED_ANALYSIS_LABEL)
+        self.titleLabel.setText(analysis.title or UNTITLED_ANALYSIS_TITLE)
         self.treeWidget.render_analysis(analysis)
+        self.render_player_state()
         self.refresh_document_state()
+
+    def render_player_state(self):
+        """Show the call to action while the Analysis has no Source video.
+
+        This is the ordinary workspace either way: only the player's own place
+        changes, so the first video arriving is a repaint and not a different
+        screen with different rules.
+        """
+        has_footage = bool(self.analysis.source_videos)
+        self.playerStack.setCurrentWidget(
+            self.videoWidget if has_footage else self.emptyPlayerHint
+        )
 
     def refresh_document_state(self):
         self.current_file = (
@@ -653,15 +653,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             event.ignore()
 
     def position_changed(self, position):
-        with QSignalBlocker(self.position_slider):
-            self.position_slider.setTracking(True)
-            self.position_slider.setSliderPosition(position)
-            self.position_slider.update()
-            self.position_slider.repaint()
         self.set_position_label(position)
 
     def duration_changed(self, duration):
-        self.position_slider.setRange(0, duration)
         self.set_duration_label(duration)
 
     def set_position_label(self, position):

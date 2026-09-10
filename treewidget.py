@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt, Signal
 
 from analysis import Analysis
 from treewidget_item import CategoryTreeItem, ClipItem, ClipTreeItem
+from visual_system import muted_category_color
 
 MENU_STYLE_SHEET = """
         QMenu {
@@ -76,7 +77,7 @@ class TreeWidget(QTreeWidget):
         category_items: dict[UUID, CategoryTreeItem] = {}
         for category in analysis.categories:
             category_item = CategoryTreeItem(category.id, category.name, parent=self)
-            color = QColor(category.color)
+            color = muted_category_color(category.color)
             if color.isValid():
                 category_item.setForeground(0, QBrush(color))
             category_items[category.id] = category_item
