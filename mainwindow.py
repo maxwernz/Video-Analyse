@@ -287,7 +287,12 @@ class MainWindow(WorkspaceShell):
         self.refresh_document_state()
 
     def render_source_videos(self):
-        """Show every Source video of the Analysis, the active one chosen."""
+        """Show every Source video of the Analysis, the active one chosen.
+
+        The Active Source video is resolved rather than read, because with
+        nothing activated yet it is the first Source video of the Analysis,
+        and that is the one the player shows.
+        """
         active = self.active_source_video()
         self.sourceVideoList.render_analysis(
             self.analysis, None if active is None else active.id
@@ -479,6 +484,7 @@ class MainWindow(WorkspaceShell):
         try:
             source_video = self.analysis.source_video(source_video_id)
         except AnalysisError:
+            self.render_source_videos()
             return
         self.discard_pending_clip()
         self._active_source_video_id = source_video_id
@@ -583,6 +589,7 @@ class MainWindow(WorkspaceShell):
         """Begin a Pending Clip, bound to the Active Source video."""
         source_video = self.active_source_video()
         if source_video is None:
+            self.discard_pending_clip()
             QMessageBox.information(
                 self,
                 "Kein Video",

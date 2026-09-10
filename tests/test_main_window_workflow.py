@@ -1081,6 +1081,32 @@ def test_selecting_a_source_video_switches_the_player_to_it(
     assert window.player.location() == str(second_video)
 
 
+def test_moving_through_the_videos_tab_by_keyboard_switches_the_player(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    _load_video(window, tmp_path)
+    second_video = _add_video(window, tmp_path, "second-half.mp4")
+    videos = window.sourceVideoList
+    videos.resize(*SIDEBAR_LIST_SIZE)
+
+    QTest.keyClick(videos, Qt.Key.Key_Down)
+
+    assert window.active_source_video() == window.analysis.source_videos[1]
+    assert window.player.location() == str(second_video)
+
+
+def test_marking_a_clip_without_a_video_leaves_the_transport_honest(
+    window: MainWindow,
+    silent_message_boxes: list[tuple[str, str]],
+) -> None:
+    window.clipButton.setChecked(True)
+
+    assert window.pending_clip is None
+    assert window.clipButton.isChecked() is False
+    assert any(level == "information" for level, _ in silent_message_boxes)
+
+
 def test_each_clip_row_names_the_source_video_it_belongs_to(
     window: MainWindow,
     tmp_path: Path,

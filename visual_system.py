@@ -176,19 +176,19 @@ QTabBar::tab:selected {{
     border-bottom: 2px solid {ACCENT};
     color: {TEXT};
 }}
-QTreeView, QListView {{
+QTreeView, SourceVideoList {{
     background-color: {SURFACE};
     border: none;
     outline: none;
 }}
-QListView::item {{
+SourceVideoList::item {{
     border: none;
     padding: 6px 10px;
 }}
-QListView::item:hover {{
+SourceVideoList::item:hover {{
     background-color: {SURFACE_RAISED};
 }}
-QListView::item:selected {{
+SourceVideoList::item:selected {{
     background-color: {SURFACE_ACTIVE};
     border-left: 2px solid {ACCENT};
     color: {TEXT};
