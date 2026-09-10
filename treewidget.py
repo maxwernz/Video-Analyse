@@ -47,6 +47,7 @@ class TreeWidget(QTreeWidget):
     Analysis operations.
     """
 
+    clip_activated = Signal(object)
     export_clips = Signal()
     clip_edit_requested = Signal(object)
     clip_remove_requested = Signal(object)
@@ -60,6 +61,7 @@ class TreeWidget(QTreeWidget):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.context_menu)
 
+        self.itemClicked.connect(self.request_navigation)
         self.itemDoubleClicked.connect(self.request_edit)
 
     def render_analysis(self, analysis: Analysis) -> None:
@@ -122,6 +124,11 @@ class TreeWidget(QTreeWidget):
         menu.setStyleSheet(MENU_STYLE_SHEET)
 
         menu.exec(self.mapToGlobal(event))
+
+    def request_navigation(self, item, _=None) -> None:
+        """Report a chosen Clip by identity; the window navigates to it."""
+        if isinstance(item, ClipTreeItem):
+            self.clip_activated.emit(item.clip_id)
 
     def request_edit(self, item, _=None) -> None:
         self._request(item, self.clip_edit_requested, self.category_edit_requested)

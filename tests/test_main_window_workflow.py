@@ -301,7 +301,7 @@ def test_playback_position_and_selection_do_not_dirty_the_document(
     _clip_rows(window)[0].setSelected(True)
     window.treeWidget.sortByColumn(0, mainwindow_module.Qt.DescendingOrder)
     window.treeWidget.collapseAll()
-    window.jump_to_clip(_clip_rows(window)[0])
+    window.navigate_to_clip(_clip_rows(window)[0].clip_id)
 
     assert window.document.dirty is False
     assert window.is_saved is True
@@ -569,7 +569,7 @@ def test_navigating_to_a_clip_seeks_the_player_to_its_start(
     _load_video(window, tmp_path)
     _create_clip(window, start_ms=12_000, end_ms=14_000)
 
-    window.jump_to_clip(_clip_rows(window)[0])
+    _click_clip_row(window, "Fast break")
 
     assert window.player.position() == 12_000
 
@@ -1094,3 +1094,32 @@ def test_each_clip_row_names_the_source_video_it_belongs_to(
         "Fast break": "first-half.mp4",
         "Counter": "second-half.mp4",
     }
+
+
+def _click_clip_row(window: MainWindow, name: str) -> None:
+    """Choose a Clip the way a person does, at a size both platforms agree on."""
+    clips = window.treeWidget
+    clips.resize(*SIDEBAR_LIST_SIZE)
+    row = next(item for item in _clip_rows(window) if item.text(0) == name)
+    QTest.mouseClick(
+        clips.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=clips.visualItemRect(row).center(),
+    )
+
+
+def test_selecting_a_clip_in_the_clips_tab_activates_its_source_video(
+    window: MainWindow,
+    tmp_path: Path,
+) -> None:
+    first_video = _load_video(window, tmp_path)
+    _create_clip(window, name="Fast break", start_ms=12_000, end_ms=14_000)
+    _add_video(window, tmp_path, "second-half.mp4")
+    window.activate_source_video(window.analysis.source_videos[1].id)
+
+    _click_clip_row(window, "Fast break")
+
+    assert window.active_source_video() == window.analysis.source_videos[0]
+    assert window.player.location() == str(first_video)
+    assert window.player.position() == 12_000
+    assert window.selected_clip() == window.analysis.clips[0]

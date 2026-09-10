@@ -27,7 +27,7 @@ from playback import Playback
 from timeline import TimelineRange
 from visual_system import MESSAGE_BOX_STYLE_SHEET
 from workspace import WorkspaceShell
-from treewidget_item import ClipItem, ClipTreeItem
+from treewidget_item import ClipItem
 from video_creator import VideoCreator, ProgressLogger
 from util import milliseconds_to_hhmmss
 
@@ -110,7 +110,7 @@ class MainWindow(WorkspaceShell):
 
         self.sourceVideoList.source_video_activated.connect(self.activate_source_video)
 
-        self.treeWidget.itemClicked.connect(self.jump_to_clip)
+        self.treeWidget.clip_activated.connect(self.navigate_to_clip)
         self.treeWidget.export_clips.connect(self.export)
         self.treeWidget.clip_edit_requested.connect(self.edit_clip)
         self.treeWidget.clip_remove_requested.connect(self.remove_clip)
@@ -689,12 +689,6 @@ class MainWindow(WorkspaceShell):
 
     def disable_edit_handler(self):
         self.editHandler.setVisible(False)
-
-    def jump_to_clip(self, item, _column=0):
-        if not isinstance(item, ClipTreeItem):
-            return
-
-        self.navigate_to_clip(item.clip_item.clip_id)
 
     def export(self, include_all_clips=False):
         source_video = self.active_source_video()
