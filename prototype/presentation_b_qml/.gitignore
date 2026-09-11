@@ -1,0 +1,6 @@
+# Generated fixture media. Rebuild with tools/make_fixture_video.py.
+media/
+
+# PyInstaller output. Rebuild with packaging/prototype_macos.spec.
+packaging/dist/
+packaging/build/
