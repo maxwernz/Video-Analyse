@@ -1,11 +1,14 @@
 # Visual tokens
 
-Status: **frozen** for the A/B presentation-layer prototypes.
+Status: **the production visual spec**, amended after the A/B prototypes.
 
-These are the shared inputs to both prototypes. Both must consume these exact
-values so that the comparison is about the technology, not about who picked the
-nicer colours. Do not tune them inside a prototype: if a value is wrong, change
-it here and both prototypes change together.
+These values were frozen for the prototype comparison so that it turned on the
+technology rather than on who picked the nicer colours. That comparison is
+finished ([ADR 0008](../adr/0008-qml-presentation-layer.md)), and these are now
+the values the production interface is built from. They are still single-source:
+if a value is wrong, change it here, never in a component.
+
+The [Amendments](#amendments) section records what the prototypes found missing.
 
 The direction these values serve is recorded in [desktop-ux.md](desktop-ux.md)
 and [ADR 0007](../adr/0007-branded-dark-visual-system.md).
@@ -81,6 +84,13 @@ and Medium (500).
 - UI family: **Inter** (SIL OFL), bundled in `assets/fonts/`.
 - Timecode family: **JetBrains Mono** (SIL OFL), tabular figures.
 
+> **Not yet true.** `assets/fonts/` contains only `NotoSans.ttf`. Both prototypes
+> hit this: B vendored its own copies, A fell back to Noto Sans and Menlo, so the
+> two were judged in different typefaces. Vendoring both families with their OFL
+> licences is a prerequisite of the migration, and until it happens the fallback
+> is Menlo on macOS and Consolas on Windows -- which defeats the stated reason for
+> bundling, namely identical rendering on both platforms.
+
 | Role | Size / weight | Family |
 | --- | --- | --- |
 | Document title | 15 / 500 | Inter |
@@ -132,3 +142,44 @@ Both prototypes render the same Analysis so the screenshots are comparable:
 - Categories drawn from palette entries 1, 5, 7, 8, 2.
 - Analysis title `SG Beispiel - TV Muster`, playhead at 00:14:03, the Clip
   `Tor von rechts aussen` selected.
+
+## Amendments
+
+Found by the prototypes. Each was used as written and recorded rather than tuned,
+per the handoff rule; these are the resolutions.
+
+### Metrics the original tokens did not name
+
+| Metric | Value | Why |
+| --- | --- | --- |
+| Minimum Clip range width | 3 | ADR 0006 says "about three pixels"; it is also a real hit target, not only a drawing |
+| Category header row height | 30 | The Clip list groups by Category and the group row needs its own metric |
+| Icon SVG stroke | 1.75 | Restated here because it is a token, not a drawing detail |
+
+### Disabled primary action
+
+The accent has three permitted uses and a control nobody can press is none of
+them. A disabled primary gives the accent back: `text-faint` on
+`control-disabled`, with the 1px `control-border`.
+
+### Volume
+
+The transport design asks for "volume and mute", but `playback/player.py`
+exposes `is_muted` / `set_muted` and no level, and `QAudioOutput` is private to
+`MediaPlayerPlayback`. Adding a volume property to the `Playback` seam is part
+of the migration. Until it lands, the transport shows mute alone -- never a
+slider that does nothing.
+
+### Source-video cue
+
+**Open.** A 32px row at the 300px default width cannot carry a title, a
+Source-video cue, a start and a duration in monospace; at the 260px minimum the
+title has nothing left. Prototype A elided the title (`Tor nach Kreuzbe...`),
+which reads as the same truncation failure the shipped column layout had.
+Prototype B shortened the cue to a badge -- `halbzeit-1.mp4` becomes `H1`, first
+letter plus trailing number -- with the full name on hover.
+
+The badge is the better of the two and is adopted provisionally, but the real
+question the spec ducked is which of the four fields may be dropped at narrow
+widths. Decide it against a real Analysis with real Source-video names before the
+Clip list is considered finished.

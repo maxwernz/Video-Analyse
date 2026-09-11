@@ -13,8 +13,11 @@ on it is functionally correct and visually unacceptable to the owner. See
 withdrawn and why, and [ADR 0007](../adr/0007-branded-dark-visual-system.md) for
 the decision that replaces it.
 
-The presentation-layer technology is **undecided**. Two prototypes settle it; see
-[Presentation-layer prototypes](#presentation-layer-prototypes).
+The presentation-layer technology is **decided**: QML / Qt Quick over the
+existing Python, by [ADR 0008](../adr/0008-qml-presentation-layer.md). Both
+prototypes were built and both cleared the visual bar; see
+[Presentation-layer prototypes](#presentation-layer-prototypes) for what that
+comparison actually showed.
 
 ## Evidence
 
@@ -160,9 +163,46 @@ control signals "default Qt" more loudly than anything else in the window.
 
 ## Presentation-layer prototypes
 
-Qt Quick is a **candidate, not a conclusion**. QML does not create good design on
-its own, and a carefully redesigned Widgets interface may well reach the bar. Two
-throwaway prototypes settle it:
+**Settled: QML / Qt Quick wins, and Qt Widgets did not lose on capability.**
+See [ADR 0008](../adr/0008-qml-presentation-layer.md).
+
+Both prototypes were built in parallel against the frozen spec and both cleared
+the visual bar. Prototype A's kill condition did not fire -- its timeline needed
+120 lines of painting, its transport 30 -- so Widgets could have carried this
+design, and the choice was made on the visual result and on Qt Quick drawing
+every control from primitives with no platform style underneath to argue with.
+One caveat on the fairness of the comparison: the bundled fonts did not exist in
+`assets/fonts/`, so B ran on vendored Inter and JetBrains Mono while A fell back
+to Noto Sans and Menlo.
+
+Findings are recorded in `prototype/presentation_a_widgets/FINDINGS.md` and
+`prototype/presentation_b_qml/FINDINGS.md`. The migration is planned in
+[qml-migration-plan.md](qml-migration-plan.md).
+
+### Findings that apply whichever prototype had won
+
+Both prototypes independently hit these, and all of them are production work:
+
+- **`QMediaPlayer` emits position roughly 16 times a second** and offers no
+  notify-interval control, so a playhead driven straight off `positionChanged`
+  visibly steps. Neither prototype demonstrated a smooth playhead on real media.
+  Interpolation between notifications is required.
+- **Qt's FFmpeg backend decodes nothing until playback has started once**, so
+  seeking a freshly loaded, never-played file moves the position and shows black.
+  A short priming play/pause through the public seam is required, or a newly
+  opened Analysis looks broken.
+- **Scrub seeks should be throttled to about twenty per second.** Beyond that
+  `QMediaPlayer` coalesces seeks and the picture stops following the pointer.
+  Measured on both Widgets and Quick surfaces; it is not a Quick problem.
+- **`Playback` exposes mute but no volume level**, which the designed transport
+  requires.
+- **The Source-video cue does not fit a 32px row at the 300px sidebar width.**
+  Both prototypes hit the wall; B shortens the name to a badge with the full name
+  on hover. Unresolved by the spec and still open.
+
+### The original brief
+
+Two throwaway prototypes settled it:
 
 - **A** -- a carefully redesigned, mostly native Qt Widgets interface.
 - **B** -- a full-window QML / Qt Quick presentation layer that retains the
