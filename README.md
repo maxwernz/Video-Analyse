@@ -35,10 +35,21 @@ absent. Setting `VIDEO_ANALYSE_SOFTWARE_RENDERING=1` demands software rendering
 up front, for a driver that takes the process down instead of reporting a
 failure the application could catch.
 
+The QML workspace is being built beside the existing interface, which stays the
+default until the migration completes. Start into it with:
+
+```console
+uv run python main.py --qml
+```
+
+`VIDEO_ANALYSE_QML_WORKSPACE=1` asks for the same thing without a command line,
+which is how the packaged application is started into it — a macOS bundle and a
+Windows shortcut give nobody a place to type an argument.
+
 Run all source checks with:
 
 ```console
-uv run mypy main.py app_runtime.py qml_runtime.py video_creator.py build_config/shared.py build_config/windows_version_resource.py analysis
+uv run mypy main.py app_runtime.py qml_runtime.py qml_icons.py video_creator.py build_config/shared.py build_config/windows_version_resource.py analysis
 uv run python -m pytest
 ```
 

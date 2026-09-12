@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from PIL import ImageFont
@@ -26,6 +26,51 @@ from qml_runtime import (
     software_rendering_requested,
     use_software_rendering,
 )
+
+
+#: Ask for the QML workspace without a command line.
+#:
+#: A packaged application is launched by double-clicking it, and neither a
+#: macOS bundle nor a Windows shortcut gives anyone a place to type an
+#: argument. The migration has to be demonstrable on the packaged application,
+#: not only on a developer's checkout, so the flag has an environment spelling
+#: as well — the same shape `VIDEO_ANALYSE_SOFTWARE_RENDERING` already uses.
+QML_WORKSPACE_VARIABLE = "VIDEO_ANALYSE_QML_WORKSPACE"
+
+#: The two interfaces this application can start into. Widgets is the default
+#: for as long as the QML workspace is being built: this is the expand half of
+#: an expand-and-contract migration, and nobody loses the interface they have
+#: today until #50 removes it.
+WIDGETS_INTERFACE = "widgets"
+QML_INTERFACE = "qml"
+
+
+def build_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="video-analyse")
+    parser.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help="initialize the application and bundled resources without showing the UI",
+    )
+    parser.add_argument(
+        "--qml",
+        action="store_true",
+        help="start into the QML workspace instead of the default interface",
+    )
+    return parser
+
+
+def selected_interface(
+    options: argparse.Namespace, environment: Mapping[str, str] | None = None
+) -> str:
+    """Which interface a run with these options would start into."""
+
+    if options.qml:
+        return QML_INTERFACE
+    values = os.environ if environment is None else environment
+    if values.get(QML_WORKSPACE_VARIABLE, "").strip():
+        return QML_INTERFACE
+    return WIDGETS_INTERFACE
 
 
 def _run_smoke_check(app: QApplication, log_path: str) -> dict[str, object]:
@@ -85,13 +130,8 @@ def _publish_smoke_report(report: dict[str, object]) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
-    parser = argparse.ArgumentParser(prog="video-analyse")
-    parser.add_argument(
-        "--smoke-test",
-        action="store_true",
-        help="initialize the application and bundled resources without showing the UI",
-    )
-    options, qt_arguments = parser.parse_known_args(arguments)
+    options, qt_arguments = build_argument_parser().parse_known_args(arguments)
+    interface = selected_interface(options)
 
     configure_application_identity()
     if software_rendering_requested():
@@ -107,8 +147,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         register_bundled_fonts()
         if options.smoke_test:
             report = _run_smoke_check(app, str(log_path))
+            report["interface"] = interface
             _publish_smoke_report(report)
             return 0
+
+        if interface == QML_INTERFACE:
+            scene = show_quick_scene_with_fallback()
+            # The scene owns the window; holding the engine keeps the whole
+            # object tree alive for as long as the application runs.
+            _ = scene
+            return app.exec()
 
         from mainwindow import MainWindow
 
