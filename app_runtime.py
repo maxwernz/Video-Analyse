@@ -31,6 +31,63 @@ def overlay_font_path() -> Path:
     return resource_path("assets/fonts/NotoSans.ttf")
 
 
+UI_FONT_FAMILY = "Inter"
+TIMECODE_FONT_FAMILY = "JetBrains Mono"
+
+REQUIRED_FONT_FAMILIES = (UI_FONT_FAMILY, TIMECODE_FONT_FAMILY)
+
+BUNDLED_FONT_FILES = (
+    "Inter-Variable.ttf",
+    "JetBrainsMono-Regular.ttf",
+    "JetBrainsMono-Medium.ttf",
+)
+
+
+class FontRegistrationError(RuntimeError):
+    """The bundled typography could not be made available to the application.
+
+    Raised rather than tolerated: falling back to whatever the operating system
+    provides is the failure this bundling exists to prevent, and a silent
+    fallback renders the interface in a face nobody chose.
+    """
+
+
+def bundled_font_paths() -> list[Path]:
+    """The font files this application ships and registers at startup."""
+
+    return [resource_path(f"assets/fonts/{name}") for name in BUNDLED_FONT_FILES]
+
+
+def register_bundled_fonts() -> None:
+    """Register the vendored typography, or fail loudly.
+
+    Requires a live QGuiApplication, so call this after the application object
+    exists. Every bundled file must load, and every family the visual system
+    names must be present afterwards.
+    """
+
+    from PySide6.QtGui import QFontDatabase
+
+    for path in bundled_font_paths():
+        if not path.is_file():
+            raise FontRegistrationError(f"Bundled font is missing: {path}")
+        identifier = QFontDatabase.addApplicationFont(str(path))
+        if identifier == -1:
+            raise FontRegistrationError(f"Bundled font could not be registered: {path}")
+
+    available = set(QFontDatabase.families())
+    missing = [family for family in REQUIRED_FONT_FAMILIES if family not in available]
+    if missing:
+        raise FontRegistrationError(
+            "Bundled font families are unavailable after registration: "
+            + ", ".join(missing)
+        )
+
+    logging.getLogger(__name__).info(
+        "Registered bundled font families: %s", ", ".join(REQUIRED_FONT_FAMILIES)
+    )
+
+
 def configure_local_logging() -> Path:
     configured_log_directory = os.environ.get("VIDEO_ANALYSE_LOG_DIR")
     if configured_log_directory:
