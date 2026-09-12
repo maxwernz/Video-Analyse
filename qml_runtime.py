@@ -25,6 +25,7 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
 
 from app_runtime import resource_path
+from qml_icons import install_icon_provider
 
 
 #: The application's single QML entry point, bundled as data.
@@ -89,6 +90,24 @@ def rendering_backend_of(window: QQuickWindow) -> str:
     return renderer.graphicsApi().name.lower()
 
 
+def build_engine(qml_root: Path | None = None) -> QQmlApplicationEngine:
+    """A QML engine that can find everything this application's QML asks for.
+
+    Two things, and they are the same kind of thing: the directory holding the
+    components and the `Theme` singleton has to be an import path, and the icon
+    family has to be reachable as an image provider, because Qt's SVG renderer
+    cannot recolour an icon on its own. A component that cannot find either
+    logs a warning and renders nothing, so both are set up here rather than by
+    whoever remembers.
+    """
+
+    root = quick_scene_path().parent if qml_root is None else qml_root
+    engine = QQmlApplicationEngine()
+    engine.addImportPath(str(root))
+    install_icon_provider(engine)
+    return engine
+
+
 def show_quick_scene(
     scene: Path | None = None, *, first_frame_timeout_ms: int = FIRST_FRAME_TIMEOUT_MS
 ) -> QuickScene:
@@ -100,7 +119,7 @@ def show_quick_scene(
     """
 
     scene_file = quick_scene_path() if scene is None else scene
-    engine = QQmlApplicationEngine()
+    engine = build_engine(scene_file.parent)
     warnings: list[str] = []
     engine.warnings.connect(
         lambda reported: warnings.extend(warning.toString() for warning in reported)
