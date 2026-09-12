@@ -42,10 +42,32 @@ that needs them, rather than as a layer nobody can demonstrate.
 Per [development-workflow.md](../development-workflow.md), which governs:
 - **Every ticket gets a fresh session and its own worktree**, branched from the
   same clean `main` commit. Implementation sessions are not reused.
-- **The prototypes stay prototypes.** Production code is written against this
-  spec and [visual-tokens.md](visual-tokens.md), with
-  `prototype/presentation_b_qml/` as a *reference* for behaviour and appearance.
-  Nothing is moved out of `prototype/`.
+- **The prototype's QML is the reference of record.** For every surface, the
+  corresponding component in `prototype/presentation_b_qml/qml/` is what the
+  production implementation is based on: same structure, same layout, same
+  visual result. Do not re-derive a surface from the screenshots or from prose
+  when the component exists — read it, and match it. A deliberate departure is
+  allowed, but it must be stated in the pull request with its reason.
+
+  This is narrower than it sounds, and the boundary matters. The QML is
+  declarative markup of an accepted design, and retyping it by hand invents
+  differences nobody asked for. The **Python is rebuilt**, tests first, because
+  that is where the prototype's gaps are: it has no test suite at all, its menu
+  and toolbar actions are inert, its playhead does not interpolate, its scrub
+  seeks are unthrottled, and it has no volume or drag-and-drop.
+
+  Nothing is moved out of `prototype/`; the production files are new files that
+  match. The prototype's `viewmodels.py` is likewise a reference for behaviour
+  — its Clip editor performs the full round trip to the `Analysis` and is worth
+  matching — but its structure is not binding, and every behaviour it carries
+  needs a test it never had.
+
+  One caution learned the hard way in #41: the prototype was only ever built and
+  measured on macOS. Where it reports something as working, that means working
+  *there*. Its packaging filter matched `QtWebEngineCore` and silently matched
+  nothing against Windows's `Qt6WebEngineCore.dll`, so the Windows installer
+  shipped 571MB with a browser engine inside while the prototype's findings
+  called the filter a success. Reference its code; verify its claims.
 - Focused TDD while implementing; full suite and smoke test before committing;
   PR CI on macOS and Windows; full tests on `main` after merge.
 - Parallelise planning aggressively, code conservatively. The safe shape the
