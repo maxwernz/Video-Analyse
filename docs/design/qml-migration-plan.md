@@ -1,6 +1,7 @@
 # QML presentation-layer migration plan
 
-Ready to be filed as a GitHub issue, in the style of issue #29. Decided by
+The staged plan and ticket list for **issue #37**, which carries the spec's user
+stories and its implementation and testing decisions. Decided by
 [ADR 0008](../adr/0008-qml-presentation-layer.md); the design it implements is
 [desktop-ux.md](desktop-ux.md) and [visual-tokens.md](visual-tokens.md).
 
@@ -8,7 +9,7 @@ Ready to be filed as a GitHub issue, in the style of issue #29. Decided by
 
 Per [development-workflow.md](../development-workflow.md), which governs:
 
-- This document is the spec. It becomes a map issue with one child ticket per
+- The spec is issue #37. This document supplies its tickets: one child issue per
   `#letter` below, following [issue-tracker.md](../agents/issue-tracker.md).
 - **Every ticket gets a fresh session and its own worktree**, branched from the
   same clean `main` commit. Implementation sessions are not reused.

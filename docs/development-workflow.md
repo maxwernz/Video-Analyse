@@ -28,6 +28,9 @@ That produces the missing UI implementation tickets with dependencies.
 >
 > Note that `$to-spec`, `$to-tickets`, and `$implement` are not currently enabled as
 > slash commands in this workspace.
+>
+> **No longer true as of 2026-09-12**: `/mattpocock-skills:to-spec` runs. Check the
+> others rather than trusting this note.
 
 > **Superseded again, 2026-09-12.** Phases 3 to 5 are complete: #23, #24, #25, #15,
 > #26 and #27 are all merged, so the interface issue #29 specified is built.
@@ -42,13 +45,13 @@ That produces the missing UI implementation tickets with dependencies.
 >
 > Phase 5b is therefore a **re-presentation, not new behaviour**. Issue #29's
 > behaviour is unchanged and `tests/test_main_window_workflow.py` stays its
-> regression contract throughout. The work is specified in
-> [qml-migration-plan.md](design/qml-migration-plan.md) as stages 0 to 7.
+> regression contract throughout. The work is specified as issue #37, which carries
+> its user stories, implementation and testing decisions; the staged plan and ticket
+> list are in [qml-migration-plan.md](design/qml-migration-plan.md) as stages 0 to 7.
 >
-> `$to-spec` and `$to-tickets` are still not enabled, so that plan was written by
-> hand in their place and is filed as a map issue with one child ticket per stage
-> entry. Everything below about worktrees, ticket-per-session, parallelisation and
-> testing at ticket boundaries applies to it unchanged -- including that the
+> That plan was written by hand, then turned into the spec issue through
+> `$to-spec`. Everything below about worktrees, ticket-per-session, parallelisation
+> and testing at ticket boundaries applies to it unchanged -- including that the
 > presentation prototypes stay prototypes and are referenced, never moved into
 > production.
 
