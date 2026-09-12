@@ -119,6 +119,14 @@ Minimum designed window size is **1440x900**.
 One family: **Lucide** (ISC licence), as SVG, recoloured by state, crisp on
 HiDPI. Stroke weight 1.75. 20px in the transport, 16px everywhere else.
 
+Vendored in `assets/icons/lucide/` as the real upstream `lucide-static` SVGs
+with the ISC licence text beside them, byte-identical to the release, so
+re-vendoring is a copy and a hand-drawn approximation cannot pass for one.
+Upstream paints in `currentColor` at stroke 2, and Qt's SVG renderer honours
+neither an override nor `currentColor`; `icon_family.py` substitutes the colour
+and the token stroke on the way to the renderer, so there is one file per icon
+rather than one per colour per state.
+
 The existing raster SF Symbols exports in `icons/` are retired. They sit on
 inconsistent grids (27x26, 47x25, 32x32), cannot be recoloured for state, do not
 scale for HiDPI, and dress a cross-platform application in one platform's
