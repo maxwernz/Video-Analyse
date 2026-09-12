@@ -104,7 +104,14 @@ try {
     if ($report.status -ne "ok") {
         throw "The packaged application reported smoke status '$($report.status)'."
     }
+    # Qt Quick renders through Direct3D 11 here. Starting is not the question:
+    # the QML engine has to load its bundled scene and the graphics backend has
+    # to draw it, falling back to software rendering where it cannot.
+    if (-not $report.sceneRendered) {
+        throw "The packaged application drew no Qt Quick frame."
+    }
     Write-Host "    bundled font: $($report.font)"
+    Write-Host "    QML scene: $($report.qml) on the $($report.renderingBackend) backend"
 }
 finally {
     foreach ($name in $smokeEnvironment.Keys) {

@@ -22,9 +22,31 @@ def configure_application_identity() -> None:
     QCoreApplication.setOrganizationDomain(APPLICATION_ID)
 
 
+def resource_root() -> Path:
+    """The one directory every bundled resource is resolved against.
+
+    A development checkout resolves against the project itself. A packaged
+    application resolves against the directory PyInstaller unpacked it into —
+    except on macOS, where an application bundle keeps executable code in
+    `Contents/Frameworks` and bundled data in `Contents/Resources`, so a path
+    built from a module's own location lands in the wrong half of the bundle.
+    Deciding that here is what keeps every other module from guessing.
+    """
+
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    if bundle_root is None:
+        return Path(__file__).resolve().parent
+
+    unpacked = Path(bundle_root)
+    if unpacked.name == "Frameworks" and unpacked.parent.name == "Contents":
+        bundled_resources = unpacked.parent / "Resources"
+        if bundled_resources.is_dir():
+            return bundled_resources
+    return unpacked
+
+
 def resource_path(relative_path: str) -> Path:
-    bundle_root = getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)
-    return Path(bundle_root) / relative_path
+    return resource_root().joinpath(*relative_path.split("/"))
 
 
 def overlay_font_path() -> Path:

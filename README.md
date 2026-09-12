@@ -23,14 +23,22 @@ uv run python main.py --smoke-test
 ```
 
 The command initializes Qt, constructs the main window, verifies Qt resources and
-the bundled overlay font, creates the diagnostic log, and exits non-zero on any
+the bundled overlay font, loads the bundled Qt Quick scene and waits for the
+graphics backend to draw it, creates the diagnostic log, and exits non-zero on any
 failure. In isolated build environments, `VIDEO_ANALYSE_LOG_DIR` may point logging
 at a writable directory.
+
+Qt Quick renders through a graphics backend — Direct3D 11 on Windows, Metal on
+macOS. A backend that fails to initialise is detected and the scene is redrawn in
+software, so a stale graphics driver makes the application slow rather than
+absent. Setting `VIDEO_ANALYSE_SOFTWARE_RENDERING=1` demands software rendering
+up front, for a driver that takes the process down instead of reporting a
+failure the application could catch.
 
 Run all source checks with:
 
 ```console
-uv run mypy main.py app_runtime.py video_creator.py build_config/shared.py build_config/windows_version_resource.py analysis
+uv run mypy main.py app_runtime.py qml_runtime.py video_creator.py build_config/shared.py build_config/windows_version_resource.py analysis
 uv run python -m pytest
 ```
 
@@ -107,6 +115,13 @@ uv run python -m pytest tests/test_windows_package.py
 Those tests install, launch, upgrade, and uninstall the real artifact, and they
 skip when it has not been built. CI sets `VIDEO_ANALYSE_REQUIRE_PACKAGE=1`, which
 turns those skips into failures so a pipeline cannot pass without verifying.
+
+Both packages carry the Qt Quick module tree, and both filter out the Qt modules
+PyInstaller's PySide6 hook collects alongside it and this application never
+loads — QtWebEngine's roughly 214MB of Chromium above all. `excludes` cannot
+reach those, because nothing in Python imports them, so
+`build_config/shared.py` filters the collected tables directly and the packaged
+size is guarded by a test in both platform suites.
 
 Windows packaging reuses `build_config/shared.py` unchanged, so entry point,
 dependencies, bundled resources, and metadata cannot drift from the macOS
