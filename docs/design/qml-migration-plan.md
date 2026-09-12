@@ -5,12 +5,41 @@ stories and its implementation and testing decisions. Decided by
 [ADR 0008](../adr/0008-qml-presentation-layer.md); the design it implements is
 [desktop-ux.md](desktop-ux.md) and [visual-tokens.md](visual-tokens.md).
 
+## The tickets
+
+**The issues are authoritative.** The spec is #37 and its tickets are #38 to #51.
+The stages below record the reasoning, the costs and the risks; where the two
+disagree about scope or ordering, the issues win.
+
+The stages were written as layers. The tickets are **vertical slices**, so that
+each one is demonstrable and green on its own, and the whole migration runs as
+expand-and-contract: the QML workspace is built beside the existing interface
+behind a flag (#42), and the old one is deleted only at the end (#50). The
+mapping:
+
+| Stage entry | Issue |
+| --- | --- |
+| #a fonts | #38 |
+| #b icons | #39 |
+| #c volume | #40 |
+| #d resource root, #e-#i packaging | #41 |
+| #l shell | #42 |
+| #q transport, #t priming | #43 |
+| #o timeline, #u interpolation, #v scrub throttle | #44 |
+| #p Clip list | #45 |
+| #r Clip editor | #46 |
+| #m menus, #n toolbar | #47 |
+| #s empty state | #48 |
+| #k regression contract | #49 |
+| stage 6 retirement | #50 |
+| #w, #x release gate | #51 |
+
+Stage 2's `#j` has no single issue: the view models are built inside the slice
+that needs them, rather than as a layer nobody can demonstrate.
+
 ## How this gets built
 
 Per [development-workflow.md](../development-workflow.md), which governs:
-
-- The spec is issue #37. This document supplies its tickets: one child issue per
-  `#letter` below, following [issue-tracker.md](../agents/issue-tracker.md).
 - **Every ticket gets a fresh session and its own worktree**, branched from the
   same clean `main` commit. Implementation sessions are not reused.
 - **The prototypes stay prototypes.** Production code is written against this

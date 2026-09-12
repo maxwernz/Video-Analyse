@@ -50,10 +50,30 @@ That produces the missing UI implementation tickets with dependencies.
 > list are in [qml-migration-plan.md](design/qml-migration-plan.md) as stages 0 to 7.
 >
 > That plan was written by hand, then turned into the spec issue through
-> `$to-spec`. Everything below about worktrees, ticket-per-session, parallelisation
-> and testing at ticket boundaries applies to it unchanged -- including that the
-> presentation prototypes stay prototypes and are referenced, never moved into
-> production.
+> `$to-spec` and into tickets #38 to #51 through `$to-tickets`. Everything below
+> about worktrees, ticket-per-session, parallelisation and testing at ticket
+> boundaries applies to it unchanged -- including that the presentation prototypes
+> stay prototypes and are referenced, never moved into production.
+>
+> The tickets are **vertical slices**, not the plan's layers, and the migration
+> runs as expand-and-contract: the QML workspace is built beside the existing
+> interface behind a flag (#42) and the old one is deleted only at the end (#50).
+> That is what lets every ticket be demonstrable and green on its own.
+>
+> Applying this document's parallelisation rule to them:
+>
+> - **#38, #39, #40 and #41 can all start immediately and in parallel.** None
+>   touches `mainwindow.py` or Analysis state; #41 is the packaging/CI lane this
+>   document recommends running alongside feature work, and it is the ticket that
+>   retires the real unknowns, so start it first.
+> - **#43 through #48 touch the QML shell.** Run one at a time. #44 and #45 both
+>   depend only on #43, so they are the tempting pair to parallelise; they would
+>   collide in the shell and in the view model.
+> - **#49 is the checkpoint.** It re-points the regression contract while both
+>   interfaces still exist, which is the only moment a weakened assertion is
+>   distinguishable from a broken feature. Nothing after it may modify that suite
+>   except to add cases.
+> - **#51 needs a real Windows machine** and cannot be satisfied by CI.
 
 The prototype code itself stays on its prototype branch; production tickets use
 [desktop-ux.md](design/desktop-ux.md), screenshots, and prototype behavior as
@@ -69,7 +89,7 @@ The fastest implementation order after that is:
 | 4 | Build the workspace shell and retire the Designer main window (#25) | done |
 | 5 | Implement the sidebar and multi-video Clips (#15), Clip editor (#26), timeline (#27) | done |
 | 5a | Re-present the interface: supersede the visual direction, prototype A/B, choose QML | done |
-| 5b | Implement the QML migration per [qml-migration-plan.md](design/qml-migration-plan.md) | next |
+| 5b | Implement the QML migration: spec #37, tickets #38-#51 | next |
 | 6 | Implement #16, #17, #18, and #19 around the new interface | |
 | 7 | Deepen Export, then implement #20 | |
 | 8 | Finish #9/#10 and publish through #11 | |
