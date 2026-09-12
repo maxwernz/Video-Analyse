@@ -100,9 +100,16 @@ Before there is any QML in production, prove production packaging can carry it.
   `prototype/`.** `docs/development-workflow.md` requires prototype code to stay
   on its prototype branch, and the rule earns its keep here: the prototype's view
   models were built to make screenshots, not to survive. Its menu and toolbar
-  actions are inert, its editor performs no round trip to the `Analysis`, and its
-  `playbackRateIndex` leak was found by audit rather than by a test. Copying that
-  across would import those gaps as production code.
+  actions are inert, its playhead does not interpolate, its scrub seeks are
+  deliberately unthrottled, and its `playbackRateIndex` leak was found by audit
+  rather than by a test. Copying that across would import those gaps as
+  production code.
+
+  What the prototype *did* get right is worth knowing before rebuilding it: its
+  Clip editor performs the full round trip to the `Analysis` -- adding a new Clip,
+  updating an existing one, and both cancel paths -- and its whole state machine
+  was exercised headless against the fake player before a window existed. Treat
+  that as the reference behaviour, not as work still to be invented.
 - **#k Re-point the regression contract.** `tests/test_main_window_workflow.py`
   drives the view models instead of widgets, **while the existing interface still
   runs**. Every case must keep failing for the same reason it fails today; prove
