@@ -148,9 +148,14 @@ def carries_unused_qt_module(destination: str) -> bool:
     Matched without regard to case, because Qt spells the same module both ways:
     `QtWebEngineCore.framework` sits beside `qtwebengine_locales` and
     `libqtwebview_webengine.dylib`, and all three are the same 214MB mistake.
+
+    The major version is normalised away because the two platforms disagree:
+    macOS ships `QtWebEngineCore.framework` while Windows ships
+    `Qt6WebEngineCore.dll`. Matching the macOS spelling alone silently filtered
+    nothing on Windows, and the installer shipped a browser engine.
     """
 
-    path = destination.replace("\\", "/").lower()
+    path = destination.replace("\\", "/").lower().replace("qt6", "qt")
     return any(module.lower() in path for module in UNUSED_QT_MODULES)
 
 
