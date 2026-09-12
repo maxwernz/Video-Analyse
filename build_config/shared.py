@@ -81,11 +81,16 @@ QML_IMPORT_TREES = (
 
 #: An upper bound on the packaged application, in megabytes.
 #:
-#: The measured cost of the Qt Quick presentation layer is +62MB of PySide6 on
-#: top of a 210MB macOS bundle. This bound leaves room for that and for
-#: ordinary growth, and is far below the 447MB an unfiltered package reaches
-#: the moment the browser engine comes back.
-MAXIMUM_PACKAGED_MEGABYTES = 330
+#: Measured with the Qt Quick presentation layer and the module filter in
+#: place: the macOS bundle is 281MB, up from 210MB, and the Windows
+#: installation is 352MB. Windows is the binding platform, so one shared bound
+#: is set from it.
+#:
+#: The number this guard exists to catch is the browser engine coming back,
+#: which is worth roughly +220MB — the same unfiltered Windows build measured
+#: 571MB. A bound of 400 leaves room for ordinary growth on both platforms
+#: while still failing well before that returns.
+MAXIMUM_PACKAGED_MEGABYTES = 400
 
 
 def application_version() -> str:
