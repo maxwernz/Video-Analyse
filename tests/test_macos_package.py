@@ -18,7 +18,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from build_config.shared import macos_disk_image_name  # noqa: E402
+from build_config.shared import (  # noqa: E402
+    MAXIMUM_PACKAGED_MEGABYTES,
+    macos_disk_image_name,
+)
 
 
 PROJECT_ROOT = Path(__file__).parents[1]
@@ -120,3 +123,72 @@ def test_packaged_application_completes_its_smoke_check(
     assert Path(report["font"]).is_file()
     assert Path(report["font"]).is_relative_to(mounted_application)
     assert Path(report["log"]).is_file()
+
+
+def test_the_packaged_application_loads_and_renders_its_qml_scene(
+    mounted_application: Path,
+) -> None:
+    """The risk this whole package exists to retire: can it ship Qt Quick?"""
+
+    environment = os.environ.copy()
+    environment.pop("VIDEO_ANALYSE_LOG_DIR", None)
+    environment["QT_QPA_PLATFORM"] = "offscreen"
+
+    result = subprocess.run(
+        [str(mounted_application / "Contents" / "MacOS" / APPLICATION_NAME),
+         "--smoke-test"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["sceneRendered"] is True
+    assert report["qmlWarnings"] == []
+    assert report["renderingBackend"]
+    assert Path(report["qml"]).is_file()
+    assert Path(report["qml"]).is_relative_to(mounted_application), (
+        "the packaged application loaded QML from outside its own bundle"
+    )
+
+
+def test_the_packaged_application_carries_no_browser_engine(
+    mounted_application: Path,
+) -> None:
+    """PyInstaller collects QtWebEngine with the QML tree; nothing here loads it."""
+
+    web_engine = [
+        str(path.relative_to(mounted_application))
+        for path in mounted_application.rglob("*")
+        if "webengine" in path.name.lower()
+    ]
+
+    assert web_engine == [], f"the package carries a browser engine: {web_engine[:5]}"
+
+
+def test_the_packaged_application_stays_within_its_size_budget(
+    mounted_application: Path,
+) -> None:
+    """A guard against a future dependency silently re-adding a browser engine.
+
+    Handing PyInstaller the QML module tree collects QtWebEngine and roughly
+    214MB of Chromium this application never loads, and no `excludes` entry can
+    reach it. This is the test that notices.
+    """
+
+    kilobytes = int(
+        subprocess.run(
+            ["du", "-sk", str(mounted_application)],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.split()[0]
+    )
+    megabytes = kilobytes / 1024
+
+    assert megabytes <= MAXIMUM_PACKAGED_MEGABYTES, (
+        f"the packaged application is {megabytes:.0f}MB, over the "
+        f"{MAXIMUM_PACKAGED_MEGABYTES}MB budget"
+    )

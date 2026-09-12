@@ -26,6 +26,7 @@ import pytest
 
 from build_config.shared import (
     APPLICATION_NAME,
+    MAXIMUM_PACKAGED_MEGABYTES,
     PUBLISHER,
     application_version,
     artifact_name,
@@ -248,6 +249,49 @@ def test_the_installed_application_completes_its_smoke_check(
     assert Path(report["font"]).is_file()
     assert Path(report["font"]).resolve().is_relative_to(installation.resolve())
     assert Path(report["log"]).is_file()
+
+    # Starting is not the question Windows has to answer. Qt Quick renders
+    # through Direct3D 11 here, where Qt Widgets rasterises on the CPU, so the
+    # check is that the QML engine loaded its bundled scene and the graphics
+    # backend drew a frame. A CI runner has no GPU, which makes this the
+    # software-rendering fallback's own verification.
+    assert report["sceneRendered"] is True, "no Qt Quick frame was ever drawn"
+    assert report["qmlWarnings"] == []
+    assert report["renderingBackend"], "the report names no graphics backend"
+    assert Path(report["qml"]).is_file()
+    assert Path(report["qml"]).resolve().is_relative_to(installation.resolve()), (
+        "the installed application loaded QML from outside its own installation"
+    )
+
+
+def test_the_installed_application_carries_no_browser_engine(
+    installation: Path,
+) -> None:
+    """PyInstaller collects QtWebEngine with the QML tree; nothing here loads it."""
+
+    web_engine = [
+        str(path.relative_to(installation))
+        for path in installation.rglob("*")
+        if "webengine" in path.name.lower()
+    ]
+
+    assert web_engine == [], f"the package carries a browser engine: {web_engine[:5]}"
+
+
+def test_the_installed_application_stays_within_its_size_budget(
+    installation: Path,
+) -> None:
+    """A guard against a future dependency silently re-adding a browser engine."""
+
+    installed_bytes = sum(
+        file.stat().st_size for file in installation.rglob("*") if file.is_file()
+    )
+    megabytes = installed_bytes / 1024 / 1024
+
+    assert megabytes <= MAXIMUM_PACKAGED_MEGABYTES, (
+        f"the installed application is {megabytes:.0f}MB, over the "
+        f"{MAXIMUM_PACKAGED_MEGABYTES}MB budget"
+    )
 
 
 def test_the_installed_executable_declares_the_intended_version(

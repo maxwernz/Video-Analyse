@@ -14,6 +14,7 @@ from build_config.shared import (  # noqa: E402
     HIDDEN_IMPORTS,
     PROJECT_ROOT,
     bundled_data,
+    remove_unused_qt_modules,
 )
 from build_config.windows_version_resource import write_version_resource  # noqa: E402
 
@@ -31,6 +32,10 @@ analysis = Analysis(
     runtime_hooks=[],
     excludes=EXCLUDED_MODULES,
     noarchive=True,
+)
+print(
+    f"[windows.spec] dropped {remove_unused_qt_modules(analysis)} collected entries "
+    "belonging to Qt modules this application never loads"
 )
 pyz = PYZ(analysis.pure)
 

@@ -129,6 +129,89 @@ def test_the_installer_reuses_the_shared_application_metadata() -> None:
         assert shared_name in build_script, f"the build script does not reuse {shared_name}"
 
 
+def test_packaging_keeps_the_qt_modules_the_interface_is_made_of() -> None:
+    """The excluded list used to name the Qt Quick modules the interface needs.
+
+    Those bare spellings never bit — PyInstaller matches full module names — so
+    removing them corrects a misleading list rather than loosening a guard.
+    """
+
+    from build_config.shared import EXCLUDED_MODULES
+
+    for required in (
+        "QtQml",
+        "QtQmlMeta",
+        "QtQmlModels",
+        "QtQmlWorkerScript",
+        "QtQuick",
+        "QtSvg",
+        "QtOpenGL",
+    ):
+        assert required not in EXCLUDED_MODULES, (
+            f"{required} is part of the Qt Quick presentation layer"
+        )
+    assert all(name.startswith("PySide6.") for name in EXCLUDED_MODULES), (
+        "PyInstaller matches full module names, so a bare Qt name excludes nothing"
+    )
+
+
+def test_packaging_never_carries_the_browser_engine_qt_quick_drags_in() -> None:
+    """214MB of Chromium that nothing in this application imports."""
+
+    from build_config.shared import UNUSED_QT_MODULES, remove_unused_qt_modules
+
+    assert "QtWebEngineCore" in UNUSED_QT_MODULES
+
+    class CollectedTables:
+        datas = [
+            ("PySide6/Qt/qml/QtQuick/qmldir", "/qt/qml/QtQuick/qmldir", "DATA"),
+            ("PySide6/Qt/qml/QtWebEngine/qmldir", "/qt/qml/QtWebEngine/qmldir", "DATA"),
+            # Qt spells the same module in lower case too, and these are the
+            # entries a case-sensitive filter leaves behind.
+            (
+                "PySide6/Qt/translations/qtwebengine_de.qm",
+                "/qt/translations/qtwebengine_de.qm",
+                "DATA",
+            ),
+        ]
+        binaries = [
+            ("PySide6/Qt/lib/QtQuick.framework/QtQuick", "/qt/QtQuick", "BINARY"),
+            (
+                "PySide6/Qt/lib/QtWebEngineCore.framework/QtWebEngineCore",
+                "/qt/QtWebEngineCore",
+                "BINARY",
+            ),
+        ]
+
+    collected = CollectedTables()
+    removed = remove_unused_qt_modules(collected)
+
+    assert removed == 3
+    assert [entry[0] for entry in collected.datas] == [
+        "PySide6/Qt/qml/QtQuick/qmldir"
+    ]
+    assert [entry[0] for entry in collected.binaries] == [
+        "PySide6/Qt/lib/QtQuick.framework/QtQuick"
+    ]
+
+
+def test_the_packaged_application_carries_its_qml_scene() -> None:
+    from build_config.shared import bundled_data
+
+    destinations = {destination for _source, destination in bundled_data()}
+
+    assert "qml" in destinations, "the QML entry point is not bundled"
+
+
+def test_every_platform_filters_the_over_collected_qt_modules() -> None:
+    macos_spec = (PROJECT_ROOT / "build_config" / "macos.spec").read_text(
+        encoding="utf-8"
+    )
+
+    for spec in (macos_spec, SPEC.read_text(encoding="utf-8")):
+        assert "remove_unused_qt_modules" in spec
+
+
 def test_windows_packaging_reuses_the_shared_configuration() -> None:
     spec = SPEC.read_text(encoding="utf-8")
 
@@ -172,3 +255,61 @@ def test_one_documented_command_builds_the_windows_artifact() -> None:
 
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     assert "scripts/build_windows.ps1" in readme
+
+
+def test_the_unused_module_filter_matches_both_platforms_spellings() -> None:
+    """The two platforms spell the same Qt module differently.
+
+    macOS collects `QtWebEngineCore.framework`; Windows collects
+    `Qt6WebEngineCore.dll`. A filter written against the macOS spelling alone
+    matched nothing on Windows, and the installer shipped 214MB of Chromium
+    while the macOS package looked clean. This is the regression guard: the
+    filter is verified here, on every platform, rather than only by whichever
+    package a given machine happens to build.
+    """
+
+    from build_config.shared import carries_unused_qt_module
+
+    windows_spellings = [
+        "PySide6/Qt6WebEngineCore.dll",
+        "PySide6/Qt6WebEngineQuick.dll",
+        "PySide6/Qt6WebEngineQuickDelegatesQml.dll",
+        "PySide6/Qt6WebChannel.dll",
+        "PySide6/Qt6Quick3D.dll",
+        "PySide6/Qt6Charts.dll",
+    ]
+    macos_spellings = [
+        "PySide6/Qt/lib/QtWebEngineCore.framework/QtWebEngineCore",
+        "PySide6/Qt/translations/qtwebengine_locales/en-US.pak",
+        "PySide6/Qt/lib/libqtwebview_webengine.dylib",
+    ]
+
+    for collected in windows_spellings + macos_spellings:
+        assert carries_unused_qt_module(collected), (
+            f"{collected} would ship in the package"
+        )
+
+
+def test_the_unused_module_filter_keeps_what_the_interface_needs() -> None:
+    """A filter that over-matches breaks the application instead of slimming it."""
+
+    from build_config.shared import carries_unused_qt_module
+
+    required = [
+        "PySide6/Qt6Quick.dll",
+        "PySide6/Qt6Qml.dll",
+        "PySide6/Qt6QmlModels.dll",
+        "PySide6/Qt6Svg.dll",
+        "PySide6/Qt6Multimedia.dll",
+        "PySide6/Qt6Core.dll",
+        "PySide6/Qt/qml/QtQuick/Controls/qmldir",
+        "PySide6/Qt/lib/QtQuick.framework/QtQuick",
+        "assets/icons/lucide/play.svg",
+        "assets/fonts/Inter-Variable.ttf",
+        "qml/Main.qml",
+    ]
+
+    for collected in required:
+        assert not carries_unused_qt_module(collected), (
+            f"{collected} would be filtered out of the package"
+        )

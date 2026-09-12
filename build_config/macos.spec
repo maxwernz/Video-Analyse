@@ -15,6 +15,7 @@ from shared import (  # noqa: E402
     PROJECT_ROOT,
     application_version,
     bundled_data,
+    remove_unused_qt_modules,
 )
 
 MINIMUM_SYSTEM_VERSION = "14.0"
@@ -33,6 +34,10 @@ analysis = Analysis(
     runtime_hooks=[],
     excludes=EXCLUDED_MODULES,
     noarchive=True,
+)
+print(
+    f"[macos.spec] dropped {remove_unused_qt_modules(analysis)} collected entries "
+    "belonging to Qt modules this application never loads"
 )
 pyz = PYZ(analysis.pure)
 

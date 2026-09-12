@@ -21,6 +21,11 @@ from app_runtime import (
     overlay_font_path,
     register_bundled_fonts,
 )
+from qml_runtime import (
+    show_quick_scene_with_fallback,
+    software_rendering_requested,
+    use_software_rendering,
+)
 
 
 def _run_smoke_check(app: QApplication, log_path: str) -> dict[str, object]:
@@ -43,11 +48,23 @@ def _run_smoke_check(app: QApplication, log_path: str) -> dict[str, object]:
     window = MainWindow()
     app.processEvents()
     window.close()
+
+    # Packaging a Qt Quick presentation layer is the risk this check exists to
+    # retire: the QML engine has to find its bundled scene, and the graphics
+    # backend has to draw it, on whatever machine the package landed on.
+    scene = show_quick_scene_with_fallback()
+    app.processEvents()
+    scene.window.close()
+
     return {
         "status": "ok",
         "font": str(font_path),
         "fonts": registered_families,
         "log": log_path,
+        "qml": str(scene.source),
+        "sceneRendered": True,
+        "renderingBackend": scene.rendering_backend,
+        "qmlWarnings": list(scene.warnings),
     }
 
 
@@ -77,6 +94,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     options, qt_arguments = parser.parse_known_args(arguments)
 
     configure_application_identity()
+    if software_rendering_requested():
+        # Detection catches a backend that reports its failure. A driver that
+        # takes the process down instead reports nothing, so the operator keeps
+        # a way to demand software rendering before anything is drawn.
+        use_software_rendering()
     app = QApplication([sys.argv[0], *qt_arguments])
 
     try:
