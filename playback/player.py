@@ -8,6 +8,12 @@ STEP_INTERVAL_MS = 100
 JUMP_INTERVAL_MS = 5_000
 """Coarse jump distance, likewise independent of the playback rate."""
 
+SILENT_VOLUME = 0.0
+"""The quiet end of the volume level, matching a linear audio scale."""
+
+FULL_VOLUME = 1.0
+"""The loud end of the volume level, and where a player starts."""
+
 
 class Playback(QObject):
     """Controls the one player showing the Active Source video.
@@ -149,6 +155,27 @@ class Playback(QObject):
 
     def toggle_muted(self) -> None:
         self.set_muted(not self.is_muted())
+
+    def volume(self) -> float:
+        """How loud the Active Source video plays, from silent to full.
+
+        A level, not a switch: turning the bench audio down is a different act
+        from muting it, and the two are kept independent so unmuting comes
+        back at the level the analyst left.
+        """
+        raise NotImplementedError
+
+    def set_volume(self, volume: float) -> None:
+        """Set the level, clamped so every implementation agrees on the range."""
+        self._apply_volume(self._within_audible_range(volume))
+
+    def _apply_volume(self, volume: float) -> None:
+        """Set an already-clamped level on the device."""
+        raise NotImplementedError
+
+    @staticmethod
+    def _within_audible_range(volume: float) -> float:
+        return min(FULL_VOLUME, max(SILENT_VOLUME, float(volume)))
 
     def _set_playing(self, playing: bool) -> None:
         if self._playing != playing:

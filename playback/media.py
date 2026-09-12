@@ -81,6 +81,12 @@ class MediaPlayerPlayback(Playback):
     def set_muted(self, muted: bool) -> None:
         self._audio_output.setMuted(muted)
 
+    def volume(self) -> float:
+        return float(self._audio_output.volume())
+
+    def _apply_volume(self, volume: float) -> None:
+        self._audio_output.setVolume(volume)
+
     def _start_playing(self) -> None:
         self._media_player.play()
 

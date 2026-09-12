@@ -235,3 +235,79 @@ def test_both_playbacks_report_the_same_location_for_the_same_video(
 
     assert real.location() == fake.location() == str(video_path)
     assert real.location() == os.fspath(video_path)
+
+
+def test_the_volume_level_is_read_and_set_through_the_seam(
+    player: FakePlayback,
+) -> None:
+    assert player.volume() == 1.0
+
+    player.set_volume(0.4)
+
+    assert player.volume() == pytest.approx(0.4)
+
+
+def test_the_volume_level_stays_inside_the_range_every_playback_agrees_on(
+    player: FakePlayback,
+) -> None:
+    player.set_volume(2.5)
+    assert player.volume() == 1.0
+
+    player.set_volume(-0.5)
+    assert player.volume() == 0.0
+
+
+def test_turning_the_volume_down_is_not_the_same_as_muting(
+    player: FakePlayback,
+) -> None:
+    """Bench audio turned down still comes back at the level it was left at."""
+    player.set_volume(0.3)
+    player.set_muted(True)
+
+    assert player.volume() == pytest.approx(0.3)
+
+    player.set_muted(False)
+
+    assert player.is_muted() is False
+    assert player.volume() == pytest.approx(0.3)
+
+
+def test_both_playbacks_report_the_same_volume_level(
+    application: QApplication,
+) -> None:
+    """The fake stands in for the real player, so the levels must agree."""
+    from playback import MediaPlayerPlayback
+
+    real = MediaPlayerPlayback()
+    fake = FakePlayback()
+
+    assert real.volume() == fake.volume() == 1.0
+
+    real.set_volume(0.25)
+    fake.set_volume(0.25)
+
+    assert real.volume() == pytest.approx(fake.volume())
+
+    real.set_volume(1.5)
+    fake.set_volume(1.5)
+
+    assert real.volume() == pytest.approx(fake.volume()) == 1.0
+
+
+def test_setting_the_volume_leaves_the_analysis_document_clean(
+    player: FakePlayback,
+    tmp_path,
+) -> None:
+    """Volume is transient playback state, never part of the Analysis."""
+    from analysis import AnalysisDocument
+
+    document = AnalysisDocument.new("Halbzeit 1")
+    document.analysis.add_source_video("first-half.mp4", "/videos/first-half.mp4")
+    destination = document.save_as(tmp_path / "halbzeit-1")
+    assert document.dirty is False
+
+    player.set_volume(0.2)
+    player.set_muted(True)
+
+    assert document.dirty is False
+    assert "volume" not in destination.read_text(encoding="utf-8").lower()

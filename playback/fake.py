@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .player import Playback
+from .player import FULL_VOLUME, Playback
 
 
 class FakePlayback(Playback):
@@ -13,6 +13,7 @@ class FakePlayback(Playback):
         self._duration = 0
         self._rate = 1.0
         self._muted = False
+        self._volume = FULL_VOLUME
         self._seekable = True
 
     def load(self, location: str) -> None:
@@ -62,6 +63,12 @@ class FakePlayback(Playback):
 
     def set_muted(self, muted: bool) -> None:
         self._muted = muted
+
+    def volume(self) -> float:
+        return self._volume
+
+    def _apply_volume(self, volume: float) -> None:
+        self._volume = volume
 
     def _seek_to(self, position_ms: int) -> None:
         self._position = position_ms
