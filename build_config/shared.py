@@ -56,9 +56,17 @@ def bundled_data() -> list[tuple[str, str]]:
     """Resources every packaged application must carry."""
 
     fonts = PROJECT_ROOT / "assets" / "fonts"
+    font_files = [
+        "NotoSans.ttf",
+        "OFL.txt",
+        "Inter-Variable.ttf",
+        "JetBrainsMono-Regular.ttf",
+        "JetBrainsMono-Medium.ttf",
+        "OFL-Inter.txt",
+        "OFL-JetBrainsMono.txt",
+    ]
     return [
-        (str(fonts / "NotoSans.ttf"), "assets/fonts"),
-        (str(fonts / "OFL.txt"), "assets/fonts"),
+        (str(fonts / name), "assets/fonts") for name in font_files
     ] + copy_metadata("imageio")
 
 

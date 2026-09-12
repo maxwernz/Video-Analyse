@@ -84,13 +84,6 @@ and Medium (500).
 - UI family: **Inter** (SIL OFL), bundled in `assets/fonts/`.
 - Timecode family: **JetBrains Mono** (SIL OFL), tabular figures.
 
-> **Not yet true.** `assets/fonts/` contains only `NotoSans.ttf`. Both prototypes
-> hit this: B vendored its own copies, A fell back to Noto Sans and Menlo, so the
-> two were judged in different typefaces. Vendoring both families with their OFL
-> licences is a prerequisite of the migration, and until it happens the fallback
-> is Menlo on macOS and Consolas on Windows -- which defeats the stated reason for
-> bundling, namely identical rendering on both platforms.
-
 | Role | Size / weight | Family |
 | --- | --- | --- |
 | Document title | 15 / 500 | Inter |

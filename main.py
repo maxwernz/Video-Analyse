@@ -10,17 +10,20 @@ from pathlib import Path
 
 from PIL import ImageFont
 from PySide6.QtCore import QFile
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
 
 from app_runtime import (
+    REQUIRED_FONT_FAMILIES,
     configure_application_identity,
     configure_local_logging,
     install_exception_logging,
     overlay_font_path,
+    register_bundled_fonts,
 )
 
 
-def _run_smoke_check(app: QApplication, log_path: str) -> dict[str, str]:
+def _run_smoke_check(app: QApplication, log_path: str) -> dict[str, object]:
     from mainwindow import MainWindow
 
     font_path = overlay_font_path()
@@ -32,13 +35,23 @@ def _run_smoke_check(app: QApplication, log_path: str) -> dict[str, str]:
     if not qt_resource.exists():
         raise FileNotFoundError("Bundled Qt resources are unavailable")
 
+    available = set(QFontDatabase.families())
+    registered_families = [
+        family for family in REQUIRED_FONT_FAMILIES if family in available
+    ]
+
     window = MainWindow()
     app.processEvents()
     window.close()
-    return {"status": "ok", "font": str(font_path), "log": log_path}
+    return {
+        "status": "ok",
+        "font": str(font_path),
+        "fonts": registered_families,
+        "log": log_path,
+    }
 
 
-def _publish_smoke_report(report: dict[str, str]) -> None:
+def _publish_smoke_report(report: dict[str, object]) -> None:
     """Make the smoke report readable however the application was packaged.
 
     A packaged Windows application has no console attached, so its standard
@@ -69,6 +82,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         log_path = configure_local_logging()
         install_exception_logging()
+        register_bundled_fonts()
         if options.smoke_test:
             report = _run_smoke_check(app, str(log_path))
             _publish_smoke_report(report)
