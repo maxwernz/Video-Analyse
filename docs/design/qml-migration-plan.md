@@ -4,6 +4,28 @@ Ready to be filed as a GitHub issue, in the style of issue #29. Decided by
 [ADR 0008](../adr/0008-qml-presentation-layer.md); the design it implements is
 [desktop-ux.md](desktop-ux.md) and [visual-tokens.md](visual-tokens.md).
 
+## How this gets built
+
+Per [development-workflow.md](../development-workflow.md), which governs:
+
+- This document is the spec. It becomes a map issue with one child ticket per
+  `#letter` below, following [issue-tracker.md](../agents/issue-tracker.md).
+- **Every ticket gets a fresh session and its own worktree**, branched from the
+  same clean `main` commit. Implementation sessions are not reused.
+- **The prototypes stay prototypes.** Production code is written against this
+  spec and [visual-tokens.md](visual-tokens.md), with
+  `prototype/presentation_b_qml/` as a *reference* for behaviour and appearance.
+  Nothing is moved out of `prototype/`.
+- Focused TDD while implementing; full suite and smoke test before committing;
+  PR CI on macOS and Windows; full tests on `main` after merge.
+- Parallelise planning aggressively, code conservatively. The safe shape the
+  workflow names -- one ticket touching central files, one packaging/CI ticket
+  alongside it -- maps onto the stages below: **stage 1 is the packaging lane and
+  runs beside stage 0 and stage 2**. Stages 3 and 4 touch the shell and must not
+  run more than one at a time.
+- Merge the more foundational branch first; rebase the other onto updated `main`
+  and rerun its full suite before merging.
+
 ## The one structural risk, named first
 
 `tests/test_main_window_workflow.py` is the regression contract for the shipped
@@ -67,11 +89,19 @@ Before there is any QML in production, prove production packaging can carry it.
 
 ## Stage 2 -- the view-model seam, no QML yet
 
-- **#j Port the view models.** `WorkspaceViewModel`, `ClipListModel`,
-  `RulerModel`, `TimelineRangeModel`, `timecode.py` and `icons.py` move from
-  `prototype/presentation_b_qml/` into production. Pure Python, no QML engine,
-  tested headless against `playback.FakePlayback` -- which is how the prototype
-  built them in the first place.
+- **#j Build the view models.** `WorkspaceViewModel`, `ClipListModel`,
+  `RulerModel`, `TimelineRangeModel`, `timecode.py` and `icons.py`, as production
+  code. Pure Python, no QML engine, tested headless against
+  `playback.FakePlayback` -- which is how the prototype built them in the first
+  place, so the tests come first here as everywhere else.
+
+  **Written against the spec, with the prototype as reference -- not moved out of
+  `prototype/`.** `docs/development-workflow.md` requires prototype code to stay
+  on its prototype branch, and the rule earns its keep here: the prototype's view
+  models were built to make screenshots, not to survive. Its menu and toolbar
+  actions are inert, its editor performs no round trip to the `Analysis`, and its
+  `playbackRateIndex` leak was found by audit rather than by a test. Copying that
+  across would import those gaps as production code.
 - **#k Re-point the regression contract.** `tests/test_main_window_workflow.py`
   drives the view models instead of widgets, **while the existing interface still
   runs**. Every case must keep failing for the same reason it fails today; prove

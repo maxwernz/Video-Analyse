@@ -29,6 +29,29 @@ That produces the missing UI implementation tickets with dependencies.
 > Note that `$to-spec`, `$to-tickets`, and `$implement` are not currently enabled as
 > slash commands in this workspace.
 
+> **Superseded again, 2026-09-12.** Phases 3 to 5 are complete: #23, #24, #25, #15,
+> #26 and #27 are all merged, so the interface issue #29 specified is built.
+>
+> It was then rejected on appearance. The visual direction in
+> [desktop-ux.md](design/desktop-ux.md) is superseded by
+> [ADR 0007](adr/0007-branded-dark-visual-system.md), two competing presentation
+> prototypes were built against a frozen spec, and
+> [ADR 0008](adr/0008-qml-presentation-layer.md) chose QML / Qt Quick over the
+> existing Python. Prototype A proved Qt Widgets could also have carried the design;
+> the choice was preference, not necessity, and the ADR says so.
+>
+> Phase 5b is therefore a **re-presentation, not new behaviour**. Issue #29's
+> behaviour is unchanged and `tests/test_main_window_workflow.py` stays its
+> regression contract throughout. The work is specified in
+> [qml-migration-plan.md](design/qml-migration-plan.md) as stages 0 to 7.
+>
+> `$to-spec` and `$to-tickets` are still not enabled, so that plan was written by
+> hand in their place and is filed as a map issue with one child ticket per stage
+> entry. Everything below about worktrees, ticket-per-session, parallelisation and
+> testing at ticket boundaries applies to it unchanged -- including that the
+> presentation prototypes stay prototypes and are referenced, never moved into
+> production.
+
 The prototype code itself stays on its prototype branch; production tickets use
 [desktop-ux.md](design/desktop-ux.md), screenshots, and prototype behavior as
 references.
@@ -39,9 +62,11 @@ The fastest implementation order after that is:
 |---|---|---|
 | 1 | Merge #8 and #14 | done |
 | 2 | Resolve UX decisions, write spec #29, generate UI tickets | done |
-| 3 | Deepen Playback (#23) and Application Workflow (#24), in parallel | next |
-| 4 | Build the workspace shell and retire the Designer main window (#25) | |
-| 5 | Implement the sidebar and multi-video Clips (#15), Clip editor (#26), timeline (#27) | |
+| 3 | Deepen Playback (#23) and Application Workflow (#24), in parallel | done |
+| 4 | Build the workspace shell and retire the Designer main window (#25) | done |
+| 5 | Implement the sidebar and multi-video Clips (#15), Clip editor (#26), timeline (#27) | done |
+| 5a | Re-present the interface: supersede the visual direction, prototype A/B, choose QML | done |
+| 5b | Implement the QML migration per [qml-migration-plan.md](design/qml-migration-plan.md) | next |
 | 6 | Implement #16, #17, #18, and #19 around the new interface | |
 | 7 | Deepen Export, then implement #20 | |
 | 8 | Finish #9/#10 and publish through #11 | |
