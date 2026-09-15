@@ -22,6 +22,7 @@ QtObject {
     readonly property color controlHover: "#2C3138"
     readonly property color controlBorder: "#343941"
     readonly property color controlDisabled: "#1B1E22"
+    readonly property color transparent: "transparent"
 
     // A hover that must stay quieter than `controlHover`, for a segment
     // inside a control that is already drawn on `control`.
@@ -106,6 +107,21 @@ QtObject {
     readonly property int tooltipDelayMs: 550
     readonly property int splitterWidth: 5
     readonly property int paneAnimationMs: 130
+
+    // The in-window menu bar, which Windows and Linux draw and macOS does not
+    // (there it is the system menu bar, outside the window entirely). The
+    // token spec froze no menu metrics, because when it was written the menu
+    // bar was never going to be drawn; these are sized against the toolbar
+    // below them so the two read as one band of chrome.
+    readonly property int menuBarHeight: 28
+    readonly property int menuTitlePadding: 10
+    readonly property int menuTitleInset: 4
+    readonly property int menuMinimumWidth: 200
+    readonly property int menuPadding: 6
+    readonly property int menuItemHeight: 26
+    readonly property int menuItemPadding: 12
+    readonly property int menuShortcutGap: 32
+    readonly property int menuSeparatorHeight: 9
 
     // The empty stage, matched to the accepted QML prototype.
     readonly property int emptyStageWidth: 460
@@ -240,6 +256,10 @@ QtObject {
     readonly property int tooltipLayer: 40
     readonly property int interactionLayer: 50
     readonly property int dropLayer: 60
+
+    // An open menu draws over everything, including the drop layer: it is the
+    // one surface that is deliberately in front of the window's own content.
+    readonly property int menuLayer: 70
 
     // A Clip range: the Category colour at 40% alpha over the stage, at 62%
     // when it is the selected Clip, outlined in a lighter version of itself.

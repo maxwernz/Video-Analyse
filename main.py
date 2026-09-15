@@ -28,7 +28,7 @@ from qml_runtime import (
     software_rendering_requested,
     use_software_rendering,
 )
-from menu_bar import build_menu_bar
+from menu_bar import build_menu_bar, native_menu_bar_available
 from workspace_presenter import WorkspacePresenter
 from workspace_view_model import WorkspaceViewModel
 
@@ -178,12 +178,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         if interface == QML_INTERFACE:
             context = build_workspace_context()
             scene = show_quick_scene_with_fallback(context_objects=context)
-            # The menu bar is a real QMenuBar with no parent — the system menu
-            # bar on macOS — so nothing else is holding it, and Close goes
+            # On macOS the menu bar is a real QMenuBar with no parent — the
+            # system menu bar — so nothing else is holding it, and Close goes
             # through the window, which is where the unsaved-changes question
-            # is asked.
-            menu_bar = build_menu_bar(
-                context["workspace"], close_window=scene.window.close
+            # is asked. Everywhere else the menu bar lives inside the window,
+            # where a widget cannot go, so the window draws it from the same
+            # `menu_bar.MENUS` and nothing is built here.
+            menu_bar = (
+                build_menu_bar(context["workspace"], close_window=scene.window.close)
+                if native_menu_bar_available()
+                else None
             )
             # The scene owns the window; holding the engine keeps the whole
             # object tree alive for as long as the application runs, and the

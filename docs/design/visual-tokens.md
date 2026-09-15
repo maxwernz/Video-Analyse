@@ -28,6 +28,7 @@ The video stage is the darkest thing in the window so the frame is the brightest
 | `control-hover` | `#2C3138` | Hover |
 | `control-border` | `#343941` | 1px control border |
 | `control-disabled` | `#1B1E22` | Disabled control ground |
+| `transparent` | transparent | Deliberately unpainted control ground |
 
 ## Text
 
@@ -164,6 +165,23 @@ per the handoff rule; these are the resolutions.
 | Scroll indicator moving / resting opacity | 0.9 / 0.25 | Strong while scrolling, quiet while at rest |
 | Scroll indicator fade | 160ms | Short state transition, consistent with the restrained motion direction |
 | Icon SVG stroke | 1.75 | Restated here because it is a token, not a drawing detail |
+
+### In-window menu bar
+
+Windows and Linux draw the document menu inside the QML window. macOS keeps its
+native system menu bar, so these metrics are absent there. The 28px bar is
+shorter than the 44px toolbar below it, preserving the toolbar as the working
+chrome while leaving familiar menu targets easy to acquire.
+
+| Metric | Value | Why |
+| --- | --- | --- |
+| Menu bar height | 28 | Compact document-command band above the toolbar |
+| Menu title padding / inset | 10 / 4 | Comfortable target without a full button treatment |
+| Menu minimum width | 200 | Holds German command names and platform sequences |
+| Menu panel padding | 6 | Quiet edge around entries |
+| Menu item height / padding | 26 / 12 | Compact but usable pointer targets |
+| Menu shortcut gap | 32 | Separates the command from its key sequence |
+| Menu separator height | 9 | Groups document commands without becoming a row |
 
 ### Empty Source-video stage
 

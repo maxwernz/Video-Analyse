@@ -98,6 +98,7 @@ def test_the_application_ships_the_components_the_shell_is_made_of() -> None:
         "Field.qml",
         "IconButton.qml",
         "Main.qml",
+        "MenuBar.qml",
         "Section.qml",
         "Stepper.qml",
         "TextButton.qml",

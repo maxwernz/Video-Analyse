@@ -23,8 +23,10 @@ import time
 from typing import Protocol
 from uuid import UUID
 
-from PySide6.QtCore import Property, QObject, Qt, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QEvent, Property, QObject, Qt, QTimer, QUrl, Signal, Slot
+from PySide6.QtGui import QKeyEvent, QKeySequence
 
+import menu_bar
 import timecode
 from analysis import AnalysisDocument, SourceVideo, UnsavedChangesChoice
 from application_workflow import (
@@ -170,6 +172,26 @@ class _TimerTicker:
             self._run()
 
 
+class _MenuShortcutFilter(QObject):
+    """A window-level key listener for the commands in ``menu_bar.MENUS``."""
+
+    def __init__(self, workspace: "WorkspaceViewModel") -> None:
+        super().__init__(workspace)
+        self._workspace = workspace
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() != QEvent.Type.KeyPress or bool(watched.property("nativeMenuBar")):
+            return False
+        if not isinstance(event, QKeyEvent):
+            return False
+        if not self._workspace.runMenuShortcut(
+            int(event.key()), event.modifiers().value
+        ):
+            return False
+        event.accept()
+        return True
+
+
 class WorkspaceViewModel(QObject):
     """One facade over the Analysis document and the playback of its video."""
 
@@ -180,6 +202,11 @@ class WorkspaceViewModel(QObject):
     pendingChanged = Signal()
     draftChanged = Signal()
     editingChanged = Signal()
+
+    #: The Close command, which is a request of the *window* rather than of
+    #: the Analysis: every way out arrives at `requestClose`, so the
+    #: unsaved-changes question is asked once and in one place.
+    closeRequested = Signal()
 
     def __init__(
         self,
@@ -193,6 +220,7 @@ class WorkspaceViewModel(QObject):
         ticker: Ticker | None = None,
     ) -> None:
         super().__init__(parent)
+        self._menu_shortcut_filter: _MenuShortcutFilter | None = None
         self._workflow = ApplicationWorkflow(
             presenter if presenter is not None else _NobodyToAsk(),
             document=document,
@@ -965,6 +993,59 @@ class WorkspaceViewModel(QObject):
             if self._workflow.add_dropped_source_video(path):
                 added = True
         return added
+
+    @Property(list, constant=True)
+    def menus(self) -> list:
+        """The menu bar, as data, for the platforms that draw it in the window.
+
+        macOS never reads this: there the same `menu_bar.MENUS` are a real
+        parentless `QMenuBar`, which is the system menu bar. Windows and Linux
+        have nowhere to put one, so QML draws these instead — from the same
+        definition, so the two bars cannot carry different commands.
+        """
+
+        return list(menu_bar.menu_model())
+
+    @Slot(str, result=bool)
+    def runMenuCommand(self, command: str) -> bool:
+        """Run what a menu entry names, or report that nothing names it.
+
+        The dispatch table is the one the `QMenuBar` connects its actions to,
+        so an entry that does nothing here is an entry that does nothing there
+        — there is no second wiring to forget.
+        """
+
+        runner = menu_bar.command_runners(
+            self, close_window=self.closeRequested.emit
+        ).get(command)
+        if runner is None:
+            return False
+        runner()
+        return True
+
+    @Slot(int, int, result=bool)
+    def runMenuShortcut(self, key: int, modifiers: int) -> bool:
+        """Run the one menu command whose platform sequence was pressed.
+
+        QML passes the raw key event rather than declaring one `Shortcut` per
+        command. The comparison is therefore against `menu_bar.MENUS`, the
+        same definition that writes both menu bars and their displayed keys.
+        """
+
+        pressed = QKeySequence(key | modifiers)
+        for entry in menu_bar.entries_of():
+            if QKeySequence(entry.shortcut) == pressed:
+                return self.runMenuCommand(entry.command)
+        return False
+
+    @Slot(QObject)
+    def installMenuShortcutHandler(self, window: QObject) -> None:
+        """Let one window pass document keys through the shared menu map."""
+
+        if self._menu_shortcut_filter is not None:
+            return
+        self._menu_shortcut_filter = _MenuShortcutFilter(self)
+        window.installEventFilter(self._menu_shortcut_filter)
 
     @Slot(result=bool)
     def requestClose(self) -> bool:
