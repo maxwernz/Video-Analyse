@@ -87,6 +87,7 @@ def test_the_application_ships_the_components_the_shell_is_made_of() -> None:
         "IconButton.qml",
         "Main.qml",
         "Toolbar.qml",
+        "ScrollHint.qml",
         "SeekButton.qml",
         "SegmentedControl.qml",
         "Sidebar.qml",

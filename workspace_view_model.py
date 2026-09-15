@@ -7,11 +7,11 @@ selected, how a position is written down, what pressing play does while the
 video surface is still being primed — stays here in Python where a test can
 reach it without a window.
 
-What this carries today is the transport, the video surface, the timeline, and
-the document commands — New, Open, Save, Save As and Close — which it drives
-through `application_workflow` rather than deciding anything about them itself.
-The Clip list and the Clip editor arrive with the tickets that own them, each
-extending this same seam.
+What this carries today is the transport, the video surface, the timeline, the
+sidebar's two lists, and the document commands — New, Open, Save, Save As and
+Close — which it drives through `application_workflow` rather than deciding
+anything about them itself. The Clip editor arrives with the ticket that owns
+it, extending this same seam.
 """
 
 from __future__ import annotations
@@ -31,7 +31,17 @@ from application_workflow import (
     WorkflowPresenter,
 )
 from playback import Playback
+from sidebar_models import ClipListModel, SourceVideoModel
 from timeline_models import RulerModel, TimelineRangeModel
+
+
+#: The sidebar's two tabs, and the one it opens on.
+#:
+#: Which one is showing is a property of this session rather than of the
+#: Analysis: it lives here and is never written to a file, because reopening
+#: an Analysis on a tab somebody left it on a week ago would be a surprise
+#: rather than a memory.
+SIDEBAR_TABS = ("clips", "videos")
 
 
 #: The speeds the segmented control offers, in the order it draws them.
@@ -156,6 +166,7 @@ class WorkspaceViewModel(QObject):
     documentChanged = Signal()
     playbackChanged = Signal()
     selectionChanged = Signal()
+    sidebarTabChanged = Signal()
 
     def __init__(
         self,
@@ -199,16 +210,23 @@ class WorkspaceViewModel(QObject):
         self._held_scrub_ms: int | None = None
         self._flush_scheduled = False
 
-        # What the timeline draws. Both are projections of the Analysis and
-        # of the Active Source video's length; neither is ever handed a Clip.
+        # Which sidebar tab is showing. Transient by construction: there is
+        # nowhere for it to be written down but here.
+        self._sidebar_tab = SIDEBAR_TABS[0]
+
+        # What the timeline and the sidebar draw. All four are projections of
+        # the Analysis; none of them is ever handed a Clip.
         self._ranges = TimelineRangeModel(self)
         self._ruler = RulerModel(self)
+        self._clips = ClipListModel(self)
+        self._sources = SourceVideoModel(self)
         self._ruler_width_px = 0.0
 
         self._playback.position_changed.connect(self._position_reported)
         self._playback.duration_changed.connect(self._duration_reported)
         self._playback.playing_changed.connect(self._playing_reported)
 
+        self._refresh_projections()
         sources = self._document.analysis.source_videos
         if sources:
             self._activate_source(sources[0].id)
@@ -297,6 +315,33 @@ class WorkspaceViewModel(QObject):
     def selectedClipId(self) -> str:
         return "" if self._selected_clip_id is None else str(self._selected_clip_id)
 
+    # --- What the sidebar draws -------------------------------------------
+
+    @Property(QObject, constant=True)
+    def clipModel(self) -> QObject:
+        """Every Clip in the Analysis, grouped by Category and formatted."""
+
+        return self._clips
+
+    @Property(QObject, constant=True)
+    def sourceModel(self) -> QObject:
+        """Every Source video, with the active one marked."""
+
+        return self._sources
+
+    @Property(str, notify=sidebarTabChanged)
+    def sidebarTab(self) -> str:
+        return self._sidebar_tab
+
+    @Slot(str)
+    def setSidebarTab(self, tab: str) -> None:
+        """Show the Clips or the Videos. Nothing else may be shown there."""
+
+        if tab not in SIDEBAR_TABS or tab == self._sidebar_tab:
+            return
+        self._sidebar_tab = tab
+        self.sidebarTabChanged.emit()
+
     # --- What QML is allowed to do ----------------------------------------
 
     @Slot(QObject)
@@ -375,8 +420,52 @@ class WorkspaceViewModel(QObject):
         if identity == self._selected_clip_id:
             return
         self._selected_clip_id = identity
-        self._refresh_ranges()
+        self._refresh_projections()
         self.selectionChanged.emit()
+
+    @Slot(str)
+    def navigateToClip(self, clip_id: str) -> None:
+        """Go to a Clip: its Source video, its start, and its selection.
+
+        This is the Clip list's one action, and it is one action rather than
+        three: a coach clicking a Clip in the second half expects the second
+        half to be playing at that moment, not to be told to pick the video
+        first. It is also the one place selection *does* seek, which is why it
+        is a different slot from `selectClip` rather than a flag on it — the
+        timeline's grammar (ADR 0006) is that clicking a range never moves the
+        playhead.
+        """
+
+        identity = _as_uuid(clip_id)
+        clip = next(
+            (clip for clip in self._document.analysis.clips if clip.id == identity),
+            None,
+        )
+        if clip is None:
+            return
+        if clip.source_video_id != self._active_source_id:
+            self._activate_source(clip.source_video_id)
+        self.selectClip(str(clip.id))
+        # The playhead is put there as well as the player, because a Source
+        # video that has just been activated is still being primed, and
+        # priming puts the video back where the playhead says it was.
+        self._show_position(clip.start_ms)
+        self._seek_now(clip.start_ms)
+
+    @Slot(str)
+    def selectSourceVideo(self, source_id: str) -> None:
+        """Make a Source video the active one, the Videos tab's one action."""
+
+        identity = _as_uuid(source_id)
+        known = {video.id for video in self._document.analysis.source_videos}
+        if identity is None or identity not in known:
+            return
+        if identity == self._active_source_id:
+            return
+        # The timeline is about to be the new video's, and a Clip of the old
+        # one has no range on it to stay selected.
+        self.selectClip("")
+        self._activate_source(identity)
 
     @Slot(int)
     def scrubTo(self, position_ms: int) -> None:
@@ -417,14 +506,14 @@ class WorkspaceViewModel(QObject):
 
     @Slot()
     def refresh(self) -> None:
-        """Re-project the Analysis onto the timeline.
+        """Re-project the Analysis onto the timeline and the sidebar.
 
         Every Clip-changing action arrives with the surface that owns it; this
-        is what those tell the timeline, and what a test uses to say that the
+        is what those tell the interface, and what a test uses to say that the
         Analysis changed underneath it.
         """
 
-        self._refresh_ranges()
+        self._refresh_projections()
         self.documentChanged.emit()
 
     @Slot()
@@ -505,9 +594,12 @@ class WorkspaceViewModel(QObject):
         self._active_source_id = None
         self._position_ms = 0
         self._duration_ms = 0
+        self._selected_clip_id = None
+        self._refresh_projections()
         sources = self._document.analysis.source_videos
         if sources:
             self._activate_source(sources[0].id)
+        self.selectionChanged.emit()
         self.playbackChanged.emit()
 
     def _document_reported(self) -> None:
@@ -521,18 +613,29 @@ class WorkspaceViewModel(QObject):
         self._active_source_id = source_id
         video = self._document.analysis.source_video(source_id)
         self._playback.load(video.location)
-        self._refresh_ranges()
+        self._refresh_projections()
         if video.duration_ms is not None:
             self._duration_reported(video.duration_ms)
         self._prime_video_surface()
         self.documentChanged.emit()
 
-    def _refresh_ranges(self) -> None:
+    def _refresh_projections(self) -> None:
+        """Re-project the Analysis onto everything that draws it.
+
+        One call, because the four models are four views of one Analysis and
+        the selected Clip is one piece of state: a surface refreshed on its
+        own is how a list and a timeline end up disagreeing about which Clip
+        is selected.
+        """
+
+        analysis = self._document.analysis
         self._ranges.refresh(
-            self._document.analysis,
+            analysis,
             source_video_id=self._active_source_id,
             selected_clip_id=self._selected_clip_id,
         )
+        self._clips.refresh(analysis, selected_clip_id=self._selected_clip_id)
+        self._sources.refresh(analysis, active_source_id=self._active_source_id)
 
     def _prime_video_surface(self) -> None:
         """Make a newly loaded Source video show a frame instead of black.

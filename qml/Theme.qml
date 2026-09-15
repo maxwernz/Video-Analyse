@@ -128,6 +128,46 @@ QtObject {
     readonly property int volumeTrackHeight: 3
     readonly property int volumeKnobSize: 10
 
+    // The sidebar. The token spec freezes the 32px Clip row, the 30px
+    // Category row and the 3px full-colour Category bar; the rest are the
+    // sizes the reference Clip list was drawn against.
+    readonly property int clipCategoryBarWidth: 3
+    readonly property int clipTitleInset: 12
+    readonly property int clipTitleGap: 6
+    readonly property int categoryDotSize: 6
+    readonly property int badgeHeight: 16
+    readonly property int badgePadding: 9
+    readonly property int badgeGap: 8
+    readonly property int badgeRadius: 2
+    readonly property int timecodeColumnSpacing: 10
+    readonly property int durationColumnWidth: 38
+    readonly property int sourceRowHeight: 52
+    readonly property int sourceRowIconGap: 10
+    readonly property int sourceRowNameTop: 9
+    readonly property int sourceRowLineGap: 3
+
+    // The width below which a Clip row stops showing how long the Clip is.
+    //
+    // The row cannot carry a title, a Source-video cue, a start and a length
+    // at the 300px default width without eliding the title, and the title is
+    // the field that may never be dropped — eliding it is the failure this
+    // migration exists to fix. The length is the one field an analyst can do
+    // without while finding a Clip, so it is the one that goes. It comes back
+    // at a width measured to carry all four on both supported platforms; the
+    // exact first fitting pixel varies with their text rasterisers. See the
+    // token spec's Source-video cue.
+    readonly property int clipDurationMinimumWidth: 348
+
+    // The scroll indicator: present while the list is moving, faint when it
+    // is not, and absent when everything already fits.
+    readonly property real scrollHintWidth: 3
+    readonly property real scrollHintRadius: 1.5
+    readonly property real scrollHintInset: 3
+    readonly property real scrollHintMinimumLength: 24
+    readonly property real scrollHintMovingOpacity: 0.9
+    readonly property real scrollHintRestingOpacity: 0.25
+    readonly property int scrollHintFadeMs: 160
+
     // The timeline. The token spec freezes the 60px anatomy, the 40% range
     // fill and the 2px accent playhead; the rest of these are the sizes the
     // reference timeline was drawn against.

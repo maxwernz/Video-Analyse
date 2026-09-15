@@ -155,6 +155,14 @@ per the handoff rule; these are the resolutions.
 | --- | --- | --- |
 | Minimum Clip range width | 3 | ADR 0006 says "about three pixels"; it is also a real hit target, not only a drawing |
 | Category header row height | 30 | The Clip list groups by Category and the group row needs its own metric |
+| Category heading dot | 6 | A quiet Category-colour cue beside the heading |
+| Source-video badge radius | 2 | Keeps the compact cue distinct from full controls |
+| Source-video icon gap | 10 | Space from the film icon to the Source-video text |
+| Source-video name top inset / metadata gap | 9 / 3 | Positions the two text lines in the 52px Source-video row |
+| Scroll indicator width / radius / edge inset | 3 / 1.5 / 3 | A narrow hint that does not read as a full native scrollbar |
+| Scroll indicator minimum length | 24 | Keeps the hint visible in long lists |
+| Scroll indicator moving / resting opacity | 0.9 / 0.25 | Strong while scrolling, quiet while at rest |
+| Scroll indicator fade | 160ms | Short state transition, consistent with the restrained motion direction |
 | Icon SVG stroke | 1.75 | Restated here because it is a token, not a drawing detail |
 
 ### Disabled primary action
@@ -181,14 +189,60 @@ never disagree on screen.
 
 ### Source-video cue
 
-**Open.** A 32px row at the 300px default width cannot carry a title, a
-Source-video cue, a start and a duration in monospace; at the 260px minimum the
-title has nothing left. Prototype A elided the title (`Tor nach Kreuzbe...`),
+**Decided in #45.** A 32px row at the 300px default width cannot carry a title,
+a Source-video cue, a start and a duration in monospace; at the 260px minimum
+the title has nothing left. Prototype A elided the title (`Tor nach Kreuzbe...`),
 which reads as the same truncation failure the shipped column layout had.
 Prototype B shortened the cue to a badge -- `halbzeit-1.mp4` becomes `H1`, first
 letter plus trailing number -- with the full name on hover.
 
-The badge is the better of the two and is adopted provisionally, but the real
-question the spec ducked is which of the four fields may be dropped at narrow
-widths. Decide it against a real Analysis with real Source-video names before the
-Clip list is considered finished.
+**The badge is kept. The field that is dropped is the duration.** The four
+fields are not equally load-bearing. The title is what is being looked for and
+may not be elided at the default width -- that is the failure this migration
+exists to fix. The start is the Clip's address: it is what the row navigates
+to, and a column of
+starts is how a coach reads the shape of a half. The cue says which half a
+Clip is in, and in a two-video Analysis with a Category like `Tore` repeated
+across both halves it is the only thing telling two otherwise identical rows
+apart -- and it costs about 31px, a tenth of the row. The duration is the only
+one an analyst does not need in order to *find* a moment: how long a Clip is is
+visible as the width of its range on the timeline, and exact to the millisecond
+in the Clip editor. So the duration is the field that goes.
+
+It is not dropped permanently; it is dropped at widths that cannot hold it.
+Below **348px** of sidebar the row shows the Category bar, the title, the badge
+and the start; at 348px and above it shows all four. 348 is the macOS-measured
+width at which the longest realistic Clip title clears all four fields, and is
+also sufficient on Windows. The exact first fitting pixel is platform-dependent
+because Qt rasterises the same bundled fonts through different platform text
+stacks. The sidebar's maximum is 420, so an analyst who wants durations has 72px
+of room to do it in.
+
+The measurements, and the corpus of real German Source-video names and Clip
+titles they were taken against, are `tests/test_clip_row_fits.py`: the faces are
+the bundled ones, the sizes and the spacings are read out of `Theme.qml`, and
+the test fails if a changed token, metric or typeface makes the decision wrong
+again. The threshold itself is `Theme.clipDurationMinimumWidth`; nothing else in
+the sidebar is conditional on width.
+
+Two corrections to Prototype B's row, both found by measuring it:
+
+- Its badge was a function of one name at a time, so an Analysis of
+  `Angriff.mp4` and `Abwehr.mp4` badged both videos `A`. Badges are computed for
+  the whole Analysis: where two shorten alike, every badge falls back to the
+  video's position (`V1`, `V2`).
+- Its duration was written `M:SS.m` (`0:18.4`, about 43px) inside a 38px
+  column, so the reference screenshots were showing clipped durations. The Clip
+  list writes `M:SS`; hundredths belong to the Clip editor.
+
+#### Metrics the Clip row needs
+
+| Metric | Value | Why |
+| --- | --- | --- |
+| Category bar width | 3 | The full-colour bar at the row's leading edge |
+| Title inset / gap | 12 / 6 | Title's left inset past the bar, gap to what follows |
+| Badge height / padding / gap | 16 / 9 / 8 | The cue chip and its distance from the times |
+| Start-to-duration spacing | 10 | Between the two monospaced columns |
+| Duration column width | 38 | Right-aligned, so lengths line up |
+| Duration minimum sidebar width | 348 | Below this the duration is not drawn |
+| Source-video row height | 52 | Two lines: the name, then length and Clip count |
