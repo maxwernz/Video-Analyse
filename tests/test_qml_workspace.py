@@ -92,6 +92,7 @@ def test_the_application_ships_the_components_the_shell_is_made_of() -> None:
         "Sidebar.qml",
         "Stage.qml",
         "Theme.qml",
+        "Timeline.qml",
         "Tip.qml",
         "Transport.qml",
         "VolumeSlider.qml",
