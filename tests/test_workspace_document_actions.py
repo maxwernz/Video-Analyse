@@ -21,6 +21,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QUrl  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from analysis import (  # noqa: E402
@@ -380,6 +381,88 @@ def test_a_save_that_cannot_be_written_is_reported_and_stays_dirty(
 
     assert presenter.failures, "a failed save was reported to nobody"
     assert workspace.dirty is True
+
+
+# --- Source videos ---------------------------------------------------------
+
+
+def test_choosing_the_first_source_video_turns_the_empty_stage_into_a_player(
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    tmp_path: Path,
+) -> None:
+    video = tmp_path / "erste-halbzeit.mp4"
+    video.write_bytes(b"not real media")
+    presenter.source_video = str(video)
+    workspace = _workspace(AnalysisDocument.new(), player, presenter)
+
+    assert workspace.addSourceVideo() is True
+
+    assert workspace.hasVideo is True
+    assert player.location() == str(video)
+
+
+def test_choosing_another_source_video_adds_it_without_interrupting_the_active_one(
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    tmp_path: Path,
+) -> None:
+    document = _document_with_a_video()
+    workspace = _workspace(document, player, presenter)
+    second = tmp_path / "zweite-halbzeit.mov"
+    second.write_bytes(b"not real media")
+    presenter.source_video = str(second)
+
+    assert workspace.addSourceVideo() is True
+
+    assert [source.location for source in document.analysis.source_videos] == [
+        VIDEO,
+        str(second),
+    ]
+    assert player.location() == VIDEO
+    assert [row["name"] for row in workspace.sourceModel.rows()] == [
+        "Halbzeit 1",
+        "zweite-halbzeit.mov",
+    ]
+
+
+def test_dropping_source_videos_adds_every_one_to_the_current_analysis(
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    tmp_path: Path,
+) -> None:
+    document = _document_with_a_video()
+    workspace = _workspace(document, player, presenter)
+    second = tmp_path / "zweite-halbzeit.mp4"
+    third = tmp_path / "verlaengerung.MOV"
+    second.write_bytes(b"not real media")
+    third.write_bytes(b"not real media")
+
+    assert workspace.addDroppedSourceVideos(
+        [QUrl.fromLocalFile(str(second)), QUrl.fromLocalFile(str(third))]
+    ) is True
+
+    assert [source.location for source in document.analysis.source_videos] == [
+        VIDEO,
+        str(second),
+        str(third),
+    ]
+    assert player.location() == VIDEO
+
+
+def test_a_drop_without_a_source_video_changes_nothing(
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    tmp_path: Path,
+) -> None:
+    document = _document_with_a_video()
+    workspace = _workspace(document, player, presenter)
+    note = tmp_path / "notizen.txt"
+    note.write_text("notes", encoding="utf-8")
+
+    assert workspace.addDroppedSourceVideos([QUrl.fromLocalFile(str(note))]) is False
+
+    assert [source.location for source in document.analysis.source_videos] == [VIDEO]
 
 
 # --- Close -----------------------------------------------------------------

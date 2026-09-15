@@ -107,6 +107,17 @@ QtObject {
     readonly property int splitterWidth: 5
     readonly property int paneAnimationMs: 130
 
+    // The empty stage, matched to the accepted QML prototype.
+    readonly property int emptyStageWidth: 460
+    readonly property int emptyStageHeight: 260
+    readonly property int emptyStageIconSize: 40
+    readonly property int emptyDashLength: 5
+    readonly property int emptyDashGap: 4
+    readonly property real emptyBorderInset: 0.5
+    readonly property int emptyShortcutHeight: 20
+    readonly property int emptyShortcutRadius: 2
+    readonly property int buttonContentSpacing: 6
+
     // The transport. The token spec freezes the row's 56px and says the play
     // control is "rendered larger than its neighbours"; these are the sizes
     // that were drawn against that, and the play control is the only round
@@ -189,6 +200,7 @@ QtObject {
     readonly property int playheadLayer: 30
     readonly property int tooltipLayer: 40
     readonly property int interactionLayer: 50
+    readonly property int dropLayer: 60
 
     // A Clip range: the Category colour at 40% alpha over the stage, at 62%
     // when it is the selected Clip, outlined in a lighter version of itself.

@@ -165,6 +165,24 @@ per the handoff rule; these are the resolutions.
 | Scroll indicator fade | 160ms | Short state transition, consistent with the restrained motion direction |
 | Icon SVG stroke | 1.75 | Restated here because it is a token, not a drawing detail |
 
+### Empty Source-video stage
+
+The designed empty stage from issue #48 adds the metrics the prototype left
+implicit. They remain part of the single-source visual system rather than living
+as literals in the surface. Its drag feedback uses `text-muted` for the border
+and `text` for the icon; the accent remains reserved for the primary button.
+
+| Metric | Value |
+| --- | --- |
+| Drop-zone width | 460 |
+| Drop-zone height | 260 |
+| Empty-stage icon size | 40 |
+| Dashed-border dash / gap | 5 / 4 |
+| Dashed-border pixel inset | 0.5 |
+| Shortcut key height / radius | 20 / 2 |
+| Labelled-button content gap | 6 |
+| Window drop layer | 60 |
+
 ### Disabled primary action
 
 The accent has three permitted uses and a control nobody can press is none of
