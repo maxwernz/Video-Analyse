@@ -16,60 +16,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from PySide6.QtCore import QAbstractListModel, QByteArray, QModelIndex, QObject, Qt
-
 import timecode
 from analysis import Analysis
+from item_models import RoleModel, Row
 
 
-#: One row of a model, as the roles QML binds to.
-Row = dict[str, object]
-
-
-class _RoleModel(QAbstractListModel):
-    """A list model whose roles are named once and read by attribute name."""
-
-    ROLES: tuple[str, ...] = ()
-
-    def __init__(self, parent: QObject | None = None) -> None:
-        super().__init__(parent)
-        self._names = {
-            int(Qt.ItemDataRole.UserRole) + offset: name
-            for offset, name in enumerate(self.ROLES)
-        }
-        self._role_names = {
-            role: QByteArray(name.encode()) for role, name in self._names.items()
-        }
-        self._rows: list[Row] = []
-
-    def roleNames(self) -> dict[int, QByteArray]:  # noqa: N802 - Qt override
-        return self._role_names
-
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
-        return 0 if parent.isValid() else len(self._rows)
-
-    def data(  # noqa: N802 - Qt override
-        self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole
-    ) -> object:
-        if not index.isValid() or not 0 <= index.row() < len(self._rows):
-            return None
-        name = self._names.get(role)
-        if name is None:
-            return None
-        return self._rows[index.row()].get(name)
-
-    def rows(self) -> tuple[Row, ...]:
-        """What this model is showing, for a test that has no window."""
-
-        return tuple(self._rows)
-
-    def _replace(self, rows: list[Row]) -> None:
-        self.beginResetModel()
-        self._rows = rows
-        self.endResetModel()
-
-
-class RulerModel(_RoleModel):
+class RulerModel(RoleModel):
     """The ruler's marks, chosen for the width the track actually got.
 
     An interval is legible when its labels clear each other at the current
@@ -133,7 +85,7 @@ class RulerModel(_RoleModel):
         return cls.INTERVALS[-1]
 
 
-class TimelineRangeModel(_RoleModel):
+class TimelineRangeModel(RoleModel):
     """The Clip ranges of the Active Source video, in milliseconds.
 
     A Clip with no Category carries no colour rather than a grey of its own:

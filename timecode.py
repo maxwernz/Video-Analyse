@@ -5,9 +5,8 @@ QML. Formatting is a rule about the domain — a position is milliseconds, shown
 to the second, in a fixed-width form so that a column of times lines up — and
 the presentation layer is given the finished string.
 
-The forms the other surfaces need (an editable boundary to the millisecond, a
-Clip length, a ruler label) arrive with the tickets that show them, each with
-the test that pins it.
+The forms the other surfaces need (an editable boundary to the millisecond)
+arrive with the tickets that show them, each with the test that pins it.
 """
 
 from __future__ import annotations
@@ -42,3 +41,19 @@ def ruler_label(position_ms: int) -> str:
     if hours:
         return f"{hours}:{minutes:02d}"
     return f"{minutes:02d}:{rest // _SECOND:02d}"
+
+
+def duration(length_ms: int) -> str:
+    """`M:SS` — how long a Clip is, written so it cannot read as a position.
+
+    A position in this application is always `HH:MM:SS`; a length drops the
+    leading fields it does not need, so a column of starts and a column of
+    lengths stay tellable apart at a glance in a 32px row. Lengths are shown
+    to the second: a Clip list is read to find a moment, and the hundredths
+    the Clip editor edits to would only make the column wider than the room
+    the sidebar has for it.
+    """
+
+    length_ms = max(0, int(length_ms))
+    minutes, rest = divmod(length_ms, _MINUTE)
+    return f"{minutes}:{rest // _SECOND:02d}"

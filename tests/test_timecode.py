@@ -59,3 +59,33 @@ def test_a_ruler_label_past_the_hour_counts_hours_and_minutes() -> None:
 
 def test_a_ruler_label_never_reads_as_a_negative_time() -> None:
     assert timecode.ruler_label(-1) == "00:00"
+
+
+# --- How long a Clip is -----------------------------------------------------
+
+
+def test_a_length_is_written_in_minutes_and_seconds() -> None:
+    assert timecode.duration(18_000) == "0:18"
+    assert timecode.duration(65_000) == "1:05"
+    assert timecode.duration(12 * 60_000 + 30_000) == "12:30"
+
+
+def test_a_length_never_reads_like_a_position() -> None:
+    """The Clip list carries both in one row, in the same monospaced face."""
+
+    assert timecode.duration(18_000) != timecode.clock(18_000)
+    assert len(timecode.duration(18_000)) < len(timecode.clock(18_000))
+
+
+def test_a_length_is_truncated_to_the_second_it_has_reached() -> None:
+    assert timecode.duration(18_999) == "0:18"
+
+
+def test_a_length_past_an_hour_keeps_counting_in_minutes() -> None:
+    """An hour-long Clip is not a Clip, but a column that shifted would lie."""
+
+    assert timecode.duration(90 * 60_000) == "90:00"
+
+
+def test_a_negative_length_reads_as_nothing_at_all() -> None:
+    assert timecode.duration(-1) == "0:00"
