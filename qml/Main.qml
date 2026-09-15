@@ -22,6 +22,7 @@ Window {
     id: window
 
     property bool sidebarVisible: true
+    readonly property bool editing: workspace.mode === "editing"
 
     width: Theme.windowWidth
     height: Theme.windowHeight
@@ -95,7 +96,7 @@ Window {
         anchors {
             top: toolbar.bottom
             left: sidebar.right
-            right: parent.right
+            right: editor.visible ? editor.left : parent.right
             bottom: parent.bottom
         }
 
@@ -122,6 +123,14 @@ Window {
         }
     }
 
+    ClipEditor {
+        id: editor
+        objectName: "clipEditor"
+        anchors { top: toolbar.bottom; right: parent.right; bottom: parent.bottom }
+        width: Theme.editorWidth
+        visible: window.editing
+    }
+
     // --- Shortcuts: platform behaviour, kept ------------------------------
     //
     // The transport's own keys.
@@ -131,6 +140,16 @@ Window {
     Shortcut { sequence: "Right";       onActivated: workspace.stepForward() }
     Shortcut { sequence: "Shift+Left";  onActivated: workspace.jumpBackward() }
     Shortcut { sequence: "Shift+Right"; onActivated: workspace.jumpForward() }
+    Shortcut { sequence: "M"; onActivated: workspace.markBoundary() }
+    Shortcut {
+        sequence: "Escape"
+        onActivated: window.editing ? workspace.cancelDraft() : workspace.cancelPending()
+    }
+    Shortcut {
+        sequence: "Return"
+        enabled: window.editing && workspace.draftValid
+        onActivated: workspace.commitDraft()
+    }
 
     // The document commands' keys, everywhere the menu bar is not carrying
     // them. On macOS the menu bar is the *system* menu bar, Cocoa answers its

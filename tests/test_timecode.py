@@ -89,3 +89,19 @@ def test_a_length_past_an_hour_keeps_counting_in_minutes() -> None:
 
 def test_a_negative_length_reads_as_nothing_at_all() -> None:
     assert timecode.duration(-1) == "0:00"
+
+
+# --- Editable Clip boundaries ---------------------------------------------
+
+
+def test_precise_timecode_carries_a_whole_editable_boundary() -> None:
+    assert timecode.precise(25 * 60 * 60_000 + 2_003) == "25:00:02.003"
+
+
+def test_precise_timecode_parses_the_boundary_back_to_milliseconds() -> None:
+    assert timecode.parse("25:00:02.003") == 90_002_003
+
+
+def test_invalid_precise_timecode_is_rejected() -> None:
+    assert timecode.parse("not a boundary") is None
+    assert timecode.parse("00:99:00.000") is None

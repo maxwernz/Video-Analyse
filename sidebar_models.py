@@ -184,6 +184,7 @@ class ClipListModel(RoleModel):
             )
         self._replace(rows)
 
+
     @staticmethod
     def _clip_row(
         presented: _Presented, cue_wanted: bool, selected_clip_id: UUID | None
@@ -202,6 +203,25 @@ class ClipListModel(RoleModel):
             "selected": clip.id == selected_clip_id,
             "count": 0,
         }
+
+
+class CategoryModel(RoleModel):
+    """Analysis-wide Categories for the Clip editor's chooser."""
+
+    ROLES = ("categoryId", "name", "color", "selected")
+
+    def refresh(self, analysis: Analysis, *, selected_category_id: UUID | None) -> None:
+        self._replace(
+            [
+                {
+                    "categoryId": str(category.id),
+                    "name": category.name,
+                    "color": category.color,
+                    "selected": category.id == selected_category_id,
+                }
+                for category in analysis.categories
+            ]
+        )
 
 
 class SourceVideoModel(RoleModel):

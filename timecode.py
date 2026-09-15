@@ -5,8 +5,7 @@ QML. Formatting is a rule about the domain — a position is milliseconds, shown
 to the second, in a fixed-width form so that a column of times lines up — and
 the presentation layer is given the finished string.
 
-The forms the other surfaces need (an editable boundary to the millisecond)
-arrive with the tickets that show them, each with the test that pins it.
+Editable Clip boundaries use the precise form below, including milliseconds.
 """
 
 from __future__ import annotations
@@ -57,3 +56,36 @@ def duration(length_ms: int) -> str:
     length_ms = max(0, int(length_ms))
     minutes, rest = divmod(length_ms, _MINUTE)
     return f"{minutes}:{rest // _SECOND:02d}"
+
+
+def precise(position_ms: int) -> str:
+    """`HH:MM:SS.mmm` — a complete, editable Clip boundary."""
+
+    position_ms = max(0, int(position_ms))
+    hours, rest = divmod(position_ms, _HOUR)
+    minutes, rest = divmod(rest, _MINUTE)
+    seconds, milliseconds = divmod(rest, _SECOND)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
+
+
+def parse(value: str) -> int | None:
+    """Read an editable Clip boundary, or reject text that is not one."""
+
+    try:
+        clock_part, milliseconds_part = value.strip().split(".")
+        hours_part, minutes_part, seconds_part = clock_part.split(":")
+        hours = int(hours_part)
+        minutes = int(minutes_part)
+        seconds = int(seconds_part)
+        milliseconds = int(milliseconds_part)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if (
+        hours < 0
+        or not 0 <= minutes < 60
+        or not 0 <= seconds < 60
+        or len(milliseconds_part) != 3
+        or not 0 <= milliseconds < 1_000
+    ):
+        return None
+    return hours * _HOUR + minutes * _MINUTE + seconds * _SECOND + milliseconds

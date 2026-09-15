@@ -223,6 +223,7 @@ Rectangle {
                     // One action: the Clip's Source video becomes the active
                     // one and the player goes to the Clip's start.
                     onClicked: workspace.navigateToClip(rowItem.model.clipId)
+                    onDoubleClicked: workspace.editClip(rowItem.model.clipId)
                 }
 
                 // The badge is two characters; the whole name is one hover away.

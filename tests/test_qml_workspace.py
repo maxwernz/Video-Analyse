@@ -85,7 +85,10 @@ def engine(application: QApplication) -> QQmlApplicationEngine:
 def test_the_application_ships_the_components_the_shell_is_made_of() -> None:
     assert {path.name for path in qml_components()} == {
         "IconButton.qml",
+        "ClipEditor.qml",
+        "Field.qml",
         "Main.qml",
+        "Section.qml",
         "Toolbar.qml",
         "ScrollHint.qml",
         "SeekButton.qml",
@@ -93,6 +96,8 @@ def test_the_application_ships_the_components_the_shell_is_made_of() -> None:
         "Sidebar.qml",
         "Stage.qml",
         "Theme.qml",
+        "TextButton.qml",
+        "TimecodeField.qml",
         "Timeline.qml",
         "Tip.qml",
         "Transport.qml",

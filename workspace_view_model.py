@@ -17,6 +17,7 @@ it, extending this same seam.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 import time
 from typing import Protocol
 from uuid import UUID
@@ -24,14 +25,14 @@ from uuid import UUID
 from PySide6.QtCore import Property, QObject, Qt, QTimer, Signal, Slot
 
 import timecode
-from analysis import AnalysisDocument, UnsavedChangesChoice
+from analysis import AnalysisDocument, Clip, UnsavedChangesChoice
 from application_workflow import (
     UNTITLED_ANALYSIS_TITLE,
     ApplicationWorkflow,
     WorkflowPresenter,
 )
 from playback import Playback
-from sidebar_models import ClipListModel, SourceVideoModel
+from sidebar_models import CategoryModel, ClipListModel, SourceVideoModel
 from timeline_models import RulerModel, TimelineRangeModel
 
 
@@ -88,6 +89,12 @@ SCRUB_SEEKS_PER_SECOND = 20
 
 #: The shortest gap between two scrub seeks, from the rate above.
 SCRUB_INTERVAL_MS = 1_000 // SCRUB_SEEKS_PER_SECOND
+
+#: A freshly marked interval that would otherwise have no visible length.
+MINIMUM_CLIP_MS = 200
+
+#: The initial title shown before the analyst names a newly marked Clip.
+NEW_CLIP_NAME = "Neuer Clip"
 
 #: Schedules work for later. Injectable so that priming is testable as
 #: behaviour rather than as a wait.
@@ -160,6 +167,35 @@ class _TimerTicker:
             self._run()
 
 
+@dataclass
+class ClipDraft:
+    """Editable Clip data held outside the Analysis until Save is pressed."""
+
+    source_video_id: UUID
+    name: str
+    start_ms: int
+    end_ms: int
+    notes: str
+    category_id: UUID | None
+    clip_id: UUID | None = None
+
+    @property
+    def is_new(self) -> bool:
+        return self.clip_id is None
+
+    @classmethod
+    def of(cls, clip: Clip) -> ClipDraft:
+        return cls(
+            source_video_id=clip.source_video_id,
+            name=clip.name,
+            start_ms=clip.start_ms,
+            end_ms=clip.end_ms,
+            notes=clip.notes,
+            category_id=clip.category_id,
+            clip_id=clip.id,
+        )
+
+
 class WorkspaceViewModel(QObject):
     """One facade over the Analysis document and the playback of its video."""
 
@@ -167,6 +203,9 @@ class WorkspaceViewModel(QObject):
     playbackChanged = Signal()
     selectionChanged = Signal()
     sidebarTabChanged = Signal()
+    modeChanged = Signal()
+    pendingChanged = Signal()
+    draftChanged = Signal()
 
     def __init__(
         self,
@@ -195,6 +234,8 @@ class WorkspaceViewModel(QObject):
 
         self._active_source_id: UUID | None = None
         self._selected_clip_id: UUID | None = None
+        self._pending_start_ms: int | None = None
+        self._draft: ClipDraft | None = None
         self._position_ms = 0
         self._duration_ms = 0
         self._priming = False
@@ -220,6 +261,7 @@ class WorkspaceViewModel(QObject):
         self._ruler = RulerModel(self)
         self._clips = ClipListModel(self)
         self._sources = SourceVideoModel(self)
+        self._categories = CategoryModel(self)
         self._ruler_width_px = 0.0
 
         self._playback.position_changed.connect(self._position_reported)
@@ -238,6 +280,12 @@ class WorkspaceViewModel(QObject):
         """Whether there is an Active Source video to act on at all."""
 
         return self._active_source_id is not None
+
+    @Property(str, notify=modeChanged)
+    def mode(self) -> str:
+        """The normal workspace or its dedicated Clip-editing state."""
+
+        return "editing" if self._draft is not None else "workspace"
 
     @Property(int, notify=playbackChanged)
     def positionMs(self) -> int:
@@ -328,6 +376,12 @@ class WorkspaceViewModel(QObject):
         """Every Source video, with the active one marked."""
 
         return self._sources
+
+    @Property(QObject, constant=True)
+    def categoryModel(self) -> QObject:
+        """Analysis-wide Categories, with the draft's choice selected."""
+
+        return self._categories
 
     @Property(str, notify=sidebarTabChanged)
     def sidebarTab(self) -> str:
@@ -534,6 +588,243 @@ class WorkspaceViewModel(QObject):
             self._playback.set_playback_rate(PLAYBACK_RATES[index])
             self.playbackChanged.emit()
 
+    # --- Pending Clip and Clip editor -------------------------------------
+
+    @Property(bool, notify=pendingChanged)
+    def pendingActive(self) -> bool:
+        return self._pending_start_ms is not None
+
+    @Property(int, notify=pendingChanged)
+    def pendingStartMs(self) -> int:
+        return self._pending_start_ms or 0
+
+    @Property(str, notify=pendingChanged)
+    def pendingText(self) -> str:
+        if self._pending_start_ms is None:
+            return ""
+        length = max(0, self._current_position_ms() - self._pending_start_ms)
+        return (
+            f"Start {timecode.clock(self._pending_start_ms)}"
+            f"  ·  {timecode.duration(length)}"
+        )
+
+    @Property(str, notify=pendingChanged)
+    def markActionText(self) -> str:
+        return "Ende setzen" if self.pendingActive else "Clip markieren"
+
+    @Slot()
+    def markBoundary(self) -> None:
+        """Set the first boundary, or pause and edit the completed interval."""
+
+        if self._active_source_id is None or self._draft is not None:
+            return
+        position = self._current_position_ms()
+        if self._pending_start_ms is None:
+            self._pending_start_ms = position
+            self.pendingChanged.emit()
+            return
+        start = min(self._pending_start_ms, position)
+        end = max(self._pending_start_ms, position)
+        if end - start < MINIMUM_CLIP_MS:
+            end = min(self._clamped(start + MINIMUM_CLIP_MS), self._duration_ms)
+        self._pending_start_ms = None
+        self.pendingChanged.emit()
+        self._playback.pause()
+        self._open_editor(
+            ClipDraft(
+                source_video_id=self._active_source_id,
+                name=NEW_CLIP_NAME,
+                start_ms=start,
+                end_ms=end,
+                notes="",
+                category_id=None,
+            )
+        )
+
+    @Slot()
+    def cancelPending(self) -> None:
+        if self._pending_start_ms is None:
+            return
+        self._pending_start_ms = None
+        self.pendingChanged.emit()
+
+    @Slot(str)
+    def editClip(self, clip_id: str) -> None:
+        identity = _as_uuid(clip_id)
+        clip = next(
+            (item for item in self._document.analysis.clips if item.id == identity), None
+        )
+        if clip is None:
+            return
+        self.cancelPending()
+        if clip.source_video_id != self._active_source_id:
+            self._activate_source(clip.source_video_id)
+        self.selectClip(str(clip.id))
+        self._playback.pause()
+        self._open_editor(ClipDraft.of(clip))
+
+    @Property(str, notify=draftChanged)
+    def draftName(self) -> str:
+        return self._draft.name if self._draft else ""
+
+    @Property(str, notify=draftChanged)
+    def draftNotes(self) -> str:
+        return self._draft.notes if self._draft else ""
+
+    @Property(str, notify=draftChanged)
+    def draftStartText(self) -> str:
+        return timecode.precise(self._draft.start_ms) if self._draft else ""
+
+    @Property(str, notify=draftChanged)
+    def draftEndText(self) -> str:
+        return timecode.precise(self._draft.end_ms) if self._draft else ""
+
+    @Property(str, notify=draftChanged)
+    def draftDurationText(self) -> str:
+        if self._draft is None:
+            return ""
+        return timecode.duration(self._draft.end_ms - self._draft.start_ms)
+
+    @Property(bool, notify=draftChanged)
+    def draftIsNew(self) -> bool:
+        return self._draft.is_new if self._draft else False
+
+    @Property(str, notify=draftChanged)
+    def draftError(self) -> str:
+        if self._draft is None:
+            return ""
+        if not self._draft.name.strip():
+            return "Ein Clip braucht einen Titel."
+        if self._draft.end_ms <= self._draft.start_ms:
+            return "Das Ende muss nach dem Start liegen."
+        return ""
+
+    @Property(bool, notify=draftChanged)
+    def draftValid(self) -> bool:
+        return self._draft is not None and not self.draftError
+
+    @Slot(str)
+    def setDraftName(self, name: str) -> None:
+        if self._draft is not None and name != self._draft.name:
+            self._draft.name = name
+            self.draftChanged.emit()
+
+    @Slot(str)
+    def setDraftNotes(self, notes: str) -> None:
+        if self._draft is not None and notes != self._draft.notes:
+            self._draft.notes = notes
+            self.draftChanged.emit()
+
+    @Slot(str)
+    def setDraftCategory(self, category_id: str) -> None:
+        if self._draft is None:
+            return
+        identity = _as_uuid(category_id)
+        known = {category.id for category in self._document.analysis.categories}
+        self._draft.category_id = identity if identity in known else None
+        self._categories.refresh(
+            self._document.analysis, selected_category_id=self._draft.category_id
+        )
+        self.draftChanged.emit()
+
+    @Slot(str)
+    def setDraftStartText(self, text: str) -> None:
+        self._set_boundary("start", timecode.parse(text))
+
+    @Slot(str)
+    def setDraftEndText(self, text: str) -> None:
+        self._set_boundary("end", timecode.parse(text))
+
+    @Slot(str, int)
+    def nudgeDraftBoundary(self, which: str, delta_ms: int) -> None:
+        if self._draft is None or which not in ("start", "end"):
+            return
+        current = self._draft.start_ms if which == "start" else self._draft.end_ms
+        self._set_boundary(which, current + int(delta_ms))
+
+    @Slot(str)
+    def takeDraftBoundaryFromPlayhead(self, which: str) -> None:
+        self._set_boundary(which, self._current_position_ms(), scrub=False)
+
+    def _set_boundary(self, which: str, value: int | None, *, scrub: bool = True) -> None:
+        if self._draft is None or value is None or which not in ("start", "end"):
+            self.draftChanged.emit()
+            return
+        value = self._clamped(value)
+        if which == "start":
+            self._draft.start_ms = value
+        else:
+            self._draft.end_ms = value
+        if scrub:
+            self._playback.pause()
+            self._show_position(value)
+            self._seek_now(value)
+        self.draftChanged.emit()
+
+    @Slot()
+    def commitDraft(self) -> None:
+        """Apply every draft field to the Analysis in one domain operation."""
+
+        draft = self._draft
+        if draft is None or not self.draftValid:
+            return
+        analysis = self._document.analysis
+        if draft.is_new:
+            kept = analysis.add_clip(
+                draft.source_video_id,
+                draft.name.strip(),
+                draft.start_ms,
+                draft.end_ms,
+                notes=draft.notes,
+                category_id=draft.category_id,
+            ).id
+        else:
+            assert draft.clip_id is not None
+            kept = analysis.update_clip(
+                draft.clip_id,
+                name=draft.name.strip(),
+                start_ms=draft.start_ms,
+                end_ms=draft.end_ms,
+                notes=draft.notes,
+                category_id=draft.category_id,
+            ).id
+        self._draft = None
+        self._selected_clip_id = kept
+        self._close_editor()
+
+    @Slot()
+    def cancelDraft(self) -> None:
+        """Leave editing; the draft was never part of the Analysis."""
+
+        if self._draft is None:
+            return
+        self._draft = None
+        self._close_editor()
+
+    def _open_editor(self, draft: ClipDraft) -> None:
+        self._draft = draft
+        self._categories.refresh(
+            self._document.analysis, selected_category_id=draft.category_id
+        )
+        self._show_position(draft.start_ms)
+        self._seek_now(draft.start_ms)
+        self.draftChanged.emit()
+        self.modeChanged.emit()
+
+    def _close_editor(self) -> None:
+        self._refresh_projections()
+        self._categories.refresh(
+            self._document.analysis, selected_category_id=None
+        )
+        self.draftChanged.emit()
+        self.modeChanged.emit()
+        self.selectionChanged.emit()
+        self.documentChanged.emit()
+
+    def _clamped(self, position_ms: int) -> int:
+        position = max(0, int(position_ms))
+        return min(position, self._duration_ms) if self._duration_ms > 0 else position
+
     # --- The Analysis this window is about --------------------------------
     #
     # The commands themselves belong to `application_workflow`, which decides
@@ -595,12 +886,21 @@ class WorkspaceViewModel(QObject):
         self._position_ms = 0
         self._duration_ms = 0
         self._selected_clip_id = None
+        had_pending = self._pending_start_ms is not None
+        had_draft = self._draft is not None
+        self._pending_start_ms = None
+        self._draft = None
         self._refresh_projections()
         sources = self._document.analysis.source_videos
         if sources:
             self._activate_source(sources[0].id)
         self.selectionChanged.emit()
         self.playbackChanged.emit()
+        if had_pending:
+            self.pendingChanged.emit()
+        if had_draft:
+            self.draftChanged.emit()
+            self.modeChanged.emit()
 
     def _document_reported(self) -> None:
         """The Analysis or its saved state changed; redraw what says so."""
@@ -622,7 +922,7 @@ class WorkspaceViewModel(QObject):
     def _refresh_projections(self) -> None:
         """Re-project the Analysis onto everything that draws it.
 
-        One call, because the four models are four views of one Analysis and
+        One call, because the models are views of one Analysis and
         the selected Clip is one piece of state: a surface refreshed on its
         own is how a list and a timeline end up disagreeing about which Clip
         is selected.
@@ -636,6 +936,12 @@ class WorkspaceViewModel(QObject):
         )
         self._clips.refresh(analysis, selected_clip_id=self._selected_clip_id)
         self._sources.refresh(analysis, active_source_id=self._active_source_id)
+        self._categories.refresh(
+            analysis,
+            selected_category_id=(
+                self._draft.category_id if self._draft is not None else None
+            ),
+        )
 
     def _prime_video_surface(self) -> None:
         """Make a newly loaded Source video show a frame instead of black.

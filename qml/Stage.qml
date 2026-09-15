@@ -25,4 +25,25 @@ Rectangle {
         fillMode: VideoOutput.PreserveAspectFit
         Component.onCompleted: workspace.attachVideoOutput(output)
     }
+
+    Rectangle {
+        visible: workspace.pendingActive
+        anchors { right: parent.right; bottom: parent.bottom; margins: Theme.gutter }
+        width: pendingText.implicitWidth + Theme.gutter * 2
+        height: Theme.controlHeight
+        radius: Theme.radius
+        color: Theme.panel
+        border.width: Theme.border
+        border.color: Theme.controlBorder
+
+        Text {
+            id: pendingText
+            anchors.centerIn: parent
+            text: workspace.pendingText
+            color: Theme.text
+            font.family: Theme.monoFamily
+            font.pixelSize: Theme.sizeTimecode
+            font.weight: Theme.medium
+        }
+    }
 }

@@ -107,6 +107,14 @@ QtObject {
     readonly property int splitterWidth: 5
     readonly property int paneAnimationMs: 130
 
+    // The Clip editor, fixed beside the paused frame.
+    readonly property int editorActionHeight: 64
+    readonly property int editorNotesHeight: 108
+    readonly property int editorBoundaryHeight: 46
+    readonly property int editorStepperWidth: 22
+    readonly property int editorCategoryHeight: 26
+    readonly property int editorCategoryDotSize: 7
+
     // The transport. The token spec freezes the row's 56px and says the play
     // control is "rendered larger than its neighbours"; these are the sizes
     // that were drawn against that, and the play control is the only round
