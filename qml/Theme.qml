@@ -116,7 +116,6 @@ QtObject {
     readonly property real emptyBorderInset: 0.5
     readonly property int emptyShortcutHeight: 20
     readonly property int emptyShortcutRadius: 2
-    readonly property int buttonContentSpacing: 6
 
     // The transport. The token spec freezes the row's 56px and says the play
     // control is "rendered larger than its neighbours"; these are the sizes
@@ -168,6 +167,46 @@ QtObject {
     // exact first fitting pixel varies with their text rasterisers. See the
     // token spec's Source-video cue.
     readonly property int clipDurationMinimumWidth: 348
+
+    // The Clip editor. The token spec freezes the 360px width, the 28px
+    // control height and the 16px gutter the sections are ruled to; the rest
+    // are the sizes the reference form was drawn against.
+    readonly property int editorActionsHeight: 64
+    readonly property int editorNotesHeight: 108
+    readonly property int editorBoundaryHeight: 46
+    readonly property int editorStepperWidth: 22
+    readonly property int editorStepperRadius: 2
+    readonly property int editorStepperArrowWidth: 8
+    readonly property int editorStepperArrowHeight: 5
+    readonly property real editorStepperArrowWeight: 1.25
+    readonly property int editorStepperRepeatMs: 70
+    readonly property int editorTakeButtonSize: 18
+    readonly property int editorTakeIconSize: 12
+    readonly property int chipHeight: 26
+    readonly property int chipPadding: 10
+    readonly property int chipSpacing: 6
+    readonly property int chipDotSize: 7
+
+    // How far a stepper moves a boundary, and how far a Clip may be nudged.
+    // A tenth of a second is about three frames: fine enough to correct a cut
+    // by hand, coarse enough that holding the control gets somewhere.
+    readonly property int boundaryNudgeMs: 100
+
+    // The Pending Clip's own indicator, over the darkest surface in the
+    // window rather than on a panel, which is why its ground and its hairline
+    // are alpha over the picture rather than a surface token.
+    readonly property color pendingScrim: Qt.rgba(0, 0, 0, 0.62)
+    readonly property color pendingScrimBorder: Qt.rgba(1, 1, 1, 0.12)
+    readonly property color pendingRange: Qt.rgba(1, 1, 1, 0.10)
+    readonly property int pendingBadgeHeight: 30
+    readonly property int pendingDotSize: 7
+    readonly property int pendingBlinkMs: 700
+    readonly property real pendingBlinkOpacity: 0.25
+
+    // The one warning colour: the Category palette's orange, used where the
+    // form has to say why a Clip cannot be kept. The accent is not available
+    // for this — it has three permitted uses and none of them is an error.
+    readonly property color warning: "#DE8241"
 
     // The scroll indicator: present while the list is moving, faint when it
     // is not, and absent when everything already fits.

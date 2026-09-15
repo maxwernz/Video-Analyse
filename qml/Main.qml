@@ -23,6 +23,12 @@ Window {
 
     property bool sidebarVisible: true
 
+    // The Clip-editing state, which is a state of the shell rather than of any
+    // one surface: the editor takes its 360px out of the window, so the video
+    // comes back to full size on the way out without anything remembering how
+    // big it used to be.
+    readonly property bool editing: workspace.editing
+
     width: Theme.windowWidth
     height: Theme.windowHeight
     minimumWidth: Theme.windowMinimumWidth
@@ -94,10 +100,11 @@ Window {
 
     Item {
         id: main
+        objectName: "videoArea"
         anchors {
             top: toolbar.bottom
             left: sidebar.right
-            right: parent.right
+            right: editor.visible ? editor.left : parent.right
             bottom: parent.bottom
         }
 
@@ -151,6 +158,15 @@ Window {
         }
     }
 
+    // --- The Clip editor --------------------------------------------------
+
+    ClipEditor {
+        id: editor
+        anchors { top: toolbar.bottom; right: parent.right; bottom: parent.bottom }
+        width: Theme.editorWidth
+        visible: window.editing
+    }
+
     // --- Shortcuts: platform behaviour, kept ------------------------------
     //
     // The transport's own keys.
@@ -160,6 +176,23 @@ Window {
     Shortcut { sequence: "Right";       onActivated: workspace.stepForward() }
     Shortcut { sequence: "Shift+Left";  onActivated: workspace.jumpBackward() }
     Shortcut { sequence: "Shift+Right"; onActivated: workspace.jumpForward() }
+
+    // Marking a Clip, and the two ways out of the state it opens. Escape
+    // leaves whichever of them the window is in, because an analyst pressing
+    // it means "not this" rather than "cancel the draft specifically".
+    Shortcut { sequence: "M"; onActivated: workspace.markBoundary() }
+    Shortcut {
+        sequence: "Escape"
+        onActivated: {
+            if (window.editing) workspace.cancelDraft()
+            else workspace.cancelPending()
+        }
+    }
+    Shortcut {
+        sequence: "Return"
+        enabled: window.editing
+        onActivated: workspace.commitDraft()
+    }
 
     // The document commands' keys, everywhere the menu bar is not carrying
     // them. On macOS the menu bar is the *system* menu bar, Cocoa answers its

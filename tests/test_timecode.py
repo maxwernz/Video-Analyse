@@ -89,3 +89,58 @@ def test_a_length_past_an_hour_keeps_counting_in_minutes() -> None:
 
 def test_a_negative_length_reads_as_nothing_at_all() -> None:
     assert timecode.duration(-1) == "0:00"
+
+
+# --- The Clip editor's two forms -------------------------------------------
+
+
+def test_a_boundary_is_edited_to_the_millisecond() -> None:
+    """The editable form of a Clip boundary, whole so the field cannot clip."""
+
+    assert timecode.precise(0) == "00:00:00.000"
+    assert timecode.precise(3_723_456) == "01:02:03.456"
+
+
+def test_every_boundary_is_the_same_width_so_the_field_can_be_sized_for_it() -> None:
+    widths = {len(timecode.precise(position)) for position in (0, 59_999, 3_600_000)}
+    assert widths == {12}
+
+
+def test_a_boundary_before_the_start_of_the_video_reads_as_the_start() -> None:
+    assert timecode.precise(-5_000) == "00:00:00.000"
+
+
+def test_the_editors_duration_carries_the_hundredths_the_clip_list_drops() -> None:
+    """The token spec: the Clip list writes `M:SS`, the editor the hundredths."""
+
+    assert timecode.precise_duration(18_400) == "0:18.40"
+    assert timecode.precise_duration(0) == "0:00.00"
+    assert timecode.precise_duration(90 * 60_000) == "90:00.00"
+
+
+def test_the_editors_duration_never_reads_like_a_position() -> None:
+    assert timecode.precise_duration(18_000) != timecode.precise(18_000)
+
+
+def test_a_negative_length_reads_as_nothing_at_all_in_the_editor_too() -> None:
+    assert timecode.precise_duration(-1) == "0:00.00"
+
+
+def test_an_edited_boundary_is_read_back_in_the_form_it_is_shown_in() -> None:
+    assert timecode.parse("01:02:03.456") == 3_723_456
+
+
+def test_a_boundary_may_be_typed_without_the_fields_that_are_zero() -> None:
+    """Nobody types the hour of a first-half Clip to nudge it by a second."""
+
+    assert timecode.parse("14:07") == 14 * 60_000 + 7_000
+    assert timecode.parse("7") == 7_000
+    assert timecode.parse("14:07.5") == 14 * 60_000 + 7_500
+    assert timecode.parse(" 14:07 ") == 14 * 60_000 + 7_000
+
+
+def test_a_boundary_that_is_not_a_time_is_reported_as_no_time_at_all() -> None:
+    """A field that silently read `Halbzeit` as zero would move the video."""
+
+    for text in ("", "   ", "Halbzeit", "1:2:3:4", "-5", "01:70:00", "01:02:70"):
+        assert timecode.parse(text) is None, text

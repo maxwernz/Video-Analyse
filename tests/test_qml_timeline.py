@@ -19,10 +19,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPoint, Qt, QUrl  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
-from PySide6.QtQuick import QQuickView  # noqa: E402
+from PySide6.QtQuick import QQuickItem, QQuickView  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+import timecode  # noqa: E402
 from analysis import Analysis, AnalysisDocument, Clip  # noqa: E402
 from playback import FakePlayback  # noqa: E402
 from workspace_view_model import WorkspaceViewModel  # noqa: E402
@@ -213,3 +214,90 @@ def test_a_scrub_elsewhere_leaves_the_selected_clip_selected(
     surface.click(x_of(45 * 60_000))
 
     assert surface.workspace.selectedClipId == str(short_clip.id)
+
+
+# --- The Clip being marked, and the Clip being edited -------------------------
+#
+# Both are drawn on the timeline and neither is in the Analysis, so neither is
+# in the range model: they are the Pending Clip and the draft, and the track
+# shows where each of them would land.
+
+
+def overlay(surface: Surface, object_name: str) -> QQuickItem:
+    item = surface.view.rootObject().findChild(QQuickItem, object_name)
+    assert item is not None, f"the timeline has no {object_name}"
+    return item
+
+
+def settle(surface: Surface) -> None:
+    """Let the track lay itself out before anything is measured on it."""
+
+    QGuiApplication.processEvents()
+    QTest.qWait(80)
+    QGuiApplication.processEvents()
+
+
+def test_nothing_is_marked_or_edited_on_a_timeline_at_rest(
+    surface: Surface,
+) -> None:
+    assert overlay(surface, "pendingRange").property("visible") is False
+    assert overlay(surface, "draftRange").property("visible") is False
+
+
+def test_the_first_boundary_is_drawn_from_where_it_was_marked(
+    surface: Surface,
+) -> None:
+    surface.click(x_of(10 * 60_000))
+    surface.workspace.markBoundary()
+    surface.click(x_of(20 * 60_000))
+    settle(surface)
+
+    pending = overlay(surface, "pendingRange")
+    assert pending.property("visible") is True
+    assert pending.x() == pytest.approx(x_of(10 * 60_000), abs=4)
+    assert pending.width() == pytest.approx(
+        x_of(20 * 60_000) - x_of(10 * 60_000), abs=4
+    )
+
+
+def test_completing_the_clip_replaces_the_mark_with_the_draft_range(
+    surface: Surface,
+) -> None:
+    surface.click(x_of(10 * 60_000))
+    surface.workspace.markBoundary()
+    surface.click(x_of(20 * 60_000))
+    surface.workspace.markBoundary()
+    settle(surface)
+
+    assert overlay(surface, "pendingRange").property("visible") is False
+    draft = overlay(surface, "draftRange")
+    assert draft.property("visible") is True
+    assert draft.x() == pytest.approx(
+        x_of(surface.workspace.draftStartMs), abs=4
+    )
+
+
+def test_the_draft_range_follows_the_boundary_being_edited(
+    surface: Surface, short_clip: Clip
+) -> None:
+    surface.workspace.editClip(str(short_clip.id))
+    settle(surface)
+    draft = overlay(surface, "draftRange")
+    assert draft.x() == pytest.approx(x_of(short_clip.start_ms), abs=4)
+
+    surface.workspace.setDraftStartText(timecode.precise(short_clip.start_ms - 30_000))
+    settle(surface)
+
+    assert draft.x() == pytest.approx(x_of(short_clip.start_ms - 30_000), abs=4)
+
+
+def test_leaving_the_editor_takes_the_draft_range_with_it(
+    surface: Surface, short_clip: Clip
+) -> None:
+    surface.workspace.editClip(str(short_clip.id))
+    settle(surface)
+
+    surface.workspace.cancelDraft()
+    settle(surface)
+
+    assert overlay(surface, "draftRange").property("visible") is False

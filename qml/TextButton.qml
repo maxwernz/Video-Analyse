@@ -19,12 +19,15 @@ Item {
         anchors.fill: parent
         radius: Theme.radius
         color: {
+            // A disabled primary gives the accent back. The accent has three
+            // permitted uses and a control nobody can press is none of them.
             if (!root.enabled)
                 return Theme.controlDisabled
             if (root.primary)
                 return area.pressed ? Theme.accentPressed
                                     : (area.containsMouse ? Theme.accentHover : Theme.accent)
-            return area.containsMouse ? Theme.controlHover : Theme.control
+            return area.pressed ? Theme.control
+                                : (area.containsMouse ? Theme.controlHover : Theme.control)
         }
         border.width: root.primary ? 0 : Theme.border
         border.color: Theme.controlBorder
@@ -33,7 +36,7 @@ Item {
     Row {
         id: row
         anchors.centerIn: parent
-        spacing: Theme.buttonContentSpacing
+        spacing: Theme.chipSpacing
 
         Image {
             visible: root.iconName !== ""
@@ -43,11 +46,13 @@ Item {
             sourceSize.width: Theme.iconSize * 2
             sourceSize.height: Theme.iconSize * 2
             smooth: true
-            source: root.iconName === "" ? "" : Theme.icon(root.iconName, text.color)
+            // A control with no icon asks the provider for nothing: the empty
+            // name is an image the engine reports it could not decode.
+            source: root.iconName === "" ? "" : Theme.icon(root.iconName, label.color)
         }
 
         Text {
-            id: text
+            id: label
             anchors.verticalCenter: parent.verticalCenter
             text: root.label
             font.family: Theme.uiFamily
