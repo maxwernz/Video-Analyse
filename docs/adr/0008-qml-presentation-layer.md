@@ -104,8 +104,13 @@ It is bounded three ways rather than left open:
   at the end of the migration, not at its start.
 - `playback/player.py` gains a volume property; the designed transport asks for
   one and the seam cannot currently express it.
-- The menu bar stays a real parentless `QMenuBar` in Python, so ADR 0007's
-  native-behaviour promise survives. Qt Quick's own `MenuBar` was never evaluated.
+- On macOS the menu bar stays a real parentless `QMenuBar` in Python, so ADR
+  0007's native-behaviour promise survives. Windows and Linux draw the same
+  shared command definition from QML primitives inside the `QQuickWindow`:
+  those platforms place menu bars inside the window, where a widget cannot
+  live. Qt Quick Controls' `MenuBar` remains unevaluated; the drawn bar imports
+  no Controls and is part of the owned visual system. This consequence was
+  amended by #61.
 - Appearance is not covered by the test suite in either technology. That is
   unchanged by this decision, and it is why the visual direction is recorded in
   prose and tokens rather than in assertions.

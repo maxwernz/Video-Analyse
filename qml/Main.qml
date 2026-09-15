@@ -13,15 +13,31 @@ import "."
   video, which is why the video comes back to full size on leaving the editing
   state without anything having to remember its old geometry.
 
-  The menu bar is not here. It is a real QMenuBar created in Python, so on
-  macOS it is the system menu bar: ADR 0007 keeps platform *behaviour* while
-  owning the appearance, and a menu drawn inside the window would be the
-  wrong side of that line.
+  The menu bar is in two places, because a menu bar is in two places. On macOS
+  it is a real parentless QMenuBar created in Python — the *system* menu bar,
+  which is platform behaviour ADR 0007 keeps. Windows and Linux put the menu
+  bar inside the window, where a widget cannot go, so there the same commands
+  are drawn by `MenuBar.qml` from the same definition. `nativeMenuBar` is the
+  one place that decides which, and the window's document shortcuts read it
+  too, so the sequences are listened for once rather than ambiguously twice.
 */
 Window {
     id: window
 
     property bool sidebarVisible: true
+
+    // Whether this platform's menu bar lives outside the window. macOS's does,
+    // and Python has already made it; everywhere else this window draws its
+    // own. Both the menu bar below and the document shortcuts at the bottom of
+    // this file read this one property, so a platform cannot end up with two
+    // menu bars or with none.
+    property bool nativeMenuBar: Qt.platform.os === "osx"
+
+    // Key events arrive at the Python filter installed on this Window. Unlike
+    // the QML `Keys` attached property, that filter continues to see document
+    // sequences while a field has focus; unlike individual `Shortcut` items,
+    // it reads the shared command definition rather than a second key list.
+    Component.onCompleted: workspace.installMenuShortcutHandler(window)
 
     // The Clip-editing state, which is a state of the shell rather than of any
     // one surface: the editor takes its 360px out of the window, so the video
@@ -46,10 +62,29 @@ Window {
     // asked once and in one place.
     onClosing: function (close) { close.accepted = workspace.requestClose() }
 
+    // The in-window menu bar, and nothing at all where the system has one.
+    MenuBar {
+        id: menuBar
+        objectName: "menuBar"
+        anchors { top: parent.top; left: parent.left; right: parent.right }
+        visible: !window.nativeMenuBar
+        height: visible ? Theme.menuBarHeight : 0
+        menus: workspace.menus
+        onCommandRequested: function (command) { workspace.runMenuCommand(command) }
+    }
+
+    // Close is a request of the window, whichever menu bar asked: the red
+    // button, the platform's quit and the menu entry all arrive at `onClosing`,
+    // so the unsaved-changes question is asked once.
+    Connections {
+        target: workspace
+        function onCloseRequested() { window.close() }
+    }
+
     Toolbar {
         id: toolbar
         objectName: "toolbar"
-        anchors { top: parent.top; left: parent.left; right: parent.right }
+        anchors { top: menuBar.bottom; left: parent.left; right: parent.right }
 
         analysisTitle: workspace.analysisTitle
         dirty: workspace.dirty
@@ -183,6 +218,9 @@ Window {
     Shortcut { sequence: "M"; onActivated: workspace.markBoundary() }
     Shortcut {
         sequence: "Escape"
+        // An open menu takes Escape first, and says so itself, so the sequence
+        // is never declared twice at once.
+        enabled: !menuBar.opened
         onActivated: {
             if (window.editing) workspace.cancelDraft()
             else workspace.cancelPending()
@@ -194,41 +232,6 @@ Window {
         onActivated: workspace.commitDraft()
     }
 
-    // The document commands' keys, everywhere the menu bar is not carrying
-    // them. On macOS the menu bar is the *system* menu bar, Cocoa answers its
-    // key equivalents before the window ever sees them, and a second listener
-    // here would only make the sequence ambiguous. Everywhere else the
-    // parentless menu bar is not attached to this Qt Quick window, so the
-    // window listens for itself. The sequences are the platform's own either
-    // way: `StandardKey` names the command, not the keys.
-
-    readonly property bool menuBarOwnsTheKeys: Qt.platform.os === "osx"
-
-    Shortcut {
-        sequences: [StandardKey.New]
-        enabled: !window.menuBarOwnsTheKeys
-        onActivated: workspace.newAnalysis()
-    }
-    Shortcut {
-        sequences: [StandardKey.Open]
-        enabled: !window.menuBarOwnsTheKeys
-        onActivated: workspace.openAnalysis()
-    }
-    Shortcut {
-        sequences: [StandardKey.Save]
-        enabled: !window.menuBarOwnsTheKeys
-        onActivated: workspace.saveAnalysis()
-    }
-    Shortcut {
-        sequences: [StandardKey.SaveAs]
-        enabled: !window.menuBarOwnsTheKeys
-        onActivated: workspace.saveAnalysisAs()
-    }
-    Shortcut {
-        sequences: [StandardKey.Close]
-        enabled: !window.menuBarOwnsTheKeys
-        onActivated: window.close()
-    }
     Shortcut {
         sequence: Qt.platform.os === "osx" ? "Meta+Shift+V" : "Ctrl+Shift+V"
         onActivated: workspace.addSourceVideo()
