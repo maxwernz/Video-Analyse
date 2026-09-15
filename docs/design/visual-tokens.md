@@ -165,11 +165,19 @@ them. A disabled primary gives the accent back: `text-faint` on
 
 ### Volume
 
-The transport design asks for "volume and mute", but `playback/player.py`
-exposes `is_muted` / `set_muted` and no level, and `QAudioOutput` is private to
-`MediaPlayerPlayback`. Adding a volume property to the `Playback` seam is part
-of the migration. Until it lands, the transport shows mute alone -- never a
-slider that does nothing.
+The transport design asks for "volume and mute", and `playback/player.py` now
+carries both: #40 gave the `Playback` seam a volume level beside the switch,
+so #43 draws the level as well. Neither prototype could -- the seam had only
+`is_muted` / `set_muted`, `QAudioOutput` was private to `MediaPlayerPlayback`,
+and both showed mute alone rather than a slider that does nothing.
+
+The level is drawn left of centre beside the mute control: a 72px track 3px
+high on `control`, filled and knobbed in `text-muted`, brightening to `text`
+under the pointer, and `text-faint` when there is nothing to play. **The
+accent is not used here** -- it is reserved for the playhead, the primary
+action and selection, and a volume level is none of the three. Muting shows
+the track empty and stops accepting the pointer, so the switch and the level
+never disagree on screen.
 
 ### Source-video cue
 
