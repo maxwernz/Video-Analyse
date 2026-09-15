@@ -128,6 +128,42 @@ QtObject {
     readonly property int volumeTrackHeight: 3
     readonly property int volumeKnobSize: 10
 
+    // The timeline. The token spec freezes the 60px anatomy, the 40% range
+    // fill and the 2px accent playhead; the rest of these are the sizes the
+    // reference timeline was drawn against.
+    readonly property real rangeFillAlpha: 0.40
+    readonly property real rangeSelectedAlpha: 0.62
+    readonly property real rangeOutlineLighten: 1.5
+    readonly property int majorTickHeight: 6
+    readonly property int minorTickHeight: 3
+    readonly property int rulerLabelGap: 3
+    readonly property int rulerLabelTurnPx: 12
+    readonly property int playheadWidth: 2
+    readonly property int playheadHandleWidth: 10
+    readonly property int playheadHandleRadius: 2
+    readonly property int playheadGrabPx: 9
+
+    // Stacking inside the timeline: the ranges are the ground, the playhead
+    // draws over them, the tooltip over that, and the one mouse area over
+    // everything, because the whole surface scrubs.
+    readonly property int playheadLayer: 30
+    readonly property int tooltipLayer: 40
+    readonly property int interactionLayer: 50
+
+    // A Clip range: the Category colour at 40% alpha over the stage, at 62%
+    // when it is the selected Clip, outlined in a lighter version of itself.
+    // These are the only two colours in the application derived from a value
+    // the interface is given rather than from a token, which is why the
+    // derivation lives here with the tokens.
+    function rangeFill(tint, selected) {
+        return Qt.rgba(tint.r, tint.g, tint.b,
+                       selected ? rangeSelectedAlpha : rangeFillAlpha)
+    }
+
+    function rangeOutline(tint) {
+        return Qt.lighter(tint, rangeOutlineLighten)
+    }
+
     // Icons -- 20px in the transport, 16px everywhere else. The stroke weight
     // is applied by `icon_family.py` on the way to the renderer.
     readonly property int iconSize: 16

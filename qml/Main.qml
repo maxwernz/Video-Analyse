@@ -105,11 +105,16 @@ Window {
                 top: parent.top
                 left: parent.left
                 right: parent.right
-                bottom: transport.top
+                bottom: timeline.top
             }
         }
 
-        // The timeline takes its 60px from between these two in #44.
+        // The workspace's only seek surface (ADR 0006).
+        Timeline {
+            id: timeline
+            anchors { left: parent.left; right: parent.right; bottom: transport.top }
+            height: Theme.timelineHeight
+        }
 
         Transport {
             id: transport

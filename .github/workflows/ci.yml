@@ -35,7 +35,7 @@ jobs:
         run: uv sync --locked --all-groups
 
       - name: Type-check portable runtime
-        run: uv run mypy main.py app_runtime.py qml_runtime.py qml_icons.py workspace_view_model.py workspace_presenter.py menu_bar.py timecode.py video_creator.py build_config/shared.py build_config/windows_version_resource.py analysis
+        run: uv run mypy main.py app_runtime.py qml_runtime.py qml_icons.py workspace_view_model.py workspace_presenter.py menu_bar.py timeline_models.py timecode.py video_creator.py build_config/shared.py build_config/windows_version_resource.py analysis
 
       - name: Run source checks
         run: uv run python -m pytest

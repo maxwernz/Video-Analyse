@@ -25,3 +25,20 @@ def clock(position_ms: int) -> str:
     minutes, rest = divmod(rest, _MINUTE)
     seconds = rest // _SECOND
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def ruler_label(position_ms: int) -> str:
+    """`MM:SS` below the hour, `H:MM` past it — the ruler has room for two.
+
+    A ruler label is read against its neighbours rather than on its own, so it
+    names the two fields that are changing and drops the one that is not. A
+    ninety-minute recording would otherwise label its second half with the same
+    strings as its first.
+    """
+
+    position_ms = max(0, int(position_ms))
+    hours, rest = divmod(position_ms, _HOUR)
+    minutes, rest = divmod(rest, _MINUTE)
+    if hours:
+        return f"{hours}:{minutes:02d}"
+    return f"{minutes:02d}:{rest // _SECOND:02d}"

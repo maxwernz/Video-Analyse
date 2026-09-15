@@ -7,19 +7,21 @@ selected, how a position is written down, what pressing play does while the
 video surface is still being primed — stays here in Python where a test can
 reach it without a window.
 
-What this carries today is the transport, the video surface, and the document
-commands — New, Open, Save, Save As and Close — which it drives through
-`application_workflow` rather than deciding anything about them itself. The
-Clip list, the timeline and the Clip editor arrive with the tickets that own
-them, each extending this same seam.
+What this carries today is the transport, the video surface, the timeline, and
+the document commands — New, Open, Save, Save As and Close — which it drives
+through `application_workflow` rather than deciding anything about them itself.
+The Clip list and the Clip editor arrive with the tickets that own them, each
+extending this same seam.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+import time
+from typing import Protocol
 from uuid import UUID
 
-from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
+from PySide6.QtCore import Property, QObject, Qt, QTimer, Signal, Slot
 
 import timecode
 from analysis import AnalysisDocument, UnsavedChangesChoice
@@ -29,6 +31,7 @@ from application_workflow import (
     WorkflowPresenter,
 )
 from playback import Playback
+from timeline_models import RulerModel, TimelineRangeModel
 
 
 #: The speeds the segmented control offers, in the order it draws them.
@@ -45,9 +48,55 @@ NORMAL_RATE = 1.0
 #: backend that needs longer shows its first frame late rather than never.
 PRIMING_MS = 140
 
+#: How often the interpolated playhead is recomputed, in milliseconds.
+#:
+#: `QMediaPlayer` reports a position roughly sixteen times a second and offers
+#: no way to ask for more, so a playhead bound straight to it visibly steps.
+#: Redrawing at about sixty a second is what makes it move instead.
+INTERPOLATION_INTERVAL_MS = 16
+
+#: How far ahead of the last reported position the playhead may be carried.
+#:
+#: Interpolation fills the gap between two reports; it does not replace them.
+#: A player that stops reporting — buffering, a decoder stall, the end of the
+#: file — must leave the playhead standing rather than run it off the track.
+MAXIMUM_INTERPOLATION_MS = 250
+
+#: How far behind the drawn playhead a report may land and still be smoothed.
+#:
+#: Reports arrive late rather than early, so one that is slightly behind what
+#: is drawn is the same playback, not a jump. Snapping back to it would be the
+#: stutter interpolation exists to remove; anything further is a real seek.
+LATE_REPORT_TOLERANCE_MS = 150
+
+#: How many seeks a second a scrub may ask the media player for.
+#:
+#: Beyond about twenty the player coalesces them and the picture stops
+#: following the pointer. Measured identically on Qt Widgets and Qt Quick, so
+#: it is a property of the media player rather than of either surface.
+SCRUB_SEEKS_PER_SECOND = 20
+
+#: The shortest gap between two scrub seeks, from the rate above.
+SCRUB_INTERVAL_MS = 1_000 // SCRUB_SEEKS_PER_SECOND
+
 #: Schedules work for later. Injectable so that priming is testable as
 #: behaviour rather than as a wait.
 Schedule = Callable[[int, Callable[[], None]], None]
+
+#: Reads a monotonic time in seconds. Injectable for the same reason.
+Clock = Callable[[], float]
+
+
+class Ticker(Protocol):
+    """Runs something repeatedly, until asked to stop.
+
+    The playhead's own heartbeat, kept behind an interface so that "the
+    playhead moved between two reports" is a test rather than a wait.
+    """
+
+    def start(self, interval_ms: int, run: Callable[[], None]) -> None: ...
+
+    def stop(self) -> None: ...
 
 
 def _after(delay_ms: int, run: Callable[[], None]) -> None:
@@ -79,11 +128,34 @@ class _NobodyToAsk:
         return None
 
 
+class _TimerTicker:
+    """The real heartbeat: a repeating `QTimer` on the event loop."""
+
+    def __init__(self, parent: QObject) -> None:
+        self._run: Callable[[], None] | None = None
+        self._timer = QTimer(parent)
+        self._timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._timer.timeout.connect(self._beat)
+
+    def start(self, interval_ms: int, run: Callable[[], None]) -> None:
+        self._run = run
+        self._timer.start(interval_ms)
+
+    def stop(self) -> None:
+        self._timer.stop()
+        self._run = None
+
+    def _beat(self) -> None:
+        if self._run is not None:
+            self._run()
+
+
 class WorkspaceViewModel(QObject):
     """One facade over the Analysis document and the playback of its video."""
 
     documentChanged = Signal()
     playbackChanged = Signal()
+    selectionChanged = Signal()
 
     def __init__(
         self,
@@ -93,6 +165,8 @@ class WorkspaceViewModel(QObject):
         *,
         schedule: Schedule = _after,
         presenter: WorkflowPresenter | None = None,
+        clock: Clock = time.monotonic,
+        ticker: Ticker | None = None,
     ) -> None:
         super().__init__(parent)
         self._workflow = ApplicationWorkflow(
@@ -105,12 +179,31 @@ class WorkspaceViewModel(QObject):
         self._playback = playback
         self._playback.setParent(self)
         self._schedule = schedule
+        self._clock = clock
+        self._ticker: Ticker = _TimerTicker(self) if ticker is None else ticker
 
         self._active_source_id: UUID | None = None
+        self._selected_clip_id: UUID | None = None
         self._position_ms = 0
         self._duration_ms = 0
         self._priming = False
         self._muted_before_priming = False
+
+        # The playhead, between two things the player said.
+        self._position_at = clock()
+        self._position_floor_ms = 0
+        self._following = False
+
+        # The scrub, and what the throttle is holding back.
+        self._last_seek_at = float("-inf")
+        self._held_scrub_ms: int | None = None
+        self._flush_scheduled = False
+
+        # What the timeline draws. Both are projections of the Analysis and
+        # of the Active Source video's length; neither is ever handed a Clip.
+        self._ranges = TimelineRangeModel(self)
+        self._ruler = RulerModel(self)
+        self._ruler_width_px = 0.0
 
         self._playback.position_changed.connect(self._position_reported)
         self._playback.duration_changed.connect(self._duration_reported)
@@ -130,7 +223,13 @@ class WorkspaceViewModel(QObject):
 
     @Property(int, notify=playbackChanged)
     def positionMs(self) -> int:
-        return self._position_ms
+        """Where the playhead is *now*, not where the player last said it was.
+
+        The difference is the whole of the smooth-playhead fix: between two
+        reports this reads ahead of the player by however long ago it spoke.
+        """
+
+        return self._current_position_ms()
 
     @Property(int, notify=playbackChanged)
     def durationMs(self) -> int:
@@ -138,7 +237,7 @@ class WorkspaceViewModel(QObject):
 
     @Property(str, notify=playbackChanged)
     def positionText(self) -> str:
-        return timecode.clock(self._position_ms)
+        return timecode.clock(self._current_position_ms())
 
     @Property(str, notify=playbackChanged)
     def durationText(self) -> str:
@@ -180,6 +279,24 @@ class WorkspaceViewModel(QObject):
                 return index
         return PLAYBACK_RATES.index(NORMAL_RATE)
 
+    # --- What the timeline draws ------------------------------------------
+
+    @Property(QObject, constant=True)
+    def rangeModel(self) -> QObject:
+        """The Clip ranges of the Active Source video, in milliseconds."""
+
+        return self._ranges
+
+    @Property(QObject, constant=True)
+    def rulerModel(self) -> QObject:
+        """The ruler's marks, already chosen for the width the track got."""
+
+        return self._ruler
+
+    @Property(str, notify=selectionChanged)
+    def selectedClipId(self) -> str:
+        return "" if self._selected_clip_id is None else str(self._selected_clip_id)
+
     # --- What QML is allowed to do ----------------------------------------
 
     @Slot(QObject)
@@ -220,7 +337,95 @@ class WorkspaceViewModel(QObject):
 
     @Slot(int)
     def seek(self, position_ms: int) -> None:
-        self._playback.seek(int(position_ms))
+        self._seek_now(int(position_ms))
+
+    # --- The one seek surface ---------------------------------------------
+
+    @Slot(float, float)
+    def layoutRuler(self, width_px: float, duration_ms: float) -> None:
+        """Rule the track for the width it actually got.
+
+        Which interval stays legible at a given width is arithmetic about the
+        recording rather than about the drawing, so the timeline reports its
+        width and is given marks back.
+        """
+
+        self._ruler_width_px = float(width_px)
+        self._ruler.layout(int(duration_ms), self._ruler_width_px)
+
+    @Slot(int, result=str)
+    def timeText(self, position_ms: int) -> str:
+        """The hover tooltip's timecode, written where every other one is."""
+
+        return timecode.clock(int(position_ms))
+
+    @Slot(str)
+    def selectClip(self, clip_id: str) -> None:
+        """Select a Clip without seeking.
+
+        ADR 0006: clicking a range selects it *without moving the playhead to
+        its start*. The scrub the same click performs is the timeline's, and
+        it goes where the pointer is, not where the Clip begins.
+        """
+
+        identity = _as_uuid(clip_id)
+        known = {clip.id for clip in self._document.analysis.clips}
+        if identity not in known:
+            identity = None
+        if identity == self._selected_clip_id:
+            return
+        self._selected_clip_id = identity
+        self._refresh_ranges()
+        self.selectionChanged.emit()
+
+    @Slot(int)
+    def scrubTo(self, position_ms: int) -> None:
+        """Follow a drag, at a rate the media player can actually follow.
+
+        Asked for more than about twenty seeks a second, `QMediaPlayer`
+        coalesces them and the picture stops moving with the pointer — the
+        defect this throttle exists to fix. Only the newest position is ever
+        held, so the video lands where the pointer went rather than trailing
+        it through every position it passed through on the way.
+
+        The playhead itself is not throttled. It follows the pointer at once,
+        because a held seek is a late *picture*, not a late playhead.
+        """
+
+        target = int(position_ms)
+        since_ms = (self._clock() - self._last_seek_at) * 1_000
+        if since_ms >= SCRUB_INTERVAL_MS and self._held_scrub_ms is None:
+            self._seek_now(target)
+            return
+
+        self._held_scrub_ms = target
+        self._show_position(target)
+        if not self._flush_scheduled:
+            self._flush_scheduled = True
+            self._schedule(max(0, int(SCRUB_INTERVAL_MS - since_ms)), self._flush_scrub)
+
+    @Slot()
+    def endScrub(self) -> None:
+        """Land the video exactly where the drag ended.
+
+        A held seek that the release simply dropped would leave the picture on
+        the last position the throttle let through rather than on the one the
+        analyst chose.
+        """
+
+        self._flush_scrub()
+
+    @Slot()
+    def refresh(self) -> None:
+        """Re-project the Analysis onto the timeline.
+
+        Every Clip-changing action arrives with the surface that owns it; this
+        is what those tell the timeline, and what a test uses to say that the
+        Analysis changed underneath it.
+        """
+
+        self._refresh_ranges()
+        self.documentChanged.emit()
 
     @Slot()
     def toggleMuted(self) -> None:
@@ -316,10 +521,18 @@ class WorkspaceViewModel(QObject):
         self._active_source_id = source_id
         video = self._document.analysis.source_video(source_id)
         self._playback.load(video.location)
+        self._refresh_ranges()
         if video.duration_ms is not None:
             self._duration_reported(video.duration_ms)
         self._prime_video_surface()
         self.documentChanged.emit()
+
+    def _refresh_ranges(self) -> None:
+        self._ranges.refresh(
+            self._document.analysis,
+            source_video_id=self._active_source_id,
+            selected_clip_id=self._selected_clip_id,
+        )
 
     def _prime_video_surface(self) -> None:
         """Make a newly loaded Source video show a frame instead of black.
@@ -358,6 +571,87 @@ class WorkspaceViewModel(QObject):
 
         self._priming = False
         self._playback.set_muted(self._muted_before_priming)
+        self._follow_playback()
+        self.playbackChanged.emit()
+
+    # --- Seeking ----------------------------------------------------------
+
+    def _seek_now(self, position_ms: int) -> None:
+        """Ask the player for a position, and remember when we asked.
+
+        Any seek the throttle was still holding is dropped: it belongs to a
+        drag this seek has overtaken, and letting it arrive afterwards would
+        take the video back to where the pointer used to be. Double-clicking a
+        range is exactly that case — the press that selected the Clip is still
+        held when the second click asks for the Clip's start.
+        """
+
+        self._held_scrub_ms = None
+        self._last_seek_at = self._clock()
+        self._playback.seek(position_ms)
+
+    def _flush_scrub(self) -> None:
+        """Make the seek the throttle held back, if it is still held."""
+
+        self._flush_scheduled = False
+        if self._held_scrub_ms is None:
+            return
+        target, self._held_scrub_ms = self._held_scrub_ms, None
+        self._seek_now(target)
+
+    # --- A playhead that moves between two reports -------------------------
+
+    def _current_position_ms(self) -> int:
+        """Where the playhead is, reported position plus elapsed playback."""
+
+        position = self._position_ms
+        if self._following:
+            elapsed_ms = max(0.0, self._clock() - self._position_at) * 1_000
+            carried = min(
+                elapsed_ms * self._playback.playback_rate(), MAXIMUM_INTERPOLATION_MS
+            )
+            position = max(position + int(carried), self._position_floor_ms)
+            if self._duration_ms > 0:
+                # Interpolation may not carry the playhead past the end of the
+                # recording. A position the player itself reports is taken as
+                # it comes: the media knows its own length better than we do.
+                position = min(position, self._duration_ms)
+        return max(0, position)
+
+    def _show_position(self, position_ms: int) -> None:
+        """Put the playhead somewhere and start interpolating from there."""
+
+        self._position_ms = max(0, int(position_ms))
+        self._position_at = self._clock()
+        self._position_floor_ms = self._position_ms
+        self.playbackChanged.emit()
+
+    def _follow_playback(self) -> None:
+        """Start or stop the heartbeat, to match what the player is doing."""
+
+        following = self._playback.is_playing() and not self._priming
+        if following == self._following:
+            return
+        if following:
+            self._position_at = self._clock()
+            self._position_floor_ms = self._position_ms
+            self._following = True
+            self._ticker.start(INTERPOLATION_INTERVAL_MS, self._interpolate)
+        else:
+            # Stop where the playhead was drawn rather than where the player
+            # last spoke, so pausing does not twitch backwards.
+            self._position_ms = self._current_position_ms()
+            self._position_floor_ms = self._position_ms
+            self._following = False
+            self._ticker.stop()
+
+    def _interpolate(self) -> None:
+        """One heartbeat: nothing new was reported, but time passed."""
+
+        if not self._following:
+            self._ticker.stop()
+            return
+        self._position_floor_ms = self._current_position_ms()
         self.playbackChanged.emit()
 
     # --- What the player reports ------------------------------------------
@@ -366,7 +660,17 @@ class WorkspaceViewModel(QObject):
         if self._priming:
             # The playhead does not move for a play nobody asked for.
             return
-        self._position_ms = int(position_ms)
+        reported = max(0, int(position_ms))
+        drawn = self._current_position_ms()
+        self._position_ms = reported
+        self._position_at = self._clock()
+        # A report that lands just behind the drawn playhead is the same
+        # playback arriving late; one further behind is a real seek.
+        self._position_floor_ms = (
+            drawn
+            if self._following and 0 <= drawn - reported <= LATE_REPORT_TOLERANCE_MS
+            else reported
+        )
         self.playbackChanged.emit()
 
     def _duration_reported(self, duration_ms: int) -> None:
@@ -375,9 +679,23 @@ class WorkspaceViewModel(QObject):
         if duration_ms <= 0:
             return
         self._duration_ms = int(duration_ms)
+        if self._ruler_width_px > 0:
+            # The length is what the ruler is a ruler of: a scale that arrived
+            # late still has to reach the marks.
+            self._ruler.layout(self._duration_ms, self._ruler_width_px)
         self.playbackChanged.emit()
 
     def _playing_reported(self, _playing: bool) -> None:
         if self._priming:
             return
+        self._follow_playback()
         self.playbackChanged.emit()
+
+
+def _as_uuid(value: str) -> UUID | None:
+    """Read an identity QML carries as a string, or report that it is not one."""
+
+    try:
+        return UUID(str(value))
+    except (AttributeError, TypeError, ValueError):
+        return None
