@@ -21,11 +21,6 @@ import "."
 Window {
     id: window
 
-    // The Analysis this window is about arrives with the view model in #47.
-    // Until then the shell shows what a freshly started application shows,
-    // and a test pins this string to the workflow's own.
-    property string analysisTitle: "Unbenannte Analyse"
-    property bool dirty: false
     property bool sidebarVisible: true
 
     width: Theme.windowWidth
@@ -34,15 +29,28 @@ Window {
     minimumHeight: Theme.windowMinimumHeight
     visible: true
     color: Theme.app
-    title: "Video Analyse"
+
+    // The Analysis, and whether it is safe to close. Both are the workflow's
+    // own words: the marker, the em dash and the application name are decided
+    // in Python, so the title bar and the toolbar cannot spell them apart.
+    title: workspace.windowTitle
+
+    // Every way out of the window — the menu entry, the red button, the
+    // platform's own quit — arrives here, so the unsaved-changes question is
+    // asked once and in one place.
+    onClosing: function (close) { close.accepted = workspace.requestClose() }
 
     Toolbar {
         id: toolbar
+        objectName: "toolbar"
         anchors { top: parent.top; left: parent.left; right: parent.right }
 
-        analysisTitle: window.analysisTitle
-        dirty: window.dirty
+        analysisTitle: workspace.analysisTitle
+        dirty: workspace.dirty
         sidebarVisible: window.sidebarVisible
+        onNewAnalysisRequested: workspace.newAnalysis()
+        onOpenAnalysisRequested: workspace.openAnalysis()
+        onSaveAnalysisRequested: workspace.saveAnalysis()
         onSidebarToggleRequested: window.sidebarVisible = !window.sidebarVisible
     }
 
@@ -111,12 +119,47 @@ Window {
 
     // --- Shortcuts: platform behaviour, kept ------------------------------
     //
-    // The transport's own keys. The document actions and their shortcuts are
-    // the menu bar's, and land with it in #47.
+    // The transport's own keys.
 
     Shortcut { sequence: "Space";       onActivated: workspace.playPause() }
     Shortcut { sequence: "Left";        onActivated: workspace.stepBackward() }
     Shortcut { sequence: "Right";       onActivated: workspace.stepForward() }
     Shortcut { sequence: "Shift+Left";  onActivated: workspace.jumpBackward() }
     Shortcut { sequence: "Shift+Right"; onActivated: workspace.jumpForward() }
+
+    // The document commands' keys, everywhere the menu bar is not carrying
+    // them. On macOS the menu bar is the *system* menu bar, Cocoa answers its
+    // key equivalents before the window ever sees them, and a second listener
+    // here would only make the sequence ambiguous. Everywhere else the
+    // parentless menu bar is not attached to this Qt Quick window, so the
+    // window listens for itself. The sequences are the platform's own either
+    // way: `StandardKey` names the command, not the keys.
+
+    readonly property bool menuBarOwnsTheKeys: Qt.platform.os === "osx"
+
+    Shortcut {
+        sequences: [StandardKey.New]
+        enabled: !window.menuBarOwnsTheKeys
+        onActivated: workspace.newAnalysis()
+    }
+    Shortcut {
+        sequences: [StandardKey.Open]
+        enabled: !window.menuBarOwnsTheKeys
+        onActivated: workspace.openAnalysis()
+    }
+    Shortcut {
+        sequences: [StandardKey.Save]
+        enabled: !window.menuBarOwnsTheKeys
+        onActivated: workspace.saveAnalysis()
+    }
+    Shortcut {
+        sequences: [StandardKey.SaveAs]
+        enabled: !window.menuBarOwnsTheKeys
+        onActivated: workspace.saveAnalysisAs()
+    }
+    Shortcut {
+        sequences: [StandardKey.Close]
+        enabled: !window.menuBarOwnsTheKeys
+        onActivated: window.close()
+    }
 }

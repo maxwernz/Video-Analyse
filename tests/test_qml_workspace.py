@@ -24,18 +24,25 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QSize, QUrl  # noqa: E402
+from PySide6.QtCore import QMetaObject, QObject, QSize, QUrl  # noqa: E402
 from PySide6.QtGui import QFontDatabase  # noqa: E402
 from PySide6.QtQml import QQmlComponent, QQmlApplicationEngine  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 import icon_family  # noqa: E402
+from analysis import AnalysisDocument, UnsavedChangesChoice  # noqa: E402
+from playback import FakePlayback  # noqa: E402
+from workspace_view_model import WorkspaceViewModel  # noqa: E402
 from app_runtime import (  # noqa: E402
     TIMECODE_FONT_FAMILY,
     UI_FONT_FAMILY,
     register_bundled_fonts,
 )
-from application_workflow import UNTITLED_ANALYSIS_TITLE  # noqa: E402
+from application_workflow import (  # noqa: E402
+    APPLICATION_TITLE,
+    UNSAVED_CHANGES_MARKER,
+    UNTITLED_ANALYSIS_TITLE,
+)
 from main import build_workspace_context  # noqa: E402
 from qml_icons import IconProvider  # noqa: E402
 from qml_runtime import build_engine, quick_scene_path  # noqa: E402
@@ -364,15 +371,174 @@ def test_the_provider_reports_an_unvendored_icon_as_nothing(
 # --- The shell itself ------------------------------------------------------
 
 
-def test_the_toolbar_placeholder_title_is_the_workflow_s_own() -> None:
-    """The shell shows what a freshly started application shows.
+def test_the_shell_shows_the_analysis_the_view_model_reports() -> None:
+    """The placeholder #42 pinned is gone: both names come from Python now.
 
-    #47 replaces this with the workflow's live title. Pinning it meanwhile
-    means the placeholder cannot drift into a second spelling of the same idea.
+    The toolbar's name and the window's title are one value each, read from
+    the view model, so the interface cannot show an Analysis that is not the
+    one open — and there is no second spelling of `UNTITLED_ANALYSIS_TITLE`
+    anywhere in the QML to drift from the workflow's own.
     """
 
     source = quick_scene_path().read_text(encoding="utf-8")
-    assert f'property string analysisTitle: "{UNTITLED_ANALYSIS_TITLE}"' in source
+    assert "analysisTitle: workspace.analysisTitle" in source
+    assert "dirty: workspace.dirty" in source
+    assert "title: workspace.windowTitle" in source
+    assert UNTITLED_ANALYSIS_TITLE not in source
+
+
+def _shell_with(
+    view_model: object,
+) -> tuple[QQmlApplicationEngine, QQmlComponent, QObject]:
+    """The real shell, loaded over a workspace a test can look at afterwards.
+
+    The engine and the component come back with the window because nothing
+    else holds them: a shell whose engine has been collected is a window whose
+    every binding has stopped.
+    """
+
+    engine = build_engine(QML_ROOT, context_objects={"workspace": view_model})
+    component = QQmlComponent(engine, QUrl.fromLocalFile(str(QML_ROOT / "Main.qml")))
+    assert component.status() == QQmlComponent.Status.Ready, [
+        error.toString() for error in component.errors()
+    ]
+    window = component.create()
+    assert window is not None, [error.toString() for error in component.errors()]
+    return engine, component, window
+
+
+class _AnswersEverything:
+    """A person who always answers, so a toolbar press reaches the Analysis."""
+
+    def __init__(self, to_open: str | None = None, destination: str | None = None):
+        self.to_open = to_open
+        self.destination = destination
+
+    def ask_unsaved_changes(self) -> UnsavedChangesChoice:
+        return UnsavedChangesChoice.DISCARD
+
+    def choose_analysis_to_open(self) -> str | None:
+        return self.to_open
+
+    def choose_analysis_destination(self, suggested_name: str) -> str | None:
+        return self.destination
+
+    def choose_source_video(self) -> str | None:
+        return None
+
+    def report_failure(self, title: str, message: str) -> None:
+        raise AssertionError(f"{title}: {message}")
+
+
+def _an_analysis(title: str) -> AnalysisDocument:
+    """An Analysis with a Source video, because an empty one cannot be saved."""
+
+    document = AnalysisDocument.new(title)
+    document.analysis.add_source_video("Halbzeit 1", "/videos/halbzeit-1.mp4")
+    return document
+
+
+def test_the_toolbars_file_actions_reach_the_analysis(
+    application: QApplication, tmp_path: Path
+) -> None:
+    """The prototype's toolbar was inert, and inertness is silent.
+
+    Nothing else in this suite can tell a wired button from an unwired one: a
+    handler calling a slot that does not exist loads without complaint and
+    does nothing, which is the failure this whole file exists to catch.
+    """
+
+    saved = _an_analysis("Spiel gegen Kiel")
+    saved.save_as(tmp_path / "kiel.analysis")
+    destination = tmp_path / "spiel.analysis"
+    view_model = WorkspaceViewModel(
+        _an_analysis("Spiel gegen Flensburg"),
+        FakePlayback(),
+        presenter=_AnswersEverything(
+            to_open=str(tmp_path / "kiel.analysis"), destination=str(destination)
+        ),
+    )
+
+    engine, component, window = _shell_with(view_model)
+    toolbar = window.findChild(QObject, "toolbar")
+    assert toolbar is not None, "the shell has no toolbar"
+
+    assert QMetaObject.invokeMethod(toolbar, "saveAnalysisRequested")
+    assert destination.is_file(), "the toolbar's Save saved nothing"
+
+    assert QMetaObject.invokeMethod(toolbar, "openAnalysisRequested")
+    assert view_model.analysisTitle == "Spiel gegen Kiel"
+
+    assert QMetaObject.invokeMethod(toolbar, "newAnalysisRequested")
+    assert view_model.analysisTitle == UNTITLED_ANALYSIS_TITLE
+
+    application.processEvents()
+    window.deleteLater()
+    del engine, component
+
+
+def test_the_window_is_titled_after_the_analysis_and_its_unsaved_state(
+    application: QApplication, tmp_path: Path
+) -> None:
+    document = _an_analysis("Spiel gegen Kiel")
+    document.save_as(tmp_path / "kiel.analysis")
+    view_model = WorkspaceViewModel(document, FakePlayback())
+
+    engine, component, window = _shell_with(view_model)
+
+    assert window.property("title") == f"Spiel gegen Kiel — {APPLICATION_TITLE}"
+
+    document.analysis.set_title("Spiel gegen Flensburg")
+    view_model.documentChanged.emit()
+    application.processEvents()
+
+    assert window.property("title") == view_model.windowTitle
+    assert window.property("title").startswith(UNSAVED_CHANGES_MARKER)
+
+    window.deleteLater()
+    del engine, component
+
+
+def test_closing_the_window_with_unsaved_work_asks_before_it_goes(
+    application: QApplication,
+) -> None:
+    """The window is the gate, so the red button cannot bypass the question."""
+
+    document = _an_analysis("Spiel gegen Kiel")
+    view_model = WorkspaceViewModel(
+        document, FakePlayback(), presenter=_RefusesToLetGo()
+    )
+
+    engine, component, window = _shell_with(view_model)
+    assert window.property("visible") is True
+
+    window.close()
+    application.processEvents()
+
+    assert window.property("visible") is True, "the window closed over unsaved work"
+
+    window.deleteLater()
+    del engine, component
+
+
+class _RefusesToLetGo(_AnswersEverything):
+    """Somebody who cancels the unsaved-changes question."""
+
+    def ask_unsaved_changes(self) -> UnsavedChangesChoice:
+        return UnsavedChangesChoice.CANCEL
+
+
+def test_no_component_announces_the_products_name() -> None:
+    """ADR 0007: a single-window tool does not advertise itself in its chrome.
+
+    The wordmark strip is what the toolbar replaced, and the window title is
+    the one place the application's name belongs — which is Python's to write,
+    not QML's.
+    """
+
+    for component in qml_components():
+        source = _without_comments(component.read_text(encoding="utf-8"))
+        assert APPLICATION_TITLE not in source, component.name
 
 
 # --- Starting into the workspace -------------------------------------------

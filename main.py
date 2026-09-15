@@ -28,6 +28,8 @@ from qml_runtime import (
     software_rendering_requested,
     use_software_rendering,
 )
+from menu_bar import build_menu_bar
+from workspace_presenter import WorkspacePresenter
 from workspace_view_model import WorkspaceViewModel
 
 
@@ -80,11 +82,17 @@ def build_workspace_context() -> dict[str, WorkspaceViewModel]:
     """What the QML window is given, and the whole vocabulary it has.
 
     One view model over one Analysis document and one player. QML never sees
-    either of them; it sees this. The Analysis the window opens into is a new,
-    empty one until the menu bar and the document actions arrive in #47.
+    either of them; it sees this. The application opens into a new, empty
+    Analysis, and every document command from there runs through the same
+    workflow the Widgets interface has always used — the presenter is the
+    only part of that which knows what a dialog is.
     """
 
-    view_model = WorkspaceViewModel(AnalysisDocument.new(), MediaPlayerPlayback())
+    view_model = WorkspaceViewModel(
+        AnalysisDocument.new(),
+        MediaPlayerPlayback(),
+        presenter=WorkspacePresenter(),
+    )
     return {"workspace": view_model}
 
 
@@ -170,11 +178,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         if interface == QML_INTERFACE:
             context = build_workspace_context()
             scene = show_quick_scene_with_fallback(context_objects=context)
+            # The menu bar is a real QMenuBar with no parent — the system menu
+            # bar on macOS — so nothing else is holding it, and Close goes
+            # through the window, which is where the unsaved-changes question
+            # is asked.
+            menu_bar = build_menu_bar(
+                context["workspace"], close_window=scene.window.close
+            )
             # The scene owns the window; holding the engine keeps the whole
             # object tree alive for as long as the application runs, and the
             # context objects are published rather than owned, so they have to
             # outlive this scope too.
-            _ = (scene, context)
+            _ = (scene, context, menu_bar)
             return app.exec()
 
         from mainwindow import MainWindow
