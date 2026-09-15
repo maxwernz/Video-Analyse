@@ -7,9 +7,11 @@ selected, how a position is written down, what pressing play does while the
 video surface is still being primed — stays here in Python where a test can
 reach it without a window.
 
-What this carries today is the transport and the video surface. The Clip list,
-the timeline and the Clip editor arrive with the tickets that own them, each
-extending this same seam.
+What this carries today is the transport, the video surface, and the document
+commands — New, Open, Save, Save As and Close — which it drives through
+`application_workflow` rather than deciding anything about them itself. The
+Clip list, the timeline and the Clip editor arrive with the tickets that own
+them, each extending this same seam.
 """
 
 from __future__ import annotations
@@ -20,7 +22,12 @@ from uuid import UUID
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 
 import timecode
-from analysis import AnalysisDocument
+from analysis import AnalysisDocument, UnsavedChangesChoice
+from application_workflow import (
+    UNTITLED_ANALYSIS_TITLE,
+    ApplicationWorkflow,
+    WorkflowPresenter,
+)
 from playback import Playback
 
 
@@ -47,6 +54,31 @@ def _after(delay_ms: int, run: Callable[[], None]) -> None:
     QTimer.singleShot(delay_ms, run)
 
 
+class _NobodyToAsk:
+    """The presenter a workspace gets when it was built without one.
+
+    A workspace can be built for the transport alone — the playback tests do
+    exactly that — and such a workspace has no window to put a question in. It
+    therefore answers every question the only way that cannot lose an
+    analyst's work: it refuses.
+    """
+
+    def ask_unsaved_changes(self) -> UnsavedChangesChoice:
+        return UnsavedChangesChoice.CANCEL
+
+    def choose_analysis_to_open(self) -> str | None:
+        return None
+
+    def choose_analysis_destination(self, suggested_name: str) -> str | None:
+        return None
+
+    def choose_source_video(self) -> str | None:
+        return None
+
+    def report_failure(self, title: str, message: str) -> None:
+        return None
+
+
 class WorkspaceViewModel(QObject):
     """One facade over the Analysis document and the playback of its video."""
 
@@ -60,8 +92,15 @@ class WorkspaceViewModel(QObject):
         parent: QObject | None = None,
         *,
         schedule: Schedule = _after,
+        presenter: WorkflowPresenter | None = None,
     ) -> None:
         super().__init__(parent)
+        self._workflow = ApplicationWorkflow(
+            presenter if presenter is not None else _NobodyToAsk(),
+            document=document,
+            on_analysis_replaced=self._analysis_replaced,
+            on_document_changed=self._document_reported,
+        )
         self._document = document
         self._playback = playback
         self._playback.setParent(self)
@@ -200,6 +239,76 @@ class WorkspaceViewModel(QObject):
         if 0 <= index < len(PLAYBACK_RATES):
             self._playback.set_playback_rate(PLAYBACK_RATES[index])
             self.playbackChanged.emit()
+
+    # --- The Analysis this window is about --------------------------------
+    #
+    # The commands themselves belong to `application_workflow`, which decides
+    # what each one means and when a person has to be asked. What lives here
+    # is the asking: a slot QML can call, and the two values the toolbar and
+    # the window title draw from.
+
+    @Property(str, notify=documentChanged)
+    def analysisTitle(self) -> str:
+        """What the toolbar calls this Analysis, named even when it is not."""
+
+        return self._workflow.analysis.title.strip() or UNTITLED_ANALYSIS_TITLE
+
+    @Property(bool, notify=documentChanged)
+    def dirty(self) -> bool:
+        return self._workflow.document.dirty
+
+    @Property(str, notify=documentChanged)
+    def windowTitle(self) -> str:
+        """The Analysis and its unsaved state, as the workflow writes them."""
+
+        return self._workflow.window_title
+
+    @Slot(result=bool)
+    def newAnalysis(self) -> bool:
+        return self._workflow.new_analysis()
+
+    @Slot(result=bool)
+    def openAnalysis(self) -> bool:
+        return self._workflow.open_analysis()
+
+    @Slot(result=bool)
+    def saveAnalysis(self) -> bool:
+        return self._workflow.save()
+
+    @Slot(result=bool)
+    def saveAnalysisAs(self) -> bool:
+        return self._workflow.save_as()
+
+    @Slot(result=bool)
+    def requestClose(self) -> bool:
+        """Whether the window may close, asking about unsaved work first.
+
+        Every way out of the application arrives here, so the question is
+        asked once and answered in one place.
+        """
+
+        return self._workflow.may_replace_analysis()
+
+    def _analysis_replaced(self) -> None:
+        """A different Analysis is open now; drop everything transient."""
+
+        self._document = self._workflow.document
+        self._playback.pause()
+        self._playback.unload()
+        # Whatever was being primed is gone with the video it belonged to.
+        self._priming = False
+        self._active_source_id = None
+        self._position_ms = 0
+        self._duration_ms = 0
+        sources = self._document.analysis.source_videos
+        if sources:
+            self._activate_source(sources[0].id)
+        self.playbackChanged.emit()
+
+    def _document_reported(self) -> None:
+        """The Analysis or its saved state changed; redraw what says so."""
+
+        self.documentChanged.emit()
 
     # --- The Active Source video ------------------------------------------
 
