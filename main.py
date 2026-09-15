@@ -5,11 +5,10 @@ import json
 import logging
 import os
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
 from PIL import ImageFont
-from PySide6.QtCore import QFile
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
 
@@ -33,49 +32,14 @@ from workspace_presenter import WorkspacePresenter
 from workspace_view_model import WorkspaceViewModel
 
 
-#: Ask for the QML workspace without a command line.
-#:
-#: A packaged application is launched by double-clicking it, and neither a
-#: macOS bundle nor a Windows shortcut gives anyone a place to type an
-#: argument. The migration has to be demonstrable on the packaged application,
-#: not only on a developer's checkout, so the flag has an environment spelling
-#: as well — the same shape `VIDEO_ANALYSE_SOFTWARE_RENDERING` already uses.
-QML_WORKSPACE_VARIABLE = "VIDEO_ANALYSE_QML_WORKSPACE"
-
-#: The two interfaces this application can start into. Widgets is the default
-#: for as long as the QML workspace is being built: this is the expand half of
-#: an expand-and-contract migration, and nobody loses the interface they have
-#: today until #50 removes it.
-WIDGETS_INTERFACE = "widgets"
-QML_INTERFACE = "qml"
-
-
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="video-analyse")
     parser.add_argument(
         "--smoke-test",
         action="store_true",
-        help="initialize the application and bundled resources without showing the UI",
-    )
-    parser.add_argument(
-        "--qml",
-        action="store_true",
-        help="start into the QML workspace instead of the default interface",
+        help="initialize the application and bundled QML workspace without showing the UI",
     )
     return parser
-
-
-def selected_interface(
-    options: argparse.Namespace, environment: Mapping[str, str] | None = None
-) -> str:
-    """Which interface a run with these options would start into."""
-
-    if options.qml:
-        return QML_INTERFACE
-    values = os.environ if environment is None else environment
-    if values.get(QML_WORKSPACE_VARIABLE, "").strip():
-        return QML_INTERFACE
-    return WIDGETS_INTERFACE
 
 
 def build_workspace_context() -> dict[str, WorkspaceViewModel]:
@@ -83,9 +47,8 @@ def build_workspace_context() -> dict[str, WorkspaceViewModel]:
 
     One view model over one Analysis document and one player. QML never sees
     either of them; it sees this. The application opens into a new, empty
-    Analysis, and every document command from there runs through the same
-    workflow the Widgets interface has always used — the presenter is the
-    only part of that which knows what a dialog is.
+    Analysis, and every document command runs through the same workflow — the
+    presenter is the only part of that which knows what a dialog is.
     """
 
     view_model = WorkspaceViewModel(
@@ -97,29 +60,18 @@ def build_workspace_context() -> dict[str, WorkspaceViewModel]:
 
 
 def _run_smoke_check(app: QApplication, log_path: str) -> dict[str, object]:
-    from mainwindow import MainWindow
-
     font_path = overlay_font_path()
     if not font_path.is_file():
         raise FileNotFoundError(f"Bundled overlay font is missing: {font_path}")
     ImageFont.truetype(str(font_path), 12)
-
-    qt_resource = QFile(":/icons/custom.play.fill.png")
-    if not qt_resource.exists():
-        raise FileNotFoundError("Bundled Qt resources are unavailable")
 
     available = set(QFontDatabase.families())
     registered_families = [
         family for family in REQUIRED_FONT_FAMILIES if family in available
     ]
 
-    window = MainWindow()
-    app.processEvents()
-    window.close()
-
-    # Packaging a Qt Quick presentation layer is the risk this check exists to
-    # retire: the QML engine has to find its bundled scene, and the graphics
-    # backend has to draw it, on whatever machine the package landed on.
+    # The QML engine has to find its bundled scene, and the graphics backend has
+    # to draw it, on whatever machine the package landed on.
     context = build_workspace_context()
     scene = show_quick_scene_with_fallback(context_objects=context)
     app.processEvents()
@@ -154,9 +106,13 @@ def _publish_smoke_report(report: dict[str, object]) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
-    options, qt_arguments = build_argument_parser().parse_known_args(arguments)
-    interface = selected_interface(options)
-
+    parser = build_argument_parser()
+    options, qt_arguments = parser.parse_known_args(arguments)
+    if any(
+        argument == "--qml" or argument.startswith("--qml=")
+        for argument in qt_arguments
+    ):
+        parser.error("unrecognized arguments: --qml")
     configure_application_identity()
     if software_rendering_requested():
         # Detection catches a backend that reports its failure. A driver that
@@ -171,35 +127,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         register_bundled_fonts()
         if options.smoke_test:
             report = _run_smoke_check(app, str(log_path))
-            report["interface"] = interface
+            report["interface"] = "qml"
             _publish_smoke_report(report)
             return 0
 
-        if interface == QML_INTERFACE:
-            context = build_workspace_context()
-            scene = show_quick_scene_with_fallback(context_objects=context)
-            # On macOS the menu bar is a real QMenuBar with no parent — the
-            # system menu bar — so nothing else is holding it, and Close goes
-            # through the window, which is where the unsaved-changes question
-            # is asked. Everywhere else the menu bar lives inside the window,
-            # where a widget cannot go, so the window draws it from the same
-            # `menu_bar.MENUS` and nothing is built here.
-            menu_bar = (
-                build_menu_bar(context["workspace"], close_window=scene.window.close)
-                if native_menu_bar_available()
-                else None
-            )
-            # The scene owns the window; holding the engine keeps the whole
-            # object tree alive for as long as the application runs, and the
-            # context objects are published rather than owned, so they have to
-            # outlive this scope too.
-            _ = (scene, context, menu_bar)
-            return app.exec()
-
-        from mainwindow import MainWindow
-
-        window = MainWindow()
-        window.show()
+        context = build_workspace_context()
+        scene = show_quick_scene_with_fallback(context_objects=context)
+        # On macOS the menu bar is a real QMenuBar with no parent — the system
+        # menu bar — so nothing else is holding it, and Close goes through the
+        # window, which is where the unsaved-changes question is asked.
+        # Everywhere else the menu bar lives inside the QML window, drawn from
+        # the same `menu_bar.MENUS`, and nothing is built here.
+        menu_bar = (
+            build_menu_bar(context["workspace"], close_window=scene.window.close)
+            if native_menu_bar_available()
+            else None
+        )
+        # The scene owns the window; holding the engine keeps the whole object
+        # tree alive for as long as the application runs, and the context
+        # objects are published rather than owned, so they have to outlive this
+        # scope too.
+        _ = (scene, context, menu_bar)
         return app.exec()
     except Exception:
         logging.getLogger(__name__).exception("Application startup failed")

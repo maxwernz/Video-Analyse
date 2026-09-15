@@ -22,11 +22,10 @@ Run the non-interactive application check without showing the normal window:
 uv run python main.py --smoke-test
 ```
 
-The command initializes Qt, constructs the main window, verifies Qt resources and
-the bundled overlay font, loads the bundled Qt Quick scene and waits for the
-graphics backend to draw it, creates the diagnostic log, and exits non-zero on any
-failure. In isolated build environments, `VIDEO_ANALYSE_LOG_DIR` may point logging
-at a writable directory.
+The command initializes Qt, verifies the bundled fonts and overlay font, loads the
+bundled Qt Quick scene and waits for the graphics backend to draw it, creates the
+diagnostic log, and exits non-zero on any failure. In isolated build environments,
+`VIDEO_ANALYSE_LOG_DIR` may point logging at a writable directory.
 
 Qt Quick renders through a graphics backend — Direct3D 11 on Windows, Metal on
 macOS. A backend that fails to initialise is detected and the scene is redrawn in
@@ -35,16 +34,7 @@ absent. Setting `VIDEO_ANALYSE_SOFTWARE_RENDERING=1` demands software rendering
 up front, for a driver that takes the process down instead of reporting a
 failure the application could catch.
 
-The QML workspace is being built beside the existing interface, which stays the
-default until the migration completes. Start into it with:
-
-```console
-uv run python main.py --qml
-```
-
-`VIDEO_ANALYSE_QML_WORKSPACE=1` asks for the same thing without a command line,
-which is how the packaged application is started into it — a macOS bundle and a
-Windows shortcut give nobody a place to type an argument.
+The application always starts in its QML workspace.
 
 Run all source checks with:
 

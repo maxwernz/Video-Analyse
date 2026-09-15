@@ -129,7 +129,7 @@ Write-Host "==> Creating $installer"
     "/DOutputBaseFilename=$($metadata.installer)" `
     "/DSourceDirectory=$packagedApplication" `
     "/DOutputDirectory=$(Join-Path $projectRoot 'dist')" `
-    "/DIconFile=$(Join-Path $projectRoot 'icons\app_icon.ico')" `
+    "/DIconFile=$(Join-Path $projectRoot 'assets\app_icon.ico')" `
     "build_config/windows_installer.iss"
 
 if (-not (Test-Path $installer)) {
