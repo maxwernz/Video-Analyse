@@ -225,6 +225,14 @@ class ApplicationWorkflow:
         self._source_video_added(source_video)
         return source_video
 
+    def add_dropped_source_video(self, path: str | Path) -> bool:
+        """Add a dropped file only when it is a supported Source video."""
+
+        dropped = Path(path)
+        if dropped.suffix.casefold() not in SOURCE_VIDEO_SUFFIXES:
+            return False
+        return self.add_source_video_file(dropped) is not None
+
     def open_dropped_file(self, path: str | Path) -> bool:
         """Handle a dropped file as the kind of file it is.
 
@@ -234,7 +242,7 @@ class ApplicationWorkflow:
         dropped = Path(path)
         suffix = dropped.suffix.casefold()
         if suffix in SOURCE_VIDEO_SUFFIXES:
-            return self.add_source_video_file(dropped) is not None
+            return self.add_dropped_source_video(dropped)
         if suffix == ANALYSIS_FILE_SUFFIX:
             return self.open_analysis_file(dropped)
         return False

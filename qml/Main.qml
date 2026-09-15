@@ -51,6 +51,7 @@ Window {
         onNewAnalysisRequested: workspace.newAnalysis()
         onOpenAnalysisRequested: workspace.openAnalysis()
         onSaveAnalysisRequested: workspace.saveAnalysis()
+        onAddVideoRequested: workspace.addSourceVideo()
         onSidebarToggleRequested: window.sidebarVisible = !window.sidebarVisible
     }
 
@@ -58,6 +59,7 @@ Window {
 
     Sidebar {
         id: sidebar
+        objectName: "sidebar"
         anchors { top: toolbar.bottom; left: parent.left; bottom: parent.bottom }
         width: window.sidebarVisible ? sidebarWidth : 0
         visible: width > 0
@@ -101,17 +103,32 @@ Window {
 
         Stage {
             id: stage
+            objectName: "videoStage"
             anchors {
                 top: parent.top
                 left: parent.left
                 right: parent.right
                 bottom: timeline.top
             }
+            visible: workspace.hasVideo
+        }
+
+        EmptyStage {
+            anchors {
+                top: parent.top
+                left: parent.left
+                right: parent.right
+                bottom: timeline.top
+            }
+            visible: !workspace.hasVideo
+            containsDrag: windowDropArea.containsDrag
+            onAddRequested: workspace.addSourceVideo()
         }
 
         // The workspace's only seek surface (ADR 0006).
         Timeline {
             id: timeline
+            objectName: "timeline"
             anchors { left: parent.left; right: parent.right; bottom: transport.top }
             height: Theme.timelineHeight
         }
@@ -119,6 +136,18 @@ Window {
         Transport {
             id: transport
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+        }
+    }
+
+    // Add Source videos anywhere on the window; the operation stays additive.
+    DropArea {
+        id: windowDropArea
+        objectName: "windowDropArea"
+        anchors.fill: parent
+        z: Theme.dropLayer
+        onDropped: function (drop) {
+            workspace.addDroppedSourceVideos(drop.urls)
+            drop.acceptProposedAction()
         }
     }
 
@@ -166,5 +195,9 @@ Window {
         sequences: [StandardKey.Close]
         enabled: !window.menuBarOwnsTheKeys
         onActivated: window.close()
+    }
+    Shortcut {
+        sequence: Qt.platform.os === "osx" ? "Meta+Shift+V" : "Ctrl+Shift+V"
+        onActivated: workspace.addSourceVideo()
     }
 }

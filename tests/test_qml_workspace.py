@@ -24,8 +24,17 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QMetaObject, QObject, QSize, QUrl  # noqa: E402
-from PySide6.QtGui import QFontDatabase  # noqa: E402
+from PySide6.QtCore import (
+    QMetaObject,
+    QMimeData,
+    QObject,
+    QPoint,
+    QPointF,
+    QSize,
+    Qt,
+    QUrl,
+)  # noqa: E402
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QFontDatabase  # noqa: E402
 from PySide6.QtQml import QQmlComponent, QQmlApplicationEngine  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -84,6 +93,7 @@ def engine(application: QApplication) -> QQmlApplicationEngine:
 
 def test_the_application_ships_the_components_the_shell_is_made_of() -> None:
     assert {path.name for path in qml_components()} == {
+        "EmptyStage.qml",
         "IconButton.qml",
         "Main.qml",
         "Toolbar.qml",
@@ -93,6 +103,7 @@ def test_the_application_ships_the_components_the_shell_is_made_of() -> None:
         "Sidebar.qml",
         "Stage.qml",
         "Theme.qml",
+        "TextButton.qml",
         "Timeline.qml",
         "Tip.qml",
         "Transport.qml",
@@ -412,9 +423,15 @@ def _shell_with(
 class _AnswersEverything:
     """A person who always answers, so a toolbar press reaches the Analysis."""
 
-    def __init__(self, to_open: str | None = None, destination: str | None = None):
+    def __init__(
+        self,
+        to_open: str | None = None,
+        destination: str | None = None,
+        source_video: str | None = None,
+    ):
         self.to_open = to_open
         self.destination = destination
+        self.source_video = source_video
 
     def ask_unsaved_changes(self) -> UnsavedChangesChoice:
         return UnsavedChangesChoice.DISCARD
@@ -426,7 +443,7 @@ class _AnswersEverything:
         return self.destination
 
     def choose_source_video(self) -> str | None:
-        return None
+        return self.source_video
 
     def report_failure(self, title: str, message: str) -> None:
         raise AssertionError(f"{title}: {message}")
@@ -475,6 +492,112 @@ def test_the_toolbars_file_actions_reach_the_analysis(
     assert view_model.analysisTitle == UNTITLED_ANALYSIS_TITLE
 
     application.processEvents()
+    window.deleteLater()
+    del engine, component
+
+
+def test_the_empty_analysis_keeps_the_normal_workspace_and_shows_the_drop_target(
+    application: QApplication, tmp_path: Path
+) -> None:
+    video = tmp_path / "erste-halbzeit.mp4"
+    video.write_bytes(b"not real media")
+    document = AnalysisDocument.new()
+    view_model = WorkspaceViewModel(
+        document,
+        FakePlayback(),
+        presenter=_AnswersEverything(source_video=str(video)),
+    )
+
+    engine, component, window = _shell_with(view_model)
+
+    assert window.findChild(QObject, "sidebar") is not None
+    assert window.findChild(QObject, "timeline") is not None
+    assert window.findChild(QObject, "emptyStage").property("visible") is True
+    assert window.findChild(QObject, "videoStage").property("visible") is False
+    assert window.findChild(QObject, "windowDropArea") is not None
+
+    empty_stage = window.findChild(QObject, "emptyStage")
+    assert QMetaObject.invokeMethod(empty_stage, "addRequested")
+    application.processEvents()
+
+    assert [source.location for source in document.analysis.source_videos] == [str(video)]
+    assert empty_stage.property("visible") is False
+    assert window.findChild(QObject, "videoStage").property("visible") is True
+
+    window.deleteLater()
+    del engine, component
+
+
+def test_the_toolbar_can_add_a_source_video_without_replacing_existing_ones(
+    application: QApplication, tmp_path: Path
+) -> None:
+    first = tmp_path / "erste-halbzeit.mp4"
+    second = tmp_path / "zweite-halbzeit.mp4"
+    first.write_bytes(b"not real media")
+    second.write_bytes(b"not real media")
+    document = AnalysisDocument.new("Spiel gegen Kiel")
+    document.analysis.add_source_video(first.name, str(first))
+    view_model = WorkspaceViewModel(
+        document, FakePlayback(), presenter=_AnswersEverything(source_video=str(second))
+    )
+
+    engine, component, window = _shell_with(view_model)
+    toolbar = window.findChild(QObject, "toolbar")
+
+    assert QMetaObject.invokeMethod(toolbar, "addVideoRequested")
+    assert [source.location for source in document.analysis.source_videos] == [
+        str(first),
+        str(second),
+    ]
+
+    window.deleteLater()
+    del engine, component
+
+
+def test_dropping_videos_on_the_window_adds_every_one_to_the_analysis(
+    application: QApplication, tmp_path: Path
+) -> None:
+    first = tmp_path / "erste-halbzeit.mp4"
+    second = tmp_path / "zweite-halbzeit.mov"
+    first.write_bytes(b"not real media")
+    second.write_bytes(b"not real media")
+    document = AnalysisDocument.new()
+    view_model = WorkspaceViewModel(document, FakePlayback())
+    engine, component, window = _shell_with(view_model)
+    application.processEvents()
+    warnings: list[str] = []
+    engine.warnings.connect(
+        lambda reported: warnings.extend(warning.toString() for warning in reported)
+    )
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(first)), QUrl.fromLocalFile(str(second))])
+
+    entered = QDragEnterEvent(
+        QPoint(700, 450),
+        Qt.DropAction.CopyAction,
+        mime,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    dropped = QDropEvent(
+        QPointF(700, 450),
+        Qt.DropAction.CopyAction,
+        mime,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    assert application.sendEvent(window, entered) is True
+    assert entered.isAccepted() is True
+    assert application.sendEvent(window, dropped) is True
+    application.processEvents()
+
+    assert dropped.isAccepted() is True
+    assert [source.location for source in document.analysis.source_videos] == [
+        str(first),
+        str(second),
+    ]
+    assert warnings == []
+
     window.deleteLater()
     del engine, component
 

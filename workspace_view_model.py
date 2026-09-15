@@ -21,10 +21,10 @@ import time
 from typing import Protocol
 from uuid import UUID
 
-from PySide6.QtCore import Property, QObject, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import Property, QObject, Qt, QTimer, QUrl, Signal, Slot
 
 import timecode
-from analysis import AnalysisDocument, UnsavedChangesChoice
+from analysis import AnalysisDocument, SourceVideo, UnsavedChangesChoice
 from application_workflow import (
     UNTITLED_ANALYSIS_TITLE,
     ApplicationWorkflow,
@@ -185,6 +185,7 @@ class WorkspaceViewModel(QObject):
             document=document,
             on_analysis_replaced=self._analysis_replaced,
             on_document_changed=self._document_reported,
+            on_source_video_added=self._source_video_added,
         )
         self._document = document
         self._playback = playback
@@ -574,6 +575,26 @@ class WorkspaceViewModel(QObject):
         return self._workflow.save_as()
 
     @Slot(result=bool)
+    def addSourceVideo(self) -> bool:
+        """Ask for one Source video and add it to this Analysis."""
+
+        return self._workflow.add_source_video() is not None
+
+    @Slot(list, result=bool)
+    def addDroppedSourceVideos(self, urls: list[object]) -> bool:
+        """Add every supported local Source video in one window drop."""
+
+        added = False
+        for value in urls:
+            url = value if isinstance(value, QUrl) else QUrl(str(value))
+            if not url.isLocalFile():
+                continue
+            path = url.toLocalFile()
+            if self._workflow.add_dropped_source_video(path):
+                added = True
+        return added
+
+    @Slot(result=bool)
     def requestClose(self) -> bool:
         """Whether the window may close, asking about unsaved work first.
 
@@ -582,6 +603,15 @@ class WorkspaceViewModel(QObject):
         """
 
         return self._workflow.may_replace_analysis()
+
+    def _source_video_added(self, source_video: SourceVideo) -> None:
+        """Show the first Source video; leave an existing review uninterrupted."""
+
+        if self._active_source_id is None:
+            self._activate_source(source_video.id)
+            return
+        self._refresh_projections()
+        self.documentChanged.emit()
 
     def _analysis_replaced(self) -> None:
         """A different Analysis is open now; drop everything transient."""
