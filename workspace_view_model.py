@@ -567,6 +567,38 @@ class WorkspaceViewModel(QObject):
         self._refresh_projections()
         self.documentChanged.emit()
 
+    @Slot(str)
+    def removeClip(self, clip_id: str) -> None:
+        """Remove one Clip and redraw the surfaces that named it."""
+
+        identity = _as_uuid(clip_id)
+        known = {clip.id for clip in self._document.analysis.clips}
+        if identity is None or identity not in known:
+            return
+        self._document.analysis.remove_clip(identity)
+        if identity == self._selected_clip_id:
+            self._selected_clip_id = None
+            self.selectionChanged.emit()
+        self.refresh()
+
+    @Slot(str)
+    def removeCategory(self, category_id: str) -> None:
+        """Remove a Category; its Clips become uncategorized in the Analysis."""
+
+        identity = _as_uuid(category_id)
+        known = {category.id for category in self._document.analysis.categories}
+        if identity is None or identity not in known:
+            return
+        self._document.analysis.remove_category(identity)
+        self.refresh()
+
+    @Slot(str)
+    def setAnalysisTitle(self, title: str) -> None:
+        """Retitle this Analysis without changing its identity."""
+
+        self._document.analysis.set_title(title)
+        self.documentChanged.emit()
+
     @Slot()
     def toggleMuted(self) -> None:
         self._playback.toggle_muted()
@@ -1105,12 +1137,26 @@ class WorkspaceViewModel(QObject):
         self._abandon_pending()
         self._active_source_id = source_id
         video = self._document.analysis.source_video(source_id)
+        # A different recording is a different length, and the media player
+        # announces the new one a moment after its source is set. Until it
+        # does, this Source video has no scale at all: keeping the previous
+        # one's would draw these Clips against the wrong ruler and read the
+        # wrong total time back to the analyst.
+        self._forget_duration()
         self._playback.load(video.location)
         self._refresh_projections()
         if video.duration_ms is not None:
             self._duration_reported(video.duration_ms)
         self._prime_video_surface()
         self.documentChanged.emit()
+        self.playbackChanged.emit()
+
+    def _forget_duration(self) -> None:
+        """Drop the length of whatever was playing, marks and all."""
+
+        self._duration_ms = 0
+        if self._ruler_width_px > 0:
+            self._ruler.layout(0, self._ruler_width_px)
 
     def _refresh_projections(self) -> None:
         """Re-project the Analysis onto everything that draws it.

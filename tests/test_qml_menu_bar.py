@@ -79,6 +79,10 @@ class RecordingCommands:
         self.ran.append("save as")
         return True
 
+    def addSourceVideo(self) -> bool:
+        self.ran.append("add video")
+        return True
+
 
 def _widget_entries(bar: QMenuBar) -> list[tuple[str, str, str, str]]:
     """The `QMenuBar`, read back as title, text, sequence and command."""
@@ -147,6 +151,7 @@ def test_the_drawn_menu_carries_every_command_and_its_platform_sequence(
         menu_bar.OPEN,
         menu_bar.SAVE,
         menu_bar.SAVE_AS,
+        menu_bar.ADD_SOURCE_VIDEO,
         menu_bar.CLOSE,
     ]
     for entry, defined in zip(drawn, menu_bar.entries_of(), strict=True):
@@ -206,10 +211,14 @@ class _AnswersEverything:
     """A person who always answers, so an entry reaches the Analysis."""
 
     def __init__(
-        self, to_open: str | None = None, destination: str | None = None
+        self,
+        to_open: str | None = None,
+        destination: str | None = None,
+        source_video: str | None = "/videos/menu.mp4",
     ) -> None:
         self.to_open = to_open
         self.destination = destination
+        self.source_video = source_video
 
     def ask_unsaved_changes(self) -> UnsavedChangesChoice:
         return UnsavedChangesChoice.DISCARD
@@ -221,7 +230,7 @@ class _AnswersEverything:
         return self.destination
 
     def choose_source_video(self) -> str | None:
-        return None
+        return self.source_video
 
     def report_failure(self, title: str, message: str) -> None:
         raise AssertionError(f"{title}: {message}")

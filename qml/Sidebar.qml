@@ -238,14 +238,33 @@ Rectangle {
         objectName: "videoList"
         anchors { top: tabsRule.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
         visible: workspace.sidebarTab === "videos"
+        focus: visible
         clip: true
         model: workspace.sourceModel
         boundsBehavior: Flickable.StopAtBounds
         ScrollHint { flickable: videoList }
 
+        Keys.onDownPressed: function (event) {
+            if (videoList.currentIndex >= videoList.count - 1)
+                return
+            videoList.currentIndex += 1
+            workspace.selectSourceVideo(videoList.currentItem.sourceId)
+            event.accepted = true
+        }
+
+        Keys.onUpPressed: function (event) {
+            if (videoList.currentIndex <= 0)
+                return
+            videoList.currentIndex -= 1
+            workspace.selectSourceVideo(videoList.currentItem.sourceId)
+            event.accepted = true
+        }
+
         delegate: Item {
             id: videoItem
             required property var model
+            required property int index
+            property string sourceId: videoItem.model.sourceId
 
             width: videoList.width
             height: Theme.sourceRowHeight
@@ -330,7 +349,10 @@ Rectangle {
                 id: videoArea
                 anchors.fill: parent
                 hoverEnabled: true
-                onClicked: workspace.selectSourceVideo(videoItem.model.sourceId)
+                onClicked: {
+                    videoList.currentIndex = videoItem.index
+                    workspace.selectSourceVideo(videoItem.model.sourceId)
+                }
             }
         }
     }

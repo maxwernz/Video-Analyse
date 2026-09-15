@@ -45,6 +45,8 @@ OPEN_ANALYSIS_TEXT = "Analyse öffnen …"
 SAVE_ANALYSIS_TEXT = "Analyse speichern"
 SAVE_ANALYSIS_AS_TEXT = "Analyse speichern unter …"
 CLOSE_TEXT = "Schließen"
+ADD_SOURCE_VIDEO_TEXT = "Video hinzufügen …"
+ADD_SOURCE_VIDEO_SHORTCUT = QKeySequence("Ctrl+Shift+O")
 
 #: What an entry names. A command is a name rather than a callable because the
 #: QML menu bar receives its entries as data over the view model boundary, and
@@ -54,6 +56,7 @@ OPEN = "open"
 SAVE = "save"
 SAVE_AS = "saveAs"
 CLOSE = "close"
+ADD_SOURCE_VIDEO = "addSourceVideo"
 
 
 class DocumentCommands(Protocol):
@@ -67,6 +70,8 @@ class DocumentCommands(Protocol):
 
     def saveAnalysisAs(self) -> bool: ...
 
+    def addSourceVideo(self) -> bool: ...
+
 
 @dataclass(frozen=True)
 class MenuEntry:
@@ -74,7 +79,7 @@ class MenuEntry:
 
     command: str
     text: str
-    shortcut: QKeySequence.StandardKey
+    shortcut: QKeySequence.StandardKey | QKeySequence
 
 
 @dataclass(frozen=True)
@@ -103,6 +108,12 @@ MENUS: tuple[Menu, ...] = (
             SEPARATOR,
             MenuEntry(SAVE, SAVE_ANALYSIS_TEXT, QKeySequence.StandardKey.Save),
             MenuEntry(SAVE_AS, SAVE_ANALYSIS_AS_TEXT, QKeySequence.StandardKey.SaveAs),
+            SEPARATOR,
+            MenuEntry(
+                ADD_SOURCE_VIDEO,
+                ADD_SOURCE_VIDEO_TEXT,
+                ADD_SOURCE_VIDEO_SHORTCUT,
+            ),
             SEPARATOR,
             MenuEntry(CLOSE, CLOSE_TEXT, QKeySequence.StandardKey.Close),
         ),
@@ -151,6 +162,7 @@ def command_runners(
         OPEN: commands.openAnalysis,
         SAVE: commands.saveAnalysis,
         SAVE_AS: commands.saveAnalysisAs,
+        ADD_SOURCE_VIDEO: commands.addSourceVideo,
         CLOSE: close_window,
     }
 

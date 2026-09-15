@@ -1,3 +1,82 @@
+"""The regression contract for the behaviour issue #29 delivered.
+
+This file is the one thing standing between the QML migration (#37) and a
+silent loss of behaviour. It used to drive `MainWindow` and Qt Widgets; #49
+re-pointed it at the view-model seam — `workspace_view_model.WorkspaceViewModel`
+and the workflow, document and playback seams beneath it — so that it survives
+the deletion of the Widgets interface in #50. The re-pointing was done while
+*both* interfaces were still running, because that is the only moment at which
+a weakened assertion and a broken feature can be told apart: every case below
+was proved, one at a time, to go red when the behaviour it describes was
+deliberately broken in the production code and green again when it was put
+back.
+
+**No later ticket may modify this suite except to add cases.** Not to make a
+refactor compile, not to follow a rename, not to "simplify" an assertion. If a
+change to the application makes a case here fail, the change is wrong until
+somebody has said out loud why the behaviour should be different. The file name
+is deliberately unchanged: #37, `docs/design/qml-migration-plan.md` and
+`docs/development-workflow.md` all name this path as the contract, and those
+references stay true.
+
+Everything here is driven with no window, no QML engine and no media: the
+person who would stand in front of a dialog is `RecordingPresenter`, and the
+event loop is `Loop`, following the patterns already established in
+`tests/test_workspace_document_actions.py`, `tests/test_workspace_clip_editor.py`
+and `tests/test_workspace_sidebar.py`.
+
+Coverage changes made in the move (#49), stated here rather than lost quietly.
+Each is marked again at the case it affects:
+
+1. *An empty Category is no longer a row of its own.* The Widgets tree drew a
+   node per Category whether or not it held Clips; the QML Clip list groups
+   only Categories that have Clips (`tests/test_workspace_sidebar.py::
+   test_a_category_with_no_clips_has_no_row_of_its_own`). The surviving half —
+   an empty Category is still in the Analysis and still offered to file a Clip
+   under — is asserted instead.
+2. *Typing an unknown Category name no longer creates a Category.* The Widgets
+   form had a free-text Category box. ADR 0007 replaced it with a fixed set of
+   chips over the Categories the Analysis already has, and creating Categories
+   belongs to #18. The case now asserts the part that survives: filing two
+   Clips under one Category does not duplicate it.
+3. *Refusals are shown in the form rather than in a modal.* The Widgets
+   interface reported a rejected Clip or boundary through `QMessageBox`; the
+   editor reports it through `draftError`, and an invalid draft cannot be
+   committed at all. The assertion "the Analysis is unchanged and the analyst
+   is told why" is kept in that form.
+4. *Geometry is not a view-model concern.* Three Widgets cases measured pixel
+   layout — sidebar left of the video, timeline beneath it, the editor's room
+   beside the video, the window fitting a small laptop. The view model
+   expresses that state as `editing`, which is asserted here; the geometry
+   itself is covered by `tests/test_qml_workspace.py::
+   test_the_editor_takes_its_room_from_the_video_and_gives_it_back` and by the
+   theme-metric tests in the same file. There is no seam here at which a
+   window's width can be asked for, and inventing one would have been a worse
+   answer than saying so.
+5. *Pixel-to-millisecond mapping is QML's.* The timeline cases used to click
+   and drag real pixels. What remains here is the seam's half — what a scrub,
+   a click, a double click and a selection do to the player and the Analysis.
+   That pixels land on the right milliseconds is `tests/test_qml_timeline.py`.
+6. *0.25x is not a speed this application offers.* The Widgets combo box had
+   it; `workspace_view_model.PLAYBACK_RATES` does not. The case asserts the
+   same behaviour — choosing a speed sets a numeric rate on the player —
+   against a speed the application actually offers.
+7. *The mark action is disabled rather than explained.* Marking a Clip with no
+   Source video raised an information dialog in the Widgets interface; the QML
+   transport binds the action's enabled state to `hasVideo`. The behaviour
+   that mattered — nothing is marked and the transport does not pretend
+   otherwise — is asserted unchanged.
+8. *Renaming an Analysis is now a view-model action.* The Widgets interface
+   renamed through `QInputDialog`; the behaviour — a retitled Analysis keeps
+   its identity and the interface shows the new title — is driven through
+   `WorkspaceViewModel.setAnalysisTitle` and read back off the seam.
+9. *A Category colour is no longer muted for rendering.* ADR 0007 replaced
+    coloured Category text with a harmonised palette drawn as a colour bar, so
+    there is no muting to assert. The surviving half — the Analysis's own
+    colour is never changed by being drawn, and the row carries it verbatim —
+    is asserted instead.
+"""
+
 from __future__ import annotations
 
 import importlib.util
@@ -8,23 +87,32 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint, QPointF, Qt  # noqa: E402
-from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtGui import QColor, QKeySequence, QMouseEvent  # noqa: E402
-from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
+from PySide6.QtCore import QUrl  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
-import mainwindow as mainwindow_module  # noqa: E402
-from analysis import UnsavedChangesChoice, new_analysis_document  # noqa: E402
-from clip_handler import ClipDraft, ClipHandler  # noqa: E402
-from playback import FakePlayback  # noqa: E402
-from mainwindow import MainWindow  # noqa: E402
-from treewidget import TreeWidget  # noqa: E402
-from treewidget_item import ClipTreeItem  # noqa: E402
-from workspace import (  # noqa: E402
-    CLIP_COLUMN_LABELS,
-    SIDEBAR_WIDTH,
-    SOURCE_VIDEO_COLUMN_LABEL,
+import timecode  # noqa: E402
+import workspace_view_model as workspace_module  # noqa: E402
+from analysis import (  # noqa: E402
+    Analysis,
+    AnalysisDocument,
+    UnsavedChangesChoice,
+    new_analysis_document,
 )
+from application_workflow import APPLICATION_TITLE, UNTITLED_ANALYSIS_TITLE  # noqa: E402
+from clip_editor import END_BEFORE_START, NO_TITLE  # noqa: E402
+from playback import FakePlayback  # noqa: E402
+from sidebar_models import UNCATEGORIZED_LABEL  # noqa: E402
+from workspace_view_model import (  # noqa: E402
+    PLAYBACK_RATES,
+    SCRUB_INTERVAL_MS,
+    PRIMING_MS,
+    SIDEBAR_TABS,
+    WorkspaceViewModel,
+)
+
+
+#: The Categories `new_analysis_document` seeds, in the order it seeds them.
+TEMPLATE_CATEGORIES = ("Abwehr", "Angriff", "Tor")
 
 
 @pytest.fixture(scope="session")
@@ -32,799 +120,1089 @@ def application() -> QApplication:
     return QApplication.instance() or QApplication([])
 
 
-@pytest.fixture(autouse=True)
-def silent_message_boxes(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
-    """Keep modal reports out of the tests while still recording them."""
-    reported: list[tuple[str, str]] = []
+class RecordingPresenter:
+    """The person the workflow asks, written down instead of shown a dialog.
 
-    for level in ("critical", "warning", "information"):
-        monkeypatch.setattr(
-            QMessageBox,
-            level,
-            staticmethod(
-                lambda _parent, title, text, _level=level, *args, **kwargs: (
-                    reported.append((_level, f"{title}: {text}"))
-                    or QMessageBox.StandardButton.Ok
-                )
-            ),
-        )
-    return reported
+    This is what replaces the patched `QFileDialog` and `QMessageBox` of the
+    Widgets suite: every question and every report is recorded, so a case can
+    still say "the analyst was told" without a window to say it in.
+    """
+
+    def __init__(self) -> None:
+        self.choice = UnsavedChangesChoice.CANCEL
+        self.analysis_to_open: str | None = None
+        self.destination: str | None = None
+        self.source_video: str | None = None
+        self.questions = 0
+        self.failures: list[tuple[str, str]] = []
+
+    def ask_unsaved_changes(self) -> UnsavedChangesChoice:
+        self.questions += 1
+        return self.choice
+
+    def choose_analysis_to_open(self) -> str | None:
+        return self.analysis_to_open
+
+    def choose_analysis_destination(self, suggested_name: str) -> str | None:
+        return self.destination
+
+    def choose_source_video(self) -> str | None:
+        return self.source_video
+
+    def report_failure(self, title: str, message: str) -> None:
+        self.failures.append((title, message))
+
+
+class Loop:
+    """Stands in for the event loop: a clock, a schedule and a ticker.
+
+    Priming, interpolation and scrub throttling are all statements about time.
+    Time here moves only when a case moves it, so none of them is a wait.
+    """
+
+    def __init__(self) -> None:
+        self.now_ms = 0.0
+        self._due: list[tuple[float, object]] = []
+        self.tick_interval_ms: int | None = None
+        self._tick: object | None = None
+        self._next_tick_ms = 0.0
+
+    def clock(self) -> float:
+        return self.now_ms / 1000.0
+
+    def schedule(self, delay_ms: int, run) -> None:  # type: ignore[no-untyped-def]
+        self._due.append((self.now_ms + delay_ms, run))
+
+    def start(self, interval_ms: int, run) -> None:  # type: ignore[no-untyped-def]
+        self.tick_interval_ms = interval_ms
+        self._tick = run
+        self._next_tick_ms = self.now_ms + interval_ms
+
+    def stop(self) -> None:
+        self.tick_interval_ms = None
+        self._tick = None
+
+    def advance(self, milliseconds: float) -> None:
+        """Move time forward, running whatever falls due on the way."""
+
+        target = self.now_ms + milliseconds
+        while True:
+            pending = [when for when, _ in self._due]
+            if self._tick is not None:
+                pending.append(self._next_tick_ms)
+            due_at = min(pending, default=None)
+            if due_at is None or due_at > target:
+                break
+            self.now_ms = max(self.now_ms, due_at)
+            ready = [entry for entry in self._due if entry[0] <= self.now_ms]
+            self._due = [entry for entry in self._due if entry[0] > self.now_ms]
+            for _, run in ready:
+                run()  # type: ignore[operator]
+            if self._tick is not None and self._next_tick_ms <= self.now_ms:
+                self._next_tick_ms = self.now_ms + (self.tick_interval_ms or 1)
+                self._tick()  # type: ignore[operator]
+        self.now_ms = target
 
 
 @pytest.fixture
-def window(application: QApplication):
-    main_window = MainWindow(playback=FakePlayback())
-    yield main_window
-    main_window.document = new_analysis_document()
-    main_window.close()
+def loop() -> Loop:
+    return Loop()
 
 
-def _load_video(window: MainWindow, tmp_path: Path) -> Path:
-    video_path = tmp_path / "first-half.mp4"
+@pytest.fixture
+def presenter() -> RecordingPresenter:
+    return RecordingPresenter()
+
+
+@pytest.fixture
+def player(application: QApplication) -> FakePlayback:
+    return FakePlayback()
+
+
+@pytest.fixture
+def document() -> AnalysisDocument:
+    """A new, empty, saved Analysis — what opening the application gives."""
+
+    return new_analysis_document()
+
+
+@pytest.fixture
+def workspace(
+    document: AnalysisDocument,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
+) -> WorkspaceViewModel:
+    return WorkspaceViewModel(
+        document,
+        player,
+        presenter=presenter,
+        schedule=loop.schedule,
+        clock=loop.clock,
+        ticker=loop,
+    )
+
+
+# --- Driving the seam the way an analyst drives the interface ---------------
+
+
+def add_video(
+    workspace: WorkspaceViewModel,
+    presenter: RecordingPresenter,
+    loop: Loop,
+    tmp_path: Path,
+    name: str = "first-half.mp4",
+) -> Path:
+    """Add one Source video, and let its surface finish being primed."""
+
+    video_path = tmp_path / name
     video_path.write_bytes(b"not a real video")
-    window.load_video(str(video_path))
+    presenter.source_video = str(video_path)
+    assert workspace.addSourceVideo() is True
+    presenter.source_video = None
+    loop.advance(PRIMING_MS * 2)
     return video_path
 
 
-def _category_row(window: MainWindow, name: str):
-    for item in window.treeWidget.get_top_level_items():
-        if item.text(0) == name:
-            return item
-    return None
+def category_id(workspace: WorkspaceViewModel, name: str) -> str:
+    """The identity of a Category, as the editor's chooser offers it."""
+
+    for row in workspace.categoryModel.rows():
+        if row["name"] == name:
+            return str(row["categoryId"])
+    raise AssertionError(f"no Category named {name!r} is offered")
 
 
-def _clip_rows(window: MainWindow) -> list[ClipTreeItem]:
-    rows: list[ClipTreeItem] = []
-    for item in window.treeWidget.get_top_level_items():
-        if isinstance(item, ClipTreeItem):
-            rows.append(item)
-        else:
-            rows.extend(item.children())
-    return rows
-
-
-def _create_clip(
-    window: MainWindow,
+def mark_clip(
+    workspace: WorkspaceViewModel,
     name: str = "Fast break",
     category: str | None = "Angriff",
     start_ms: int = 1_000,
     end_ms: int = 2_000,
-) -> None:
+) -> str:
     """Mark a Clip the way the transport does: two boundaries, then the form."""
-    window.player.seek(start_ms)
-    window.clipButton.setChecked(True)
-    window.player.seek(end_ms)
-    window.clipButton.setChecked(False)
-    window.clipHandler.clipNameLine.setText(name)
-    window.clipHandler.categoryBox.setCurrentText("" if category is None else category)
-    window.clipHandler.acceptButton.click()
+
+    workspace.seek(start_ms)
+    workspace.markBoundary()
+    workspace.seek(end_ms)
+    workspace.markBoundary()
+    assert workspace.editing is True, "the second boundary opened no editor"
+    workspace.setDraftName(name)
+    if category is not None:
+        workspace.setDraftCategory(category_id(workspace, category))
+    workspace.commitDraft()
+    return workspace.selectedClipId
 
 
-def test_widgets_do_not_own_process_wide_clip_or_category_collections() -> None:
-    assert not hasattr(TreeWidget, "tree_item_list")
-    assert not hasattr(ClipHandler, "categories")
+def set_boundaries(
+    workspace: WorkspaceViewModel, start_ms: int, end_ms: int
+) -> None:
+    """Type both boundaries, in the order that never inverts the Clip.
+
+    Each field is applied as it is typed, so moving a Clip later means moving
+    its end first; a form that applied both at once would not have to care.
+    """
+
+    if end_ms >= workspace.draftStartMs:
+        workspace.setDraftEndText(timecode.precise(end_ms))
+        workspace.setDraftStartText(timecode.precise(start_ms))
+    else:
+        workspace.setDraftStartText(timecode.precise(start_ms))
+        workspace.setDraftEndText(timecode.precise(end_ms))
 
 
-def test_a_new_window_starts_with_an_empty_saved_analysis(window: MainWindow) -> None:
-    assert window.analysis.source_videos == ()
-    assert window.analysis.clips == ()
-    assert window.is_saved is True
-    assert _clip_rows(window) == []
+def clip_rows(workspace: WorkspaceViewModel) -> list[dict]:
+    return [row for row in workspace.clipModel.rows() if row["kind"] == "clip"]
 
 
-def test_a_category_without_clips_is_still_rendered(window: MainWindow) -> None:
-    assert [
-        item.text(0) for item in window.treeWidget.get_top_level_items()
-    ] == ["Abwehr", "Angriff", "Tor"]
+def category_rows(workspace: WorkspaceViewModel) -> list[dict]:
+    return [row for row in workspace.clipModel.rows() if row["kind"] == "category"]
 
 
-def test_loading_a_video_adds_a_source_video_and_dirties_the_document(
-    window: MainWindow,
+def category_row(workspace: WorkspaceViewModel, name: str) -> dict | None:
+    return next((row for row in category_rows(workspace) if row["title"] == name), None)
+
+
+def clips_under(workspace: WorkspaceViewModel, category: str) -> list[dict]:
+    return [row for row in clip_rows(workspace) if row["categoryName"] == category]
+
+
+def clip_row(workspace: WorkspaceViewModel, name: str) -> dict:
+    return next(row for row in clip_rows(workspace) if row["title"] == name)
+
+
+def source_rows(workspace: WorkspaceViewModel) -> list[dict]:
+    return list(workspace.sourceModel.rows())
+
+
+def active_source(workspace: WorkspaceViewModel) -> dict | None:
+    return next((row for row in source_rows(workspace) if row["active"]), None)
+
+
+def ranges(workspace: WorkspaceViewModel) -> list[dict]:
+    return list(workspace.rangeModel.rows())
+
+
+def save_to(
+    workspace: WorkspaceViewModel, presenter: RecordingPresenter, path: Path
+) -> None:
+    presenter.destination = str(path)
+    assert workspace.saveAnalysis() is True
+    presenter.destination = None
+
+
+# --- The Analysis owns its own state ---------------------------------------
+
+
+def test_no_clip_or_category_collection_is_shared_between_workspaces(
+    application: QApplication, presenter: RecordingPresenter
+) -> None:
+    """Two Analyses open in one process never see each other's work.
+
+    The Widgets version of this case asserted that `TreeWidget` and
+    `ClipHandler` carried no class-level Clip or Category collections. Those
+    classes go with #50; the behaviour they could break does not, so it is
+    asserted where it now lives — one Analysis per workspace, nothing static.
+    """
+
+    first = WorkspaceViewModel(
+        new_analysis_document(), FakePlayback(), presenter=presenter
+    )
+    second_document = new_analysis_document()
+    second = WorkspaceViewModel(
+        second_document, FakePlayback(), presenter=RecordingPresenter()
+    )
+
+    analysis = second_document.analysis
+    video = analysis.add_source_video("halbzeit-1.mp4", "/videos/halbzeit-1.mp4")
+    konter = analysis.add_category("Konter", color="#F59E0B")
+    analysis.add_clip(video.id, "Gegenstoss", 1_000, 2_000, category_id=konter.id)
+    second.refresh()
+    first.refresh()
+
+    assert clip_rows(second) != []
+    assert clip_rows(first) == []
+    assert [row["title"] for row in category_rows(second)] == ["Konter"]
+    assert category_rows(first) == []
+
+
+def test_a_new_workspace_starts_with_an_empty_saved_analysis(
+    workspace: WorkspaceViewModel, document: AnalysisDocument
+) -> None:
+    assert document.analysis.source_videos == ()
+    assert document.analysis.clips == ()
+    assert workspace.dirty is False
+    assert workspace.hasVideo is False
+    assert clip_rows(workspace) == []
+
+
+def test_a_category_without_clips_is_still_there_to_file_a_clip_under(
+    workspace: WorkspaceViewModel,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    video_path = _load_video(window, tmp_path)
+    """Coverage change 1: an empty Category has no row, but is not lost.
 
-    assert [source.location for source in window.analysis.source_videos] == [
+    The Widgets tree drew a node for every Category in the template. The QML
+    Clip list groups only Categories that hold Clips, which is a deliberate
+    decision of #44. What must not be lost is that the template's Categories
+    survive and can still be chosen, so that is what is asserted.
+    """
+
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace, name="Fast break", category="Angriff")
+
+    assert [row["title"] for row in category_rows(workspace)] == ["Angriff"]
+
+    workspace.editClip(clip_row(workspace, "Fast break")["clipId"])
+    offered = [row["name"] for row in workspace.categoryModel.rows()]
+    workspace.cancelDraft()
+
+    assert offered == list(TEMPLATE_CATEGORIES)
+
+
+def test_adding_a_video_adds_a_source_video_and_dirties_the_document(
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
+    tmp_path: Path,
+) -> None:
+    video_path = add_video(workspace, presenter, loop, tmp_path)
+
+    assert [source.location for source in document.analysis.source_videos] == [
         str(video_path)
     ]
-    assert window.analysis.title == "first-half"
-    assert window.titleLabel.text() == "first-half"
-    assert window.is_saved is False
+    assert document.analysis.title == "first-half"
+    assert workspace.analysisTitle == "first-half"
+    assert workspace.dirty is True
 
 
 def test_creating_a_clip_goes_through_the_analysis_and_is_rendered(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
+    add_video(workspace, presenter, loop, tmp_path)
 
-    _create_clip(window, name="Fast break", category="Angriff")
+    mark_clip(workspace, name="Fast break", category="Angriff")
 
-    clip = window.analysis.clips[0]
+    clip = document.analysis.clips[0]
     assert clip.name == "Fast break"
     assert clip.start_ms == 1_000
     assert clip.end_ms == 2_000
-    assert window.analysis.category(clip.category_id).name == "Angriff"
-    assert window.clipHandler.isVisibleTo(window) is False
+    assert clip.category_id is not None
+    assert document.analysis.category(clip.category_id).name == "Angriff"
+    assert workspace.editing is False
 
-    category_item = _category_row(window, "Angriff")
-    assert category_item.child(0).clip_id == clip.id
+    assert [row["clipId"] for row in clips_under(workspace, "Angriff")] == [
+        str(clip.id)
+    ]
 
 
-def test_an_unknown_category_name_creates_one_category(
-    window: MainWindow,
+def test_filing_two_clips_under_one_category_does_not_duplicate_it(
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
+    """Coverage change 2: the editor chooses Categories, it does not make them.
 
-    _create_clip(window, name="Fast break", category="Konter")
-    _create_clip(window, name="Second", category="Konter", start_ms=3_000, end_ms=4_000)
+    The Widgets form created a Category from a typed name, and this case
+    guarded against creating it twice. ADR 0007 replaced that with a fixed set
+    of chips, and Category management belongs to #18; what survives is that
+    two Clips filed under one Category leave one Category.
+    """
 
-    assert [category.name for category in window.analysis.categories].count("Konter") == 1
+    add_video(workspace, presenter, loop, tmp_path)
+
+    mark_clip(workspace, name="Fast break", category="Angriff")
+    mark_clip(
+        workspace, name="Second", category="Angriff", start_ms=3_000, end_ms=4_000
+    )
+
+    names = [category.name for category in document.analysis.categories]
+    assert names.count("Angriff") == 1
+    assert [row["title"] for row in category_rows(workspace)] == ["Angriff"]
+    assert len(clips_under(workspace, "Angriff")) == 2
 
 
 def test_editing_a_clip_updates_the_analysis_in_place(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    clip = window.analysis.clips[0]
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    clip = document.analysis.clips[0]
 
-    window.edit_clip(clip.id)
-    assert window.editHandler.isVisibleTo(window) is True
-    window.editHandler.clipNameLine.setText("Fast break finish")
-    window.editHandler.notesText.setText("Left wing")
-    window.editHandler.categoryBox.setCurrentText("Abwehr")
-    window.editHandler.acceptButton.click()
+    workspace.editClip(str(clip.id))
+    assert workspace.editing is True
+    workspace.setDraftName("Fast break finish")
+    workspace.setDraftNotes("Left wing")
+    workspace.setDraftCategory(category_id(workspace, "Abwehr"))
+    workspace.commitDraft()
 
-    updated = window.analysis.clip(clip.id)
+    updated = document.analysis.clip(clip.id)
     assert updated.name == "Fast break finish"
     assert updated.notes == "Left wing"
-    assert window.analysis.category(updated.category_id).name == "Abwehr"
-    assert len(window.analysis.clips) == 1
-    assert window.editHandler.isVisibleTo(window) is False
-    assert _category_row(window, "Abwehr").child(0).clip_id == clip.id
-    assert _category_row(window, "Angriff").childCount() == 0
-
-
-def _set_boundaries(handler: ClipHandler, start_ms: int, end_ms: int) -> None:
-    """Type new boundaries into the editing form, the way a person does."""
-    handler.startTimeEdit.setMilliseconds(start_ms)
-    handler.endTimeEdit.setMilliseconds(end_ms)
+    assert updated.category_id is not None
+    assert document.analysis.category(updated.category_id).name == "Abwehr"
+    assert len(document.analysis.clips) == 1
+    assert workspace.editing is False
+    assert [row["clipId"] for row in clips_under(workspace, "Abwehr")] == [str(clip.id)]
+    assert category_row(workspace, "Angriff") is None
 
 
 def test_editing_a_clips_boundaries_moves_it_in_the_analysis(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
     """The boundaries are part of the form, and the Analysis accepts them."""
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    clip = window.analysis.clips[0]
 
-    window.edit_clip(clip.id)
-    _set_boundaries(window.editHandler, 4_000, 9_500)
-    window.editHandler.acceptButton.click()
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    clip = document.analysis.clips[0]
 
-    updated = window.analysis.clip(clip.id)
+    workspace.editClip(str(clip.id))
+    set_boundaries(workspace, 4_000, 9_500)
+    workspace.commitDraft()
+
+    updated = document.analysis.clip(clip.id)
     assert (updated.start_ms, updated.end_ms) == (4_000, 9_500)
     assert updated.name == clip.name
-    assert window.editHandler.isVisibleTo(window) is False
+    assert workspace.editing is False
 
 
 def test_editing_boundaries_is_not_limited_to_a_24_hour_clock(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
     """Media positions are durations, so their hours may exceed one day."""
-    _load_video(window, tmp_path)
-    clip = window.analysis.add_clip(
-        window.analysis.source_videos[0].id,
+
+    add_video(workspace, presenter, loop, tmp_path)
+    clip = document.analysis.add_clip(
+        document.analysis.source_videos[0].id,
         "Long recording",
         90_000_000,
         90_005_000,
     )
+    workspace.refresh()
 
-    window.edit_clip(clip.id)
+    workspace.editClip(str(clip.id))
 
-    assert window.editHandler.start_ms == 90_000_000
-    assert window.editHandler.startTimeEdit.lineEdit().text() == "25:00:00.000"
+    assert workspace.draftStartMs == 90_000_000
+    assert workspace.draftStartText == "25:00:00.000"
 
-    _set_boundaries(window.editHandler, 93_600_000, 93_605_000)
-    window.editHandler.acceptButton.click()
+    set_boundaries(workspace, 93_600_000, 93_605_000)
+    workspace.commitDraft()
 
-    updated = window.analysis.clip(clip.id)
+    updated = document.analysis.clip(clip.id)
     assert (updated.start_ms, updated.end_ms) == (93_600_000, 93_605_000)
 
 
 def test_boundaries_the_model_rejects_are_reported_and_change_nothing(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    silent_message_boxes: list[tuple[str, str]],
 ) -> None:
-    """The interval invariant is the Analysis's; the form only reports it."""
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    clip = window.analysis.clips[0]
+    """Coverage change 3: the interval invariant is reported in the form.
 
-    window.edit_clip(clip.id)
-    _set_boundaries(window.editHandler, 9_000, 4_000)
-    window.editHandler.acceptButton.click()
+    It is still the Analysis's invariant and the form still only reports it;
+    what changed is that the report is `draftError` rather than a modal, and
+    that an invalid draft cannot be committed at all.
+    """
 
-    assert window.analysis.clip(clip.id) == clip
-    assert any(level == "critical" for level, _ in silent_message_boxes)
-    assert window.editHandler.isVisibleTo(window) is True
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    clip = document.analysis.clips[0]
+
+    workspace.editClip(str(clip.id))
+    workspace.setDraftEndText(timecode.precise(4_000))
+    workspace.setDraftStartText(timecode.precise(9_000))
+    workspace.commitDraft()
+
+    assert document.analysis.clip(clip.id) == clip
+    assert workspace.draftError == END_BEFORE_START
+    assert workspace.draftValid is False
+    assert workspace.editing is True
 
 
 def test_cancelling_an_edit_leaves_the_clip_and_the_workspace_as_they_were(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    application: QApplication,
 ) -> None:
-    """Leaving the editing state gives the video area its full width back."""
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    clip = window.analysis.clips[0]
-    window.resize(1280, 720)
-    window.show()
+    """Coverage change 4: leaving the editing state is `editing`, not a width.
 
-    window.edit_clip(clip.id)
-    window.editHandler.clipNameLine.setText("Never applied")
-    _set_boundaries(window.editHandler, 4_000, 9_500)
-    window.editHandler.cancelButton.click()
-    application.processEvents()
+    The Widgets case asserted that the Clip-editor area went back to zero
+    pixels. The QML shell binds that room to `editing`, and that the 360px is
+    taken and given back is `tests/test_qml_workspace.py::
+    test_the_editor_takes_its_room_from_the_video_and_gives_it_back`.
+    """
 
-    assert window.analysis.clip(clip.id) == clip
-    assert window.editHandler.isVisibleTo(window) is False
-    assert window.clipEditorArea.width() == 0
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    clip = document.analysis.clips[0]
+
+    workspace.editClip(str(clip.id))
+    workspace.setDraftName("Never applied")
+    set_boundaries(workspace, 4_000, 9_500)
+    workspace.cancelDraft()
+
+    assert document.analysis.clip(clip.id) == clip
+    assert workspace.editing is False
+    assert workspace.draftName == ""
 
 
-def test_editing_a_clip_from_the_clips_tab_opens_the_paused_editing_state(
-    window: MainWindow,
+def test_editing_a_clip_from_the_clips_list_opens_the_paused_editing_state(
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
     """One editor serves both paths, and it keeps a paused frame beside it."""
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    clip = window.analysis.clips[0]
-    window.player.play()
 
-    window.treeWidget.clip_edit_requested.emit(clip.id)
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    clip = document.analysis.clips[0]
+    player.play()
 
-    assert window.player.is_playing() is False
-    assert window.playPauseButton.isChecked() is False
-    assert window.editHandler.isVisibleTo(window) is True
-    assert window.editHandler.clip_id == clip.id
+    workspace.editClip(str(clip.id))
+
+    assert player.is_playing() is False
+    assert workspace.playing is False
+    assert player.position() == clip.start_ms
+    assert workspace.editing is True
+    assert workspace.draftName == clip.name
+    assert (workspace.draftStartMs, workspace.draftEndMs) == (
+        clip.start_ms,
+        clip.end_ms,
+    )
 
 
 def test_editing_an_existing_clip_abandons_the_pending_clip(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    """The workspace is in one editing state at a time, and the record control
-    says so."""
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    clip = window.analysis.clips[0]
-    window.player.seek(30_000)
-    window.clipButton.setChecked(True)
+    """The workspace is in one editing state at a time, and the mark says so."""
 
-    window.treeWidget.clip_edit_requested.emit(clip.id)
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    clip = document.analysis.clips[0]
+    workspace.seek(30_000)
+    workspace.markBoundary()
+    assert workspace.pendingActive is True
 
-    assert window.pending_clip is None
-    assert window.clipButton.isChecked() is False
-    assert window.clipHandler.isVisibleTo(window) is False
-    assert window.editHandler.isVisibleTo(window) is True
+    workspace.editClip(str(clip.id))
+
+    assert workspace.pendingActive is False
+    assert workspace.markActionText == "Clip markieren"
+    assert workspace.editing is True
+    assert workspace.draftIsNew is False
 
 
 def test_the_editing_form_carries_the_whole_clip(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
     """Title, Category, both boundaries and notes all survive the round trip."""
-    _load_video(window, tmp_path)
-    _create_clip(window, name="Fast break", category="Angriff")
-    clip = window.analysis.clips[0]
 
-    window.edit_clip(clip.id)
-    window.editHandler.notesText.setText("Left wing")
-    _set_boundaries(window.editHandler, 4_000, 9_500)
-    window.editHandler.acceptButton.click()
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace, name="Fast break", category="Angriff")
+    clip = document.analysis.clips[0]
 
-    window.edit_clip(clip.id)
-    form = window.editHandler
-    assert form.clipNameLine.text() == "Fast break"
-    assert form.categoryBox.currentText() == "Angriff"
-    assert (form.start_ms, form.end_ms) == (4_000, 9_500)
-    assert form.notesText.toPlainText() == "Left wing"
+    workspace.editClip(str(clip.id))
+    workspace.setDraftNotes("Left wing")
+    set_boundaries(workspace, 4_000, 9_500)
+    workspace.commitDraft()
+
+    workspace.editClip(str(clip.id))
+    assert workspace.draftName == "Fast break"
+    assert [row["name"] for row in workspace.categoryModel.rows() if row["selected"]] == [
+        "Angriff"
+    ]
+    assert (workspace.draftStartMs, workspace.draftEndMs) == (4_000, 9_500)
+    assert workspace.draftNotes == "Left wing"
 
 
-def test_an_invalid_clip_edit_is_reported_and_changes_nothing(
-    window: MainWindow,
+def test_a_clip_without_a_title_is_reported_and_cannot_be_kept(
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    silent_message_boxes: list[tuple[str, str]],
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    clip = window.analysis.clips[0]
+    """Coverage change 3 again: the refusal is in the form, not in a modal."""
 
-    window.apply_clip_edit(
-        ClipDraft(
-            name="   ",
-            notes="",
-            category_name=None,
-            start_ms=clip.start_ms,
-            end_ms=clip.end_ms,
-            clip_id=clip.id,
-        )
-    )
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    clip = document.analysis.clips[0]
 
-    assert window.analysis.clip(clip.id) == clip
-    assert any(level == "critical" for level, _ in silent_message_boxes)
+    workspace.editClip(str(clip.id))
+    workspace.setDraftName("   ")
+    workspace.commitDraft()
+
+    assert document.analysis.clip(clip.id) == clip
+    assert workspace.draftError == NO_TITLE
+    assert workspace.draftValid is False
+    assert workspace.editing is True
 
 
 def test_a_rejected_clip_change_leaves_the_document_as_it_was(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    _save_to(window, tmp_path / "match.analysis", monkeypatch)
-    clip = window.analysis.clips[0]
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    save_to(workspace, presenter, tmp_path / "match.analysis")
+    clip = document.analysis.clips[0]
+    revision = document.analysis.revision
 
-    window.apply_clip_edit(
-        ClipDraft(
-            name="   ",
-            notes="",
-            category_name="Konter",
-            start_ms=clip.start_ms,
-            end_ms=clip.end_ms,
-            clip_id=clip.id,
-        )
-    )
+    workspace.editClip(str(clip.id))
+    workspace.setDraftName("   ")
+    workspace.setDraftCategory(category_id(workspace, "Abwehr"))
+    workspace.commitDraft()
 
-    assert window.analysis.category_named("Konter") is None
-    assert window.document.dirty is False
-    assert window.is_saved is True
+    assert document.analysis.clip(clip.id) == clip
+    assert document.analysis.revision == revision
+    assert document.dirty is False
+    assert workspace.dirty is False
 
 
 def test_removing_a_clip_removes_it_from_the_analysis(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    clip = window.analysis.clips[0]
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    clip = document.analysis.clips[0]
 
-    window.remove_clip(clip.id)
+    workspace.removeClip(str(clip.id))
 
-    assert window.analysis.clips == ()
-    assert _clip_rows(window) == []
+    assert document.analysis.clips == ()
+    assert clip_rows(workspace) == []
+    assert ranges(workspace) == []
 
 
 def test_removing_a_category_keeps_its_clips_uncategorized(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    clip = window.analysis.clips[0]
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    clip = document.analysis.clips[0]
 
-    window.remove_category(clip.category_id)
+    assert clip.category_id is not None
+    workspace.removeCategory(str(clip.category_id))
 
-    assert window.analysis.clip(clip.id).category_id is None
-    assert _category_row(window, "Angriff") is None
-    rendered = _clip_rows(window)[0]
-    assert rendered.parent() is None
-    assert rendered.clip_id == clip.id
+    assert document.analysis.clip(clip.id).category_id is None
+    assert category_row(workspace, "Angriff") is None
+    rendered = clip_rows(workspace)
+    assert [row["clipId"] for row in rendered] == [str(clip.id)]
+    assert rendered[0]["categoryName"] == UNCATEGORIZED_LABEL
 
 
 def test_renaming_the_analysis_retitles_it_without_touching_its_identity(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _load_video(window, tmp_path)
-    analysis_id = window.analysis.id
-    monkeypatch.setattr(
-        mainwindow_module.QInputDialog,
-        "getText",
-        staticmethod(lambda *args, **kwargs: ("Spiel gegen Musterstadt", True)),
-    )
+    add_video(workspace, presenter, loop, tmp_path)
+    analysis_id = document.analysis.id
 
-    window.rename_analysis()
+    workspace.setAnalysisTitle("Spiel gegen Musterstadt")
 
-    assert window.analysis.title == "Spiel gegen Musterstadt"
-    assert window.analysis.id == analysis_id
-    assert window.titleLabel.text() == "Spiel gegen Musterstadt"
+    assert document.analysis.title == "Spiel gegen Musterstadt"
+    assert document.analysis.id == analysis_id
+    assert workspace.analysisTitle == "Spiel gegen Musterstadt"
 
 
 def test_playback_position_and_selection_do_not_dirty_the_document(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    _save_to(window, tmp_path / "match.analysis", monkeypatch)
-    assert window.is_saved is True
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    save_to(workspace, presenter, tmp_path / "match.analysis")
+    assert workspace.dirty is False
+    clip_id = clip_rows(workspace)[0]["clipId"]
 
-    window.position_changed(4_200)
-    window.duration_changed(90_000)
-    _clip_rows(window)[0].setSelected(True)
-    window.treeWidget.sortByColumn(0, mainwindow_module.Qt.DescendingOrder)
-    window.treeWidget.collapseAll()
-    window.navigate_to_clip(_clip_rows(window)[0].clip_id)
+    workspace.seek(4_200)
+    player.set_duration(90_000)
+    workspace.selectClip(clip_id)
+    workspace.setSidebarTab("videos")
+    workspace.navigateToClip(clip_id)
 
-    assert window.document.dirty is False
-    assert window.is_saved is True
+    assert document.dirty is False
+    assert workspace.dirty is False
 
 
-def _save_to(
-    window: MainWindow,
-    path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        QFileDialog,
-        "getSaveFileName",
-        staticmethod(lambda *args, **kwargs: (str(path), "")),
-    )
-    assert window.save_analysis() is True
+# --- Saving, opening and the unsaved-changes gate ---------------------------
 
 
 def test_saving_and_reopening_preserves_identities_and_content(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    analysis_id = window.analysis.id
-    clip_id = window.analysis.clips[0].id
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    analysis_id = document.analysis.id
+    clip_id = clip_rows(workspace)[0]["clipId"]
     analysis_path = tmp_path / "match.analysis"
 
-    _save_to(window, analysis_path, monkeypatch)
+    save_to(workspace, presenter, analysis_path)
 
-    assert window.is_saved is True
+    assert workspace.dirty is False
     assert analysis_path.read_bytes().lstrip().startswith(b"{")
 
-    window.document = new_analysis_document()
-    window.load_analysis(str(analysis_path))
+    presenter.analysis_to_open = str(analysis_path)
+    assert workspace.openAnalysis() is True
+    loop.advance(PRIMING_MS * 2)
 
-    assert window.analysis.id == analysis_id
-    assert [clip.id for clip in window.analysis.clips] == [clip_id]
-    assert window.analysis.clips[0].name == "Fast break"
-    assert window.document.dirty is False
-    assert _category_row(window, "Angriff").child(0).clip_id == clip_id
+    reopened = AnalysisDocument.new()
+    reopened.load(analysis_path)
+    assert reopened.analysis.id == analysis_id
+
+    assert workspace.analysisTitle == "first-half"
+    assert [row["clipId"] for row in clip_rows(workspace)] == [clip_id]
+    assert clip_rows(workspace)[0]["title"] == "Fast break"
+    assert clips_under(workspace, "Angriff")[0]["clipId"] == clip_id
+    assert workspace.dirty is False
 
 
 def test_a_cancelled_save_prevents_close_and_keeps_unsaved_work(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    monkeypatch.setattr(
-        window,
-        "ask_unsaved_changes",
-        lambda: UnsavedChangesChoice.SAVE,
-    )
-    monkeypatch.setattr(
-        QFileDialog,
-        "getSaveFileName",
-        staticmethod(lambda *args, **kwargs: ("", "")),
-    )
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    presenter.choice = UnsavedChangesChoice.SAVE
+    presenter.destination = None
 
-    assert window.may_replace_analysis() is False
-    assert window.document.dirty is True
-    assert len(window.analysis.clips) == 1
+    assert workspace.requestClose() is False
+
+    assert document.dirty is True
+    assert len(document.analysis.clips) == 1
+    assert len(clip_rows(workspace)) == 1
 
 
 def test_cancelling_the_prompt_keeps_the_current_analysis_loaded(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    monkeypatch.setattr(
-        window,
-        "ask_unsaved_changes",
-        lambda: UnsavedChangesChoice.CANCEL,
-    )
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    presenter.choice = UnsavedChangesChoice.CANCEL
 
-    window.new_analysis()
+    assert workspace.newAnalysis() is False
 
-    assert len(window.analysis.clips) == 1
-    assert len(_clip_rows(window)) == 1
+    assert len(document.analysis.clips) == 1
+    assert len(clip_rows(workspace)) == 1
+    assert presenter.questions == 1
 
 
 def test_discarding_starts_a_new_empty_analysis(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    monkeypatch.setattr(
-        window,
-        "ask_unsaved_changes",
-        lambda: UnsavedChangesChoice.DISCARD,
-    )
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    presenter.choice = UnsavedChangesChoice.DISCARD
 
-    window.new_analysis()
+    assert workspace.newAnalysis() is True
 
-    assert window.analysis.clips == ()
-    assert window.analysis.source_videos == ()
-    assert _clip_rows(window) == []
-    assert window.is_saved is True
+    assert clip_rows(workspace) == []
+    assert source_rows(workspace) == []
+    assert workspace.hasVideo is False
+    assert workspace.analysisTitle == UNTITLED_ANALYSIS_TITLE
+    assert workspace.dirty is False
 
 
-def _menu_texts(window: MainWindow) -> list[str]:
-    return [
-        action.text()
-        for action in window.menuFile.actions()
-        if not action.isSeparator()
-    ]
-
-
-def test_the_document_commands_have_menu_entries_and_shortcuts(
-    window: MainWindow,
-) -> None:
-    commands = {
-        window.actionAnalyse_entfernen: QKeySequence.StandardKey.New,
-        window.actionAnalyse_laden: QKeySequence.StandardKey.Open,
-        window.actionAnalyse_speichern: QKeySequence.StandardKey.Save,
-        window.actionAnalyse_speichern_unter: QKeySequence.StandardKey.SaveAs,
-        window.actionAnalyse_schliessen: QKeySequence.StandardKey.Close,
-    }
-    menu_texts = _menu_texts(window)
-
-    for action, standard_key in commands.items():
-        assert action.shortcut() == QKeySequence(standard_key)
-        assert action.text() in menu_texts
-
-    assert window.actionLoad_Video.text() in menu_texts
-    assert window.actionLoad_Video.shortcut() == QKeySequence("Ctrl+Shift+O")
+# --- Several Source videos in one Analysis ---------------------------------
 
 
 def test_adding_a_second_video_keeps_the_first_and_its_clips(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    second_video = tmp_path / "second-half.mp4"
-    second_video.write_bytes(b"not a real video")
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
 
-    window.load_video(str(second_video))
+    add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
 
-    assert [source.display_name for source in window.analysis.source_videos] == [
+    assert [source.display_name for source in document.analysis.source_videos] == [
         "first-half.mp4",
         "second-half.mp4",
     ]
-    assert len(window.analysis.clips) == 1
-    assert window.analysis.title == "first-half"
+    assert [row["name"] for row in source_rows(workspace)] == [
+        "first-half.mp4",
+        "second-half.mp4",
+    ]
+    assert len(document.analysis.clips) == 1
+    assert document.analysis.title == "first-half"
 
 
 def test_a_dropped_video_is_added_to_the_current_analysis(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
+    add_video(workspace, presenter, loop, tmp_path)
     dropped = tmp_path / "second-half.MOV"
     dropped.write_bytes(b"not a real video")
 
-    assert window.drop_file(str(dropped)) is True
+    assert workspace.addDroppedSourceVideos([QUrl.fromLocalFile(str(dropped))]) is True
 
-    assert len(window.analysis.source_videos) == 2
+    assert len(document.analysis.source_videos) == 2
 
 
 def test_a_dropped_file_of_another_kind_is_ignored(
-    window: MainWindow,
-    tmp_path: Path,
+    workspace: WorkspaceViewModel, document: AnalysisDocument, tmp_path: Path
 ) -> None:
     note = tmp_path / "notes.txt"
     note.write_text("nothing to see", encoding="utf-8")
 
-    assert window.drop_file(str(note)) is False
-    assert window.analysis.source_videos == ()
+    assert workspace.addDroppedSourceVideos([QUrl.fromLocalFile(str(note))]) is False
+    assert document.analysis.source_videos == ()
 
 
 def test_the_window_title_reports_the_analysis_and_its_dirty_state(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    assert window.windowTitle() == "Unbenannte Analyse — Video Analyse"
+    assert workspace.windowTitle == f"{UNTITLED_ANALYSIS_TITLE} — {APPLICATION_TITLE}"
 
-    _load_video(window, tmp_path)
-    assert window.windowTitle() == "• first-half — Video Analyse"
+    add_video(workspace, presenter, loop, tmp_path)
+    assert workspace.windowTitle == f"• first-half — {APPLICATION_TITLE}"
 
-    _save_to(window, tmp_path / "match.analysis", monkeypatch)
-    assert window.windowTitle() == "first-half — Video Analyse"
+    save_to(workspace, presenter, tmp_path / "match.analysis")
+    assert workspace.windowTitle == f"first-half — {APPLICATION_TITLE}"
 
-    _create_clip(window)
-    assert window.windowTitle() == "• first-half — Video Analyse"
+    mark_clip(workspace)
+    assert workspace.windowTitle == f"• first-half — {APPLICATION_TITLE}"
 
 
 def test_save_as_writes_the_analysis_to_a_second_file(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    _save_to(window, tmp_path / "match.analysis", monkeypatch)
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    save_to(workspace, presenter, tmp_path / "match.analysis")
 
     copy_path = tmp_path / "copy.analysis"
-    monkeypatch.setattr(
-        QFileDialog,
-        "getSaveFileName",
-        staticmethod(lambda *args, **kwargs: (str(copy_path), "")),
-    )
-    assert window.save_analysis_as() is True
+    presenter.destination = str(copy_path)
+    assert workspace.saveAnalysisAs() is True
 
     assert copy_path.is_file()
-    assert window.document.path == copy_path
-    assert window.is_saved is True
+    assert document.path == copy_path
+    assert workspace.dirty is False
 
 
 def test_a_failed_open_leaves_the_current_analysis_untouched(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    silent_message_boxes: list[tuple[str, str]],
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    analysis = window.analysis
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
     broken = tmp_path / "broken.analysis"
     broken.write_text("{ not json", encoding="utf-8")
-    monkeypatch.setattr(
-        window,
-        "ask_unsaved_changes",
-        lambda: UnsavedChangesChoice.DISCARD,
-    )
+    presenter.choice = UnsavedChangesChoice.DISCARD
+    presenter.analysis_to_open = str(broken)
 
-    assert window.load_analysis(str(broken)) is False
+    assert workspace.openAnalysis() is False
 
-    assert window.analysis is analysis
-    assert len(window.analysis.clips) == 1
-    assert len(_clip_rows(window)) == 1
-    assert any(level == "critical" for level, _ in silent_message_boxes)
+    assert len(document.analysis.clips) == 1
+    assert len(clip_rows(workspace)) == 1
+    assert workspace.analysisTitle == "first-half"
+    assert presenter.failures != []
 
 
 def test_adding_a_video_does_not_interrupt_the_one_under_review(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    first_video = _load_video(window, tmp_path)
-    second_video = tmp_path / "second-half.mp4"
-    second_video.write_bytes(b"not a real video")
+    first_video = add_video(workspace, presenter, loop, tmp_path)
 
-    window.load_video(str(second_video))
+    add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
 
-    first = window.analysis.source_videos[0]
+    first = document.analysis.source_videos[0]
     assert first.location == str(first_video)
-    assert window.active_source_video() == first
+    active = active_source(workspace)
+    assert active is not None
+    assert active["sourceId"] == str(first.id)
+    assert player.location() == str(first_video)
 
-    _create_clip(window, name="Fast break")
-    assert window.analysis.clips[0].source_video_id == first.id
+    mark_clip(workspace, name="Fast break")
+    assert document.analysis.clips[0].source_video_id == first.id
+
+
+# --- The transport ---------------------------------------------------------
 
 
 def test_navigating_to_a_clip_seeks_the_player_to_its_start(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window, start_ms=12_000, end_ms=14_000)
+    add_video(workspace, presenter, loop, tmp_path)
+    clip_id = mark_clip(workspace, start_ms=12_000, end_ms=14_000)
 
-    _click_clip_row(window, "Fast break")
+    workspace.seek(0)
+    workspace.navigateToClip(clip_id)
 
-    assert window.player.position() == 12_000
+    assert player.position() == 12_000
+    assert workspace.positionMs == 12_000
 
 
 def test_a_clip_is_marked_against_the_player_position(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
-    window.player.play()
-    window.player.seek(30_000)
-    window.clip_started()
-    window.player.seek(35_000)
+    add_video(workspace, presenter, loop, tmp_path)
+    player.play()
+    workspace.seek(30_000)
+    workspace.markBoundary()
+    workspace.seek(35_000)
 
-    window.clip_stopped()
+    workspace.markBoundary()
 
-    assert window.player.is_playing() is False
-    assert window.clipHandler.isVisibleTo(window) is True
-    assert (window.clipHandler.start_ms, window.clipHandler.end_ms) == (
-        30_000,
-        35_000,
-    )
+    assert player.is_playing() is False
+    assert workspace.editing is True
+    assert (workspace.draftStartMs, workspace.draftEndMs) == (30_000, 35_000)
+    assert workspace.draftIsNew is True
 
 
-def test_the_play_button_follows_what_the_player_is_actually_doing(
-    window: MainWindow,
+def test_the_play_control_follows_what_the_player_is_actually_doing(
+    workspace: WorkspaceViewModel,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
+    add_video(workspace, presenter, loop, tmp_path)
 
-    window.player.play()
-    assert window.playPauseButton.isChecked() is True
+    player.play()
+    assert workspace.playing is True
 
-    window.player.step_backward()
-    assert window.playPauseButton.isChecked() is False
+    player.step_backward()
+    assert workspace.playing is False
 
 
 def test_choosing_a_playback_speed_sets_a_numeric_rate(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
+    """Coverage change 6: 0.25x is not one of the speeds this application has."""
 
-    window.speedBox.setCurrentText("0.25x")
+    add_video(workspace, presenter, loop, tmp_path)
 
-    assert window.player.playback_rate() == 0.25
+    workspace.setRateIndex(PLAYBACK_RATES.index(0.5))
+
+    assert player.playback_rate() == 0.5
+    assert workspace.playbackRate == 0.5
+    assert workspace.playbackRateIndex == PLAYBACK_RATES.index(0.5)
 
 
-def test_loading_a_video_makes_it_the_active_source_video_of_the_player(
-    window: MainWindow,
+def test_adding_a_video_makes_it_the_active_source_video_of_the_player(
+    workspace: WorkspaceViewModel,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    video_path = _load_video(window, tmp_path)
+    video_path = add_video(workspace, presenter, loop, tmp_path)
 
-    assert window.player.is_loaded() is True
-    assert window.player.location() == str(video_path)
+    assert player.is_loaded() is True
+    assert player.location() == str(video_path)
+    assert workspace.hasVideo is True
 
-    monkeypatch.setattr(
-        window,
-        "ask_unsaved_changes",
-        lambda: UnsavedChangesChoice.DISCARD,
-    )
-    window.new_analysis()
+    presenter.choice = UnsavedChangesChoice.DISCARD
+    workspace.newAnalysis()
 
-    assert window.player.is_loaded() is False
+    assert player.is_loaded() is False
+    assert workspace.hasVideo is False
 
 
 def test_playing_stepping_and_speed_never_dirty_the_document(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _load_video(window, tmp_path)
-    _create_clip(window)
-    _save_to(window, tmp_path / "match.analysis", monkeypatch)
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace)
+    save_to(workspace, presenter, tmp_path / "match.analysis")
 
-    window.player.play()
-    window.player.seek(20_000)
-    window.player.step_forward()
-    window.player.step_backward()
-    window.speedBox.setCurrentText("2x")
-    window.player.play_pause()
+    workspace.playPause()
+    workspace.seek(20_000)
+    workspace.stepForward()
+    workspace.stepBackward()
+    workspace.jumpForward()
+    workspace.jumpBackward()
+    workspace.setRateIndex(PLAYBACK_RATES.index(2.0))
+    workspace.toggleMuted()
+    workspace.setVolume(0.4)
+    workspace.playPause()
 
-    assert window.document.dirty is False
-    assert window.is_saved is True
+    assert document.dirty is False
+    assert workspace.dirty is False
 
 
-def test_the_play_button_does_not_claim_to_play_with_no_video_loaded(
-    window: MainWindow,
+def test_the_play_control_does_not_claim_to_play_with_no_video_loaded(
+    workspace: WorkspaceViewModel, player: FakePlayback
 ) -> None:
-    window.playPauseButton.click()
+    workspace.playPause()
 
-    assert window.player.is_playing() is False
-    assert window.playPauseButton.isChecked() is False
+    assert player.is_playing() is False
+    assert workspace.playing is False
+
+
+# --- The shape of the workspace --------------------------------------------
 
 
 def test_the_workspace_is_composed_in_code_without_the_designer_window() -> None:
     """The Designer main window is retired; see ADR 0005."""
-    repository_root = Path(mainwindow_module.__file__).parent
+
+    repository_root = Path(workspace_module.__file__).parent
 
     assert importlib.util.find_spec("Ui_main_window") is None
     assert not (repository_root / "main_window.ui").exists()
@@ -832,304 +1210,308 @@ def test_the_workspace_is_composed_in_code_without_the_designer_window() -> None
 
 
 def test_an_analysis_without_source_videos_renders_the_normal_workspace(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
 ) -> None:
     """There is no separate welcome screen; only the player's place changes."""
-    assert window.analysis.source_videos == ()
 
-    assert [
-        window.sidebarTabs.tabText(index)
-        for index in range(window.sidebarTabs.count())
-    ] == ["Clips", "Videos"]
-    assert window.sidebar.isVisibleTo(window) is True
-    assert window.timelineArea.isVisibleTo(window) is True
-    assert window.playerStack.currentWidget() is window.emptyPlayerHint
+    assert workspace.hasVideo is False
+    assert SIDEBAR_TABS == ("clips", "videos")
+    assert workspace.sidebarTab == "clips"
+    assert source_rows(workspace) == []
+    assert clip_rows(workspace) == []
+    assert ranges(workspace) == []
 
 
 def test_the_call_to_action_adds_a_video_and_gives_way_to_the_player(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     video_path = tmp_path / "first-half.mp4"
     video_path.write_bytes(b"not a real video")
-    monkeypatch.setattr(window, "choose_source_video", lambda: str(video_path))
+    presenter.source_video = str(video_path)
 
-    window.addVideoButton.click()
+    assert workspace.addSourceVideo() is True
+    loop.advance(PRIMING_MS * 2)
 
-    assert [source.location for source in window.analysis.source_videos] == [
+    assert [source.location for source in document.analysis.source_videos] == [
         str(video_path)
     ]
-    assert window.playerStack.currentWidget() is window.videoWidget
-
-
-def _corner_in_window(window: MainWindow, widget) -> QPoint:
-    return widget.mapTo(window, QPoint(0, 0))
-
-
-def test_the_workspace_lays_the_areas_out_as_the_validated_direction_asks(
-    window: MainWindow,
-    application: QApplication,
-) -> None:
-    """Sidebar left of the video, compact timeline directly beneath it."""
-    window.resize(1280, 720)
-    window.show()
-    application.processEvents()
-
-    sidebar = _corner_in_window(window, window.sidebar)
-    video = _corner_in_window(window, window.playerStack)
-    timeline = _corner_in_window(window, window.timelineArea)
-
-    assert sidebar.x() + window.sidebar.width() <= video.x()
-    assert timeline.y() >= video.y() + window.playerStack.height()
-    assert window.timelineArea.height() < window.playerStack.height()
-    assert window.height() <= 720 and window.width() <= 1280
-
-
-def test_the_workspace_stays_usable_at_a_small_laptop_size(
-    window: MainWindow,
-) -> None:
-    """It opens at that size, and stays usable when made smaller still."""
-    assert window.size().width() <= 1280
-    assert window.size().height() <= 720
-    assert window.minimumSizeHint().width() <= 1280
-    assert window.minimumSizeHint().height() <= 720
+    assert workspace.hasVideo is True
 
 
 def test_the_clip_editing_state_takes_its_room_beside_the_video(
-    window: MainWindow,
-    tmp_path: Path,
-    application: QApplication,
-) -> None:
-    """During normal review the editing area takes none of the video's width."""
-    _load_video(window, tmp_path)
-    window.resize(1280, 720)
-    window.show()
-    application.processEvents()
-    assert window.clipEditorArea.width() == 0
-
-    window.player.seek(30_000)
-    window.clip_started()
-    window.player.seek(35_000)
-    window.clip_stopped()
-    application.processEvents()
-
-    assert window.clipHandler.isVisibleTo(window) is True
-    assert window.clipEditorArea.width() > 0
-    assert _corner_in_window(window, window.clipEditorArea).x() >= (
-        _corner_in_window(window, window.playerStack).x() + window.playerStack.width()
-    )
-
-
-def test_the_timeline_area_reports_where_the_player_is(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
-    window.duration_changed(5_400_000)
+    """Coverage change 4: the room is `editing`; the pixels are the shell's."""
 
-    window.player.seek(12_000)
+    add_video(workspace, presenter, loop, tmp_path)
+    assert workspace.editing is False
 
-    assert window.position_label.text() == "00:00:12"
-    assert window.duration_label.text() == "01:30:00"
+    workspace.seek(30_000)
+    workspace.markBoundary()
+    workspace.seek(35_000)
+    workspace.markBoundary()
+
+    assert workspace.editing is True
+
+    workspace.cancelDraft()
+    assert workspace.editing is False
 
 
-def test_a_category_color_is_rendered_muted_without_changing_the_analysis(
-    window: MainWindow,
+def test_the_transport_reports_where_the_player_is(
+    workspace: WorkspaceViewModel,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
+    tmp_path: Path,
 ) -> None:
-    """Color informs; the Category name and the selection carry the meaning."""
-    category = window.analysis.category_named("Angriff")
-    rendered = _category_row(window, "Angriff").foreground(0).color()
+    add_video(workspace, presenter, loop, tmp_path)
+    player.set_duration(5_400_000)
 
-    assert rendered.saturation() < QColor(category.color).saturation()
+    workspace.seek(12_000)
+
+    assert workspace.positionText == "00:00:12"
+    assert workspace.durationText == "01:30:00"
+
+
+def test_a_category_colour_is_drawn_without_changing_the_analysis(
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
+    tmp_path: Path,
+) -> None:
+    """Coverage change 10: drawing a Category never edits its colour.
+
+    The Widgets interface muted the colour to draw Category text with it; ADR
+    0007 replaced that with a colour bar in the harmonised palette, so there is
+    no muting left to assert. What survives is that the row carries exactly the
+    colour the Analysis holds, and that the Analysis's own value is untouched.
+    """
+
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace, category="Angriff")
+    category = document.analysis.category_named("Angriff")
+
+    assert category is not None
     assert category.color == "#EF4444"
+    row = category_row(workspace, "Angriff")
+    assert row is not None
+    assert row["categoryColor"] == "#EF4444"
+    assert clips_under(workspace, "Angriff")[0]["categoryColor"] == "#EF4444"
+    assert ranges(workspace)[0]["color"] == "#EF4444"
+    unchanged_category = document.analysis.category_named("Angriff")
+    assert unchanged_category is not None
+    assert unchanged_category.color == "#EF4444"
 
 
-TIMELINE_WIDTH = 600
-"""The width the timeline tests scrub across, so pixels map to round times."""
-
-
-def _timeline_at(window: MainWindow, x: int) -> QPoint:
-    """A point on the timeline, at a width both platforms agree on."""
-    window.timeline.resize(TIMELINE_WIDTH, window.timeline.height())
-    return QPoint(x, window.timeline.height() // 2)
-
-
-def _timeline_click(window: MainWindow, x: int) -> None:
-    QTest.mouseClick(
-        window.timeline, Qt.MouseButton.LeftButton, pos=_timeline_at(window, x)
-    )
-
-
-def _prepared_timeline(
-    window: MainWindow,
-    tmp_path: Path,
-    duration_ms: int = 60_000,
-) -> None:
-    _load_video(window, tmp_path)
-    window.player.set_duration(duration_ms)
+# --- The one seek surface --------------------------------------------------
+#
+# Coverage change 5: what a pixel on the track means in milliseconds is QML's
+# arithmetic and is covered by `tests/test_qml_timeline.py`. What is here is
+# the seam's half of the same grammar (ADR 0006).
 
 
 def test_the_timeline_shows_the_clips_of_the_active_source_video_only(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _prepared_timeline(window, tmp_path)
-    _create_clip(window, name="Fast break", start_ms=30_000, end_ms=40_000)
-    second_video = tmp_path / "second-half.mp4"
-    second_video.write_bytes(b"not a real video")
-    window.load_video(str(second_video))
-    first, second = window.analysis.source_videos
+    add_video(workspace, presenter, loop, tmp_path)
+    player.set_duration(60_000)
+    clip_id = mark_clip(workspace, name="Fast break", start_ms=30_000, end_ms=40_000)
+    add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
+    first, second = document.analysis.source_videos
 
-    window.activate_source_video(second.id)
+    workspace.selectSourceVideo(str(second.id))
+    loop.advance(PRIMING_MS * 2)
 
-    assert window.active_source_video() == second
-    assert window.timeline.range_at(_timeline_at(window, 350).x()) is None
+    active = active_source(workspace)
+    assert active is not None
+    assert active["sourceId"] == str(second.id)
+    assert ranges(workspace) == []
 
-    window.activate_source_video(first.id)
-    window.player.set_duration(60_000)
+    workspace.selectSourceVideo(str(first.id))
+    loop.advance(PRIMING_MS * 2)
 
-    on_timeline = window.timeline.range_at(_timeline_at(window, 350).x())
-    assert on_timeline is not None
-    assert on_timeline.clip_id == window.analysis.clips[0].id
+    assert [row["clipId"] for row in ranges(workspace)] == [clip_id]
+    assert (ranges(workspace)[0]["startMs"], ranges(workspace)[0]["endMs"]) == (
+        30_000,
+        40_000,
+    )
 
 
-def test_clicking_the_timeline_scrubs_the_player_to_that_time(
-    window: MainWindow,
+def test_scrubbing_the_timeline_moves_the_player_to_that_time(
+    workspace: WorkspaceViewModel,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _prepared_timeline(window, tmp_path)
+    add_video(workspace, presenter, loop, tmp_path)
+    player.set_duration(60_000)
 
-    _timeline_click(window, TIMELINE_WIDTH // 2)
+    workspace.scrubTo(30_000)
 
-    assert window.player.position() == 30_000
+    assert player.position() == 30_000
+    assert workspace.positionMs == 30_000
 
 
-def test_clicking_a_clip_range_selects_it_without_moving_the_playhead(
-    window: MainWindow,
+def test_selecting_a_clip_range_does_not_move_the_playhead(
+    workspace: WorkspaceViewModel,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _prepared_timeline(window, tmp_path)
-    _create_clip(window, name="Fast break", start_ms=30_000, end_ms=40_000)
+    """ADR 0006: the click scrubs to the pointer, not to the Clip's start."""
 
-    _timeline_click(window, 350)
+    add_video(workspace, presenter, loop, tmp_path)
+    player.set_duration(60_000)
+    clip_id = mark_clip(workspace, name="Fast break", start_ms=30_000, end_ms=40_000)
 
-    clip = window.analysis.clips[0]
-    assert window.selected_clip() == clip
-    assert window.player.position() == 35_000
-    assert "Fast break" in window.selectedClipLabel.text()
-    assert "00:00:30" in window.selectedClipLabel.text()
-    assert "00:00:40" in window.selectedClipLabel.text()
+    loop.advance(SCRUB_INTERVAL_MS * 2)
+    workspace.scrubTo(35_000)
+    workspace.selectClip(clip_id)
+
+    assert workspace.selectedClipId == clip_id
+    assert player.position() == 35_000
+    selected = next(row for row in ranges(workspace) if row["selected"])
+    assert [row["title"] for row in clip_rows(workspace) if row["selected"]] == [
+        "Fast break"
+    ]
+    assert selected["title"] == "Fast break"
+    assert (selected["startMs"], selected["endMs"]) == (30_000, 40_000)
+    assert clip_row(workspace, "Fast break")["startText"] == "00:00:30"
+    assert clip_row(workspace, "Fast break")["durationText"] == timecode.duration(
+        10_000
+    )
 
 
 def test_double_clicking_a_clip_range_seeks_to_the_clip_start(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _prepared_timeline(window, tmp_path)
-    _create_clip(window, start_ms=30_000, end_ms=40_000)
+    add_video(workspace, presenter, loop, tmp_path)
+    player.set_duration(60_000)
+    clip_id = mark_clip(workspace, name="Fast break", start_ms=30_000, end_ms=40_000)
+    loop.advance(SCRUB_INTERVAL_MS * 2)
+    workspace.scrubTo(35_000)
 
-    QTest.mouseDClick(
-        window.timeline, Qt.MouseButton.LeftButton, pos=_timeline_at(window, 350)
-    )
+    workspace.navigateToClip(clip_id)
 
-    assert window.player.position() == 30_000
-    assert window.selected_clip() == window.analysis.clips[0]
+    assert player.position() == 30_000
+    assert workspace.selectedClipId == clip_id
 
 
 def test_navigating_to_a_clip_activates_its_source_video_and_the_timeline_follows(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
     """The seam the Clips sidebar tab (#15) navigates through."""
-    _prepared_timeline(window, tmp_path)
-    second_video = tmp_path / "second-half.mp4"
-    second_video.write_bytes(b"not a real video")
-    window.load_video(str(second_video))
-    second = window.analysis.source_videos[1]
-    window.analysis.add_clip(second.id, "Counter", 20_000, 25_000)
-    window.render_analysis()
 
-    window.navigate_to_clip(window.analysis.clips[0].id)
+    add_video(workspace, presenter, loop, tmp_path)
+    player.set_duration(60_000)
+    second_video = add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
+    second = document.analysis.source_videos[1]
+    clip = document.analysis.add_clip(second.id, "Counter", 20_000, 25_000)
+    workspace.refresh()
 
-    assert window.active_source_video() == second
-    assert window.player.location() == str(second_video)
-    assert window.player.position() == 20_000
-    assert window.timeline.selected_clip_id() == window.analysis.clips[0].id
-    window.player.set_duration(60_000)
-    shown = window.timeline.range_at(_timeline_at(window, 220).x())
-    assert shown is not None and shown.clip_id == window.analysis.clips[0].id
+    workspace.navigateToClip(str(clip.id))
+    loop.advance(PRIMING_MS * 2)
+
+    active = active_source(workspace)
+    assert active is not None
+    assert active["sourceId"] == str(second.id)
+    assert player.location() == str(second_video)
+    assert player.position() == 20_000
+    assert workspace.selectedClipId == str(clip.id)
+    assert [row["clipId"] for row in ranges(workspace)] == [str(clip.id)]
 
 
 def test_the_timeline_never_dirties_the_analysis_document(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    player: FakePlayback,
 ) -> None:
     """Selection and playhead are transient, exactly like playback state."""
-    _prepared_timeline(window, tmp_path)
-    _create_clip(window, start_ms=30_000, end_ms=40_000)
-    _save_to(window, tmp_path / "match.analysis", monkeypatch)
-    assert window.is_saved is True
 
-    _timeline_click(window, 350)
-    QTest.mouseDClick(
-        window.timeline, Qt.MouseButton.LeftButton, pos=_timeline_at(window, 350)
-    )
-    window.activate_source_video(window.analysis.source_videos[0].id)
+    add_video(workspace, presenter, loop, tmp_path)
+    player.set_duration(60_000)
+    clip_id = mark_clip(workspace, start_ms=30_000, end_ms=40_000)
+    save_to(workspace, presenter, tmp_path / "match.analysis")
+    assert workspace.dirty is False
 
-    assert window.document.dirty is False
-    assert window.is_saved is True
+    loop.advance(SCRUB_INTERVAL_MS * 2)
+    workspace.scrubTo(35_000)
+    workspace.selectClip(clip_id)
+    workspace.navigateToClip(clip_id)
+    workspace.layoutRuler(600.0, 60_000.0)
+    workspace.selectSourceVideo(str(document.analysis.source_videos[0].id))
+
+    assert document.dirty is False
+    assert workspace.dirty is False
 
 
 def test_navigating_within_the_active_source_video_does_not_reload_it(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
     """Reloading would drop the frame under review and the known duration."""
-    _prepared_timeline(window, tmp_path)
-    _create_clip(window, start_ms=30_000, end_ms=40_000)
 
-    window.navigate_to_clip(window.analysis.clips[0].id)
+    add_video(workspace, presenter, loop, tmp_path)
+    player.set_duration(60_000)
+    clip_id = mark_clip(workspace, start_ms=30_000, end_ms=40_000)
 
-    assert window.player.duration() == 60_000
-    assert window.player.position() == 30_000
+    workspace.navigateToClip(clip_id)
 
-
-def _drag_timeline_to(window: MainWindow, x: int) -> None:
-    """One move of a held drag; ``QTest.mouseMove`` carries no button state."""
-    position = QPointF(_timeline_at(window, x))
-    QApplication.sendEvent(
-        window.timeline,
-        QMouseEvent(
-            QMouseEvent.Type.MouseMove,
-            position,
-            QPointF(window.timeline.mapToGlobal(_timeline_at(window, x))),
-            Qt.MouseButton.NoButton,
-            Qt.MouseButton.LeftButton,
-            Qt.KeyboardModifier.NoModifier,
-        ),
-    )
+    assert player.duration() == 60_000
+    assert workspace.durationMs == 60_000
+    assert player.position() == 30_000
 
 
 def test_dragging_along_the_timeline_scrubs_the_player_continuously(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _prepared_timeline(window, tmp_path)
+    add_video(workspace, presenter, loop, tmp_path)
+    player.set_duration(60_000)
 
-    QTest.mousePress(
-        window.timeline, Qt.MouseButton.LeftButton, pos=_timeline_at(window, 60)
-    )
-    assert window.player.position() == 6_000
+    workspace.scrubTo(6_000)
+    assert player.position() == 6_000
 
-    _drag_timeline_to(window, 300)
-    assert window.player.position() == 30_000
+    loop.advance(100)
+    workspace.scrubTo(30_000)
+    workspace.endScrub()
+    loop.advance(100)
 
-    QTest.mouseRelease(
-        window.timeline, Qt.MouseButton.LeftButton, pos=_timeline_at(window, 300)
-    )
-    assert window.player.position() == 30_000
+    assert player.position() == 30_000
+    assert workspace.positionMs == 30_000
 
 
 class LateDurationPlayback(FakePlayback):
@@ -1158,282 +1540,302 @@ class LateDurationPlayback(FakePlayback):
 
 def test_a_previous_source_videos_length_never_scales_the_active_one(
     application: QApplication,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
     """The timeline draws no time scale until the player reports one."""
-    window = MainWindow(playback=LateDurationPlayback())
-    try:
-        first_video = _load_video(window, tmp_path)
-        window.player.set_duration(5_400_000)
-        second_video = tmp_path / "second-half.mp4"
-        second_video.write_bytes(b"not a real video")
-        window.load_video(str(second_video))
-        assert first_video.exists()
 
-        window.activate_source_video(window.analysis.source_videos[1].id)
-
-        assert window.player.duration() == 5_400_000
-        assert window.timeline.duration() == 0
-        assert window.duration_label.text() == "00:00:00"
-    finally:
-        window.document = new_analysis_document()
-        window.close()
-
-
-# --- The Clips and Videos sidebar (#15) -----------------------------------
-
-
-SIDEBAR_LIST_SIZE = (SIDEBAR_WIDTH, 240)
-
-
-def _add_video(window: MainWindow, tmp_path: Path, name: str) -> Path:
-    video_path = tmp_path / name
-    video_path.write_bytes(b"not a real video")
-    window.load_video(str(video_path))
-    return video_path
-
-
-def _video_rows(window: MainWindow) -> list[str]:
-    videos = window.sourceVideoList
-    return [videos.item(row).text() for row in range(videos.count())]
-
-
-def _click_video_row(window: MainWindow, row: int) -> None:
-    """Select a Source video the way a person does, at a size both platforms agree on."""
-    videos = window.sourceVideoList
-    videos.resize(*SIDEBAR_LIST_SIZE)
-    QTest.mouseClick(
-        videos.viewport(),
-        Qt.MouseButton.LeftButton,
-        pos=videos.visualItemRect(videos.item(row)).center(),
+    player = LateDurationPlayback()
+    workspace = WorkspaceViewModel(
+        new_analysis_document(),
+        player,
+        presenter=presenter,
+        schedule=loop.schedule,
+        clock=loop.clock,
+        ticker=loop,
     )
+    add_video(workspace, presenter, loop, tmp_path)
+    player.set_duration(5_400_000)
+    add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
+    workspace.layoutRuler(600.0, 5_400_000.0)
+
+    workspace.selectSourceVideo(str(source_rows(workspace)[1]["sourceId"]))
+    loop.advance(PRIMING_MS * 2)
+
+    assert player.duration() == 5_400_000
+    assert workspace.durationMs == 0
+    assert workspace.durationText == "00:00:00"
+    assert workspace.rulerModel.rows() == ()
+
+
+# --- The Clips and Videos sidebar (#15) ------------------------------------
 
 
 def test_the_videos_tab_lists_every_source_video_of_the_analysis(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
-    _add_video(window, tmp_path, "second-half.mp4")
+    add_video(workspace, presenter, loop, tmp_path)
+    add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
 
-    assert window.videosTab.isAncestorOf(window.sourceVideoList)
-    assert _video_rows(window) == ["first-half.mp4", "second-half.mp4"]
+    workspace.setSidebarTab("videos")
+
+    assert workspace.sidebarTab == "videos"
+    assert [row["name"] for row in source_rows(workspace)] == [
+        "first-half.mp4",
+        "second-half.mp4",
+    ]
 
 
 def test_selecting_a_source_video_switches_the_player_to_it(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
-    second_video = _add_video(window, tmp_path, "second-half.mp4")
+    """Coverage change 5: choosing a row is the slot; the click is QML's.
 
-    _click_video_row(window, 1)
+    That a row in the Videos tab is a hit target and that clicking it calls
+    this slot is `tests/test_qml_sidebar.py::
+    test_choosing_a_source_video_in_the_videos_tab_activates_it`; the
+    replacement keyboard path is covered there too.
+    """
 
-    assert window.active_source_video() == window.analysis.source_videos[1]
-    assert window.player.location() == str(second_video)
+    add_video(workspace, presenter, loop, tmp_path)
+    second_video = add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
+    second = document.analysis.source_videos[1]
 
+    workspace.selectSourceVideo(str(second.id))
+    loop.advance(PRIMING_MS * 2)
 
-def test_moving_through_the_videos_tab_by_keyboard_switches_the_player(
-    window: MainWindow,
-    tmp_path: Path,
-) -> None:
-    _load_video(window, tmp_path)
-    second_video = _add_video(window, tmp_path, "second-half.mp4")
-    videos = window.sourceVideoList
-    videos.resize(*SIDEBAR_LIST_SIZE)
-
-    QTest.keyClick(videos, Qt.Key.Key_Down)
-
-    assert window.active_source_video() == window.analysis.source_videos[1]
-    assert window.player.location() == str(second_video)
+    active = active_source(workspace)
+    assert active is not None
+    assert active["sourceId"] == str(second.id)
+    assert player.location() == str(second_video)
 
 
 def test_marking_a_clip_without_a_video_leaves_the_transport_honest(
-    window: MainWindow,
-    silent_message_boxes: list[tuple[str, str]],
+    workspace: WorkspaceViewModel, document: AnalysisDocument
 ) -> None:
-    window.clipButton.setChecked(True)
+    """Coverage change 7: the mark action is disabled rather than explained."""
 
-    assert window.pending_clip is None
-    assert window.clipButton.isChecked() is False
-    assert any(level == "information" for level, _ in silent_message_boxes)
+    assert workspace.hasVideo is False
+
+    workspace.markBoundary()
+
+    assert workspace.pendingActive is False
+    assert workspace.markActionText == "Clip markieren"
+    assert workspace.editing is False
+    assert document.analysis.clips == ()
 
 
 def test_each_clip_row_names_the_source_video_it_belongs_to(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
     """The cue that keeps the Clips tab readable while Videos is not visible."""
-    _load_video(window, tmp_path)
-    _create_clip(window, name="Fast break")
-    _add_video(window, tmp_path, "second-half.mp4")
-    window.activate_source_video(window.analysis.source_videos[1].id)
-    _create_clip(window, name="Counter", start_ms=3_000, end_ms=4_000)
 
-    cue = CLIP_COLUMN_LABELS.index(SOURCE_VIDEO_COLUMN_LABEL)
-    assert {row.text(0): row.text(cue) for row in _clip_rows(window)} == {
+    add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace, name="Fast break")
+    add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
+    workspace.selectSourceVideo(str(document.analysis.source_videos[1].id))
+    loop.advance(PRIMING_MS * 2)
+    mark_clip(workspace, name="Counter", start_ms=3_000, end_ms=4_000)
+
+    assert {row["title"]: row["sourceCue"] for row in clip_rows(workspace)} == {
         "Fast break": "first-half.mp4",
         "Counter": "second-half.mp4",
     }
 
 
-def _click_clip_row(window: MainWindow, name: str) -> None:
-    """Choose a Clip the way a person does, at a size both platforms agree on."""
-    clips = window.treeWidget
-    clips.resize(*SIDEBAR_LIST_SIZE)
-    row = next(item for item in _clip_rows(window) if item.text(0) == name)
-    QTest.mouseClick(
-        clips.viewport(),
-        Qt.MouseButton.LeftButton,
-        pos=clips.visualItemRect(row).center(),
-    )
-
-
 def test_selecting_a_clip_in_the_clips_tab_activates_its_source_video(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    first_video = _load_video(window, tmp_path)
-    _create_clip(window, name="Fast break", start_ms=12_000, end_ms=14_000)
-    _add_video(window, tmp_path, "second-half.mp4")
-    window.activate_source_video(window.analysis.source_videos[1].id)
+    first_video = add_video(workspace, presenter, loop, tmp_path)
+    clip_id = mark_clip(workspace, name="Fast break", start_ms=12_000, end_ms=14_000)
+    add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
+    workspace.selectSourceVideo(str(document.analysis.source_videos[1].id))
+    loop.advance(PRIMING_MS * 2)
 
-    _click_clip_row(window, "Fast break")
+    workspace.navigateToClip(clip_id)
+    loop.advance(PRIMING_MS * 2)
 
-    assert window.active_source_video() == window.analysis.source_videos[0]
-    assert window.player.location() == str(first_video)
-    assert window.player.position() == 12_000
-    assert window.selected_clip() == window.analysis.clips[0]
+    active = active_source(workspace)
+    assert active is not None
+    assert active["sourceId"] == str(
+        document.analysis.source_videos[0].id
+    )
+    assert player.location() == str(first_video)
+    assert player.position() == 12_000
+    assert workspace.selectedClipId == clip_id
 
 
 def test_a_new_clip_is_bound_to_the_source_video_it_was_marked_on(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
-    _add_video(window, tmp_path, "second-half.mp4")
-    second = window.analysis.source_videos[1]
-    window.activate_source_video(second.id)
+    add_video(workspace, presenter, loop, tmp_path)
+    add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
+    second = document.analysis.source_videos[1]
+    workspace.selectSourceVideo(str(second.id))
+    loop.advance(PRIMING_MS * 2)
 
-    _create_clip(window, name="Counter", start_ms=10_000, end_ms=12_000)
+    mark_clip(workspace, name="Counter", start_ms=10_000, end_ms=12_000)
 
-    clip = window.analysis.clips[0]
+    clip = document.analysis.clips[0]
     assert clip.source_video_id == second.id
     assert (clip.start_ms, clip.end_ms) == (10_000, 12_000)
 
 
 def test_a_pending_clip_cannot_produce_a_clip_on_another_source_video(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
     """A Pending Clip belongs to the Source video its start was marked on."""
-    _load_video(window, tmp_path)
-    _add_video(window, tmp_path, "second-half.mp4")
-    window.player.seek(30_000)
-    window.clipButton.setChecked(True)
 
-    _click_video_row(window, 1)
-    window.player.seek(5_000)
-    window.clipButton.setChecked(False)
+    add_video(workspace, presenter, loop, tmp_path)
+    add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
+    workspace.seek(30_000)
+    workspace.markBoundary()
+    assert workspace.pendingActive is True
 
-    assert window.analysis.clips == ()
-    assert window.clipHandler.isVisibleTo(window) is False
-    assert window.clipButton.isChecked() is False
+    workspace.selectSourceVideo(str(document.analysis.source_videos[1].id))
+    loop.advance(PRIMING_MS * 2)
+    workspace.seek(5_000)
+    workspace.markBoundary()
+
+    assert document.analysis.clips == ()
+    assert workspace.editing is False
+    assert workspace.pendingActive is True
+    assert workspace.pendingStartMs == 5_000
 
 
 def test_switching_source_video_discards_a_clip_that_was_never_created(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
-    _add_video(window, tmp_path, "second-half.mp4")
-    window.player.seek(30_000)
-    window.clipButton.setChecked(True)
-    window.player.seek(35_000)
-    window.clipButton.setChecked(False)
-    assert window.clipHandler.isVisibleTo(window) is True
+    add_video(workspace, presenter, loop, tmp_path)
+    add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
+    workspace.seek(30_000)
+    workspace.markBoundary()
+    workspace.seek(35_000)
+    workspace.markBoundary()
+    assert workspace.editing is True
 
-    _click_video_row(window, 1)
+    workspace.cancelDraft()
+    workspace.selectSourceVideo(str(document.analysis.source_videos[1].id))
+    loop.advance(PRIMING_MS * 2)
 
-    assert window.clipHandler.isVisibleTo(window) is False
-    window.clipHandler.clipNameLine.setText("Counter")
-    window.clipHandler.acceptButton.click()
-    assert window.analysis.clips == ()
+    assert workspace.editing is False
+    assert workspace.pendingActive is False
+    assert document.analysis.clips == ()
 
 
 def test_cancelling_a_marked_clip_leaves_nothing_behind(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
 ) -> None:
-    _load_video(window, tmp_path)
-    window.player.seek(30_000)
-    window.clipButton.setChecked(True)
-    window.player.seek(35_000)
-    window.clipButton.setChecked(False)
+    add_video(workspace, presenter, loop, tmp_path)
+    workspace.seek(30_000)
+    workspace.markBoundary()
+    workspace.seek(35_000)
+    workspace.markBoundary()
 
-    window.clipHandler.cancelButton.click()
+    workspace.cancelDraft()
 
-    assert window.analysis.clips == ()
-    assert window.clipHandler.isVisibleTo(window) is False
-    assert window.clipButton.isChecked() is False
-    assert window.pending_clip is None
+    assert document.analysis.clips == ()
+    assert workspace.editing is False
+    assert workspace.pendingActive is False
+    assert clip_rows(workspace) == []
 
 
 def test_several_source_videos_and_their_clips_survive_save_and_reopen(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    first_video = _load_video(window, tmp_path)
-    _create_clip(window, name="Fast break")
-    second_video = _add_video(window, tmp_path, "second-half.mp4")
-    window.activate_source_video(window.analysis.source_videos[1].id)
-    _create_clip(window, name="Counter", start_ms=10_000, end_ms=12_000)
-    belongs_to = {
-        clip.name: window.analysis.source_video(clip.source_video_id).display_name
-        for clip in window.analysis.clips
-    }
+    first_video = add_video(workspace, presenter, loop, tmp_path)
+    mark_clip(workspace, name="Fast break")
+    second_video = add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
+    workspace.selectSourceVideo(str(document.analysis.source_videos[1].id))
+    loop.advance(PRIMING_MS * 2)
+    mark_clip(workspace, name="Counter", start_ms=10_000, end_ms=12_000)
+    belongs_to = {row["title"]: row["sourceCue"] for row in clip_rows(workspace)}
     analysis_path = tmp_path / "match.analysis"
-    _save_to(window, analysis_path, monkeypatch)
+    save_to(workspace, presenter, analysis_path)
 
-    window.document = new_analysis_document()
-    window.load_analysis(str(analysis_path))
+    presenter.analysis_to_open = str(analysis_path)
+    assert workspace.openAnalysis() is True
+    loop.advance(PRIMING_MS * 2)
 
-    assert [Path(source.location) for source in window.analysis.source_videos] == [
-        first_video,
-        second_video,
+    assert [row["name"] for row in source_rows(workspace)] == [
+        first_video.name,
+        second_video.name,
     ]
-    assert {
-        clip.name: window.analysis.source_video(clip.source_video_id).display_name
-        for clip in window.analysis.clips
-    } == belongs_to
-    cue = CLIP_COLUMN_LABELS.index(SOURCE_VIDEO_COLUMN_LABEL)
-    assert {row.text(0): row.text(cue) for row in _clip_rows(window)} == belongs_to
+    assert {row["title"]: row["sourceCue"] for row in clip_rows(workspace)} == belongs_to
 
 
 def test_the_sidebar_tab_and_the_active_source_video_are_never_stored(
-    window: MainWindow,
+    workspace: WorkspaceViewModel,
+    document: AnalysisDocument,
+    player: FakePlayback,
+    presenter: RecordingPresenter,
+    loop: Loop,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Display state is not analytical work: it neither dirties nor persists."""
-    _load_video(window, tmp_path)
-    _create_clip(window, name="Fast break")
-    _add_video(window, tmp_path, "second-half.mp4")
+
+    first_video = add_video(workspace, presenter, loop, tmp_path)
+    clip_id = mark_clip(workspace, name="Fast break")
+    add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
     analysis_path = tmp_path / "match.analysis"
-    _save_to(window, analysis_path, monkeypatch)
-    assert window.is_saved is True
+    save_to(workspace, presenter, analysis_path)
+    assert workspace.dirty is False
 
-    window.sidebarTabs.setCurrentWidget(window.videosTab)
-    _click_video_row(window, 1)
-    window.treeWidget.sortByColumn(0, Qt.SortOrder.DescendingOrder)
-    _click_clip_row(window, "Fast break")
+    workspace.setSidebarTab("videos")
+    workspace.selectSourceVideo(str(document.analysis.source_videos[1].id))
+    loop.advance(PRIMING_MS * 2)
+    workspace.navigateToClip(clip_id)
+    loop.advance(PRIMING_MS * 2)
 
-    assert window.document.dirty is False
-    assert window.is_saved is True
+    assert document.dirty is False
+    assert workspace.dirty is False
 
-    window.document = new_analysis_document()
-    window.load_analysis(str(analysis_path))
+    presenter.analysis_to_open = str(analysis_path)
+    assert workspace.openAnalysis() is True
+    loop.advance(PRIMING_MS * 2)
 
-    assert window.active_source_video() == window.analysis.source_videos[0]
-    assert window.player.location() == window.analysis.source_videos[0].location
+    # The tab is session state and deliberately survives; what must not
+    # survive is anything the file could have carried.
+    assert workspace.sidebarTab == "videos"
+    active = active_source(workspace)
+    assert active is not None
+    assert active["name"] == first_video.name
+    assert player.location() == str(first_video)

@@ -5,9 +5,9 @@ which is the whole point: ADR 0007 owns the appearance and keeps the behaviour,
 and a menu strip drawn inside the window would be the wordmark strip again with
 different words in it. Qt Quick's own `MenuBar` is deliberately not evaluated.
 
-What is tested here is that every document command is in it, that each one
-carries the sequence the platform uses for that command rather than a spelled
-out one, and that triggering the entry runs the command.
+What is tested here is that every document command and the established Add
+Source video command is in it, that each carries its intended shortcut, and
+that triggering an entry runs the command.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtGui import QAction, QKeySequence  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMenu, QMenuBar  # noqa: E402
 
-from menu_bar import FILE_MENU_TITLE, build_menu_bar  # noqa: E402
+from menu_bar import ADD_SOURCE_VIDEO_TEXT, FILE_MENU_TITLE, build_menu_bar  # noqa: E402
 
 
 class RecordingCommands:
@@ -45,6 +45,10 @@ class RecordingCommands:
 
     def saveAnalysisAs(self) -> bool:
         self.ran.append("save as")
+        return True
+
+    def addSourceVideo(self) -> bool:
+        self.ran.append("add video")
         return True
 
 
@@ -133,6 +137,19 @@ def test_every_document_command_has_an_entry_and_its_platform_shortcut(
         assert not action.shortcut().isEmpty()
 
 
+def test_the_add_source_video_command_keeps_its_existing_shortcut(
+    menu_bar: QMenuBar, commands: RecordingCommands
+) -> None:
+    shortcut = QKeySequence("Ctrl+Shift+O")
+    add_video = next(
+        action for action in _entries(menu_bar) if action.text() == ADD_SOURCE_VIDEO_TEXT
+    )
+
+    assert add_video.shortcut() == shortcut
+    add_video.trigger()
+    assert commands.ran == ["add video"]
+
+
 def test_the_commands_read_in_the_order_they_are_used(menu_bar: QMenuBar) -> None:
     ordered = [
         QKeySequence(action.shortcut()) for action in _entries(menu_bar)
@@ -142,6 +159,7 @@ def test_the_commands_read_in_the_order_they_are_used(menu_bar: QMenuBar) -> Non
         QKeySequence(QKeySequence.StandardKey.Open),
         QKeySequence(QKeySequence.StandardKey.Save),
         QKeySequence(QKeySequence.StandardKey.SaveAs),
+        QKeySequence("Ctrl+Shift+O"),
         QKeySequence(QKeySequence.StandardKey.Close),
     ]
 

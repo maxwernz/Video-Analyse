@@ -197,6 +197,23 @@ def test_choosing_a_source_video_in_the_videos_tab_activates_it(
     ]
 
 
+def test_moving_through_the_videos_by_keyboard_activates_the_next_one(
+    sidebar: Sidebar,
+) -> None:
+    """The replacement for the Widgets Videos-list keyboard contract."""
+
+    sidebar.workspace.setSidebarTab("videos")
+    QApplication.processEvents()
+
+    QTest.keyClick(sidebar.view, Qt.Key.Key_Down)
+    QApplication.processEvents()
+
+    assert [row["active"] for row in sidebar.workspace.sourceModel.rows()] == [
+        False,
+        True,
+    ]
+
+
 def test_the_clip_list_has_no_column_header(sidebar: Sidebar) -> None:
     """The header strip is what truncated the Source-video column before.
 
