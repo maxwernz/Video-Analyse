@@ -199,6 +199,22 @@ def test_clips_with_no_category_fall_to_the_end_under_their_own_heading(
     ]
 
 
+def test_a_category_named_like_the_uncategorized_heading_stays_a_separate_group(
+    workspace: WorkspaceViewModel, analysis: Analysis
+) -> None:
+    analysis.add_category(UNCATEGORIZED_LABEL, color="#3E9BC4")
+    a_clip(analysis, name="Bewusst einsortiert", category=UNCATEGORIZED_LABEL)
+    a_clip(analysis, name="Noch unsortiert")
+    workspace.refresh()
+
+    assert [(row["kind"], row["title"]) for row in rows(workspace)] == [
+        ("category", UNCATEGORIZED_LABEL),
+        ("clip", "Bewusst einsortiert"),
+        ("category", UNCATEGORIZED_LABEL),
+        ("clip", "Noch unsortiert"),
+    ]
+
+
 def test_within_a_category_clips_read_in_source_video_then_time_order(
     workspace: WorkspaceViewModel, analysis: Analysis
 ) -> None:

@@ -155,6 +155,14 @@ per the handoff rule; these are the resolutions.
 | --- | --- | --- |
 | Minimum Clip range width | 3 | ADR 0006 says "about three pixels"; it is also a real hit target, not only a drawing |
 | Category header row height | 30 | The Clip list groups by Category and the group row needs its own metric |
+| Category heading dot | 6 | A quiet Category-colour cue beside the heading |
+| Source-video badge radius | 2 | Keeps the compact cue distinct from full controls |
+| Source-video icon gap | 10 | Space from the film icon to the Source-video text |
+| Source-video name top inset / metadata gap | 9 / 3 | Positions the two text lines in the 52px Source-video row |
+| Scroll indicator width / radius / edge inset | 3 / 1.5 / 3 | A narrow hint that does not read as a full native scrollbar |
+| Scroll indicator minimum length | 24 | Keeps the hint visible in long lists |
+| Scroll indicator moving / resting opacity | 0.9 / 0.25 | Strong while scrolling, quiet while at rest |
+| Scroll indicator fade | 160ms | Short state transition, consistent with the restrained motion direction |
 | Icon SVG stroke | 1.75 | Restated here because it is a token, not a drawing detail |
 
 ### Disabled primary action

@@ -301,17 +301,29 @@ Rectangle {
                 font.weight: Theme.medium
             }
 
-            Text {
+            Row {
                 anchors {
                     left: videoName.left
                     top: videoName.bottom
                     topMargin: Theme.sourceRowLineGap
                 }
-                text: videoItem.model.durationText + "   ·   " + videoItem.model.clipCountText
-                color: Theme.textFaint
-                font.family: Theme.monoFamily
-                font.pixelSize: Theme.sizeRuler
-                font.weight: Theme.regular
+                spacing: Theme.gap
+
+                Text {
+                    text: videoItem.model.durationText
+                    color: Theme.textFaint
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.sizeTimecode
+                    font.weight: Theme.medium
+                }
+
+                Text {
+                    text: "·  " + videoItem.model.clipCountText
+                    color: Theme.textFaint
+                    font.family: Theme.uiFamily
+                    font.pixelSize: Theme.sizeBody
+                    font.weight: Theme.regular
+                }
             }
 
             MouseArea {

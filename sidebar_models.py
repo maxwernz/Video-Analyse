@@ -73,6 +73,7 @@ class _Presented:
     """One Clip as the sidebar says it, with everything already resolved."""
 
     clip: Clip
+    category_id: UUID | None
     category_name: str
     category_color: str
     source_name: str
@@ -94,6 +95,7 @@ def _present(analysis: Analysis) -> list[_Presented]:
         presented.append(
             _Presented(
                 clip=clip,
+                category_id=category.id if category else None,
                 category_name=category.name if category else UNCATEGORIZED_LABEL,
                 category_color=category.color if category else "",
                 source_name=name,
@@ -142,22 +144,25 @@ class ClipListModel(RoleModel):
         # Source video to tell apart.
         cue_wanted = len(analysis.source_videos) > 1
 
-        grouped: dict[str, list[_Presented]] = {}
+        grouped: dict[UUID | None, list[_Presented]] = {}
         for presented in _present(analysis):
-            grouped.setdefault(presented.category_name, []).append(presented)
+            grouped.setdefault(presented.category_id, []).append(presented)
 
-        ordered = [category.name for category in analysis.categories]
-        if UNCATEGORIZED_LABEL in grouped:
+        ordered: list[UUID | None] = [
+            category.id for category in analysis.categories
+        ]
+        if None in grouped:
             # The Clips nobody has filed yet read last, under a heading of
             # their own, rather than being scattered through the Categories.
-            ordered.append(UNCATEGORIZED_LABEL)
+            ordered.append(None)
 
         rows: list[Row] = []
-        for name in ordered:
-            group = grouped.get(name)
+        for category_id in ordered:
+            group = grouped.get(category_id)
             if not group:
                 continue
             group.sort(key=lambda item: (item.source_index, item.clip.start_ms))
+            name = group[0].category_name
             rows.append(
                 {
                     "kind": "category",
