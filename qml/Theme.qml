@@ -152,9 +152,10 @@ QtObject {
     // at the 300px default width without eliding the title, and the title is
     // the field that may never be dropped — eliding it is the failure this
     // migration exists to fix. The length is the one field an analyst can do
-    // without while finding a Clip, so it is the one that goes, and it comes
-    // back as soon as the sidebar is wide enough to carry all four. Measured
-    // against real German Clip titles; see the token spec's Source-video cue.
+    // without while finding a Clip, so it is the one that goes. It comes back
+    // at a width measured to carry all four on both supported platforms; the
+    // exact first fitting pixel varies with their text rasterisers. See the
+    // token spec's Source-video cue.
     readonly property int clipDurationMinimumWidth: 348
 
     // The scroll indicator: present while the list is moving, faint when it

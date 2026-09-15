@@ -190,8 +190,9 @@ letter plus trailing number -- with the full name on hover.
 
 **The badge is kept. The field that is dropped is the duration.** The four
 fields are not equally load-bearing. The title is what is being looked for and
-may never be elided -- that is the failure this migration exists to fix. The
-start is the Clip's address: it is what the row navigates to, and a column of
+may not be elided at the default width -- that is the failure this migration
+exists to fix. The start is the Clip's address: it is what the row navigates
+to, and a column of
 starts is how a coach reads the shape of a half. The cue says which half a
 Clip is in, and in a two-video Analysis with a Category like `Tore` repeated
 across both halves it is the only thing telling two otherwise identical rows
@@ -202,10 +203,12 @@ in the Clip editor. So the duration is the field that goes.
 
 It is not dropped permanently; it is dropped at widths that cannot hold it.
 Below **348px** of sidebar the row shows the Category bar, the title, the badge
-and the start; at 348px and above it shows all four. 348 is the measured width
-at which the longest realistic Clip title still clears all four fields, so the
-duration returns exactly when it stops costing the title its end. The sidebar's
-maximum is 420, so an analyst who wants durations has 72px of room to do it in.
+and the start; at 348px and above it shows all four. 348 is the macOS-measured
+width at which the longest realistic Clip title clears all four fields, and is
+also sufficient on Windows. The exact first fitting pixel is platform-dependent
+because Qt rasterises the same bundled fonts through different platform text
+stacks. The sidebar's maximum is 420, so an analyst who wants durations has 72px
+of room to do it in.
 
 The measurements, and the corpus of real German Source-video names and Clip
 titles they were taken against, are `tests/test_clip_row_fits.py`: the faces are
