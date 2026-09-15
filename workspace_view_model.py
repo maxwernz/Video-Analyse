@@ -8,15 +8,17 @@ video surface is still being primed — stays here in Python where a test can
 reach it without a window.
 
 What this carries today is the transport, the video surface, the timeline, the
-sidebar's two lists, and the document commands — New, Open, Save, Save As and
+sidebar's two lists, the document commands — New, Open, Save, Save As and
 Close — which it drives through `application_workflow` rather than deciding
-anything about them itself. The Clip editor arrives with the ticket that owns
-it, extending this same seam.
+anything about them itself, and the Clip-editing state: the Pending Clip, the
+draft held apart from the Analysis while it is edited, and the two ways out of
+it.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 import time
 from typing import Protocol
 from uuid import UUID
@@ -29,6 +31,14 @@ from application_workflow import (
     UNTITLED_ANALYSIS_TITLE,
     ApplicationWorkflow,
     WorkflowPresenter,
+)
+from clip_editor import (
+    END,
+    END_BEFORE_START,
+    NOT_A_TIME,
+    START,
+    CategoryModel,
+    ClipDraft,
 )
 from playback import Playback
 from sidebar_models import ClipListModel, SourceVideoModel
@@ -167,6 +177,9 @@ class WorkspaceViewModel(QObject):
     playbackChanged = Signal()
     selectionChanged = Signal()
     sidebarTabChanged = Signal()
+    pendingChanged = Signal()
+    draftChanged = Signal()
+    editingChanged = Signal()
 
     def __init__(
         self,
@@ -215,12 +228,21 @@ class WorkspaceViewModel(QObject):
         # nowhere for it to be written down but here.
         self._sidebar_tab = SIDEBAR_TABS[0]
 
+        # The Clip being marked, and the one being edited. Neither is part
+        # of the Analysis: a Pending Clip is one boundary and an intention,
+        # and a draft is a copy, which is why cancelling either costs
+        # nothing and needs no undo.
+        self._pending_start_ms: int | None = None
+        self._draft: ClipDraft | None = None
+        self._boundary_error = ""
+
         # What the timeline and the sidebar draw. All four are projections of
         # the Analysis; none of them is ever handed a Clip.
         self._ranges = TimelineRangeModel(self)
         self._ruler = RulerModel(self)
         self._clips = ClipListModel(self)
         self._sources = SourceVideoModel(self)
+        self._categories = CategoryModel(self)
         self._ruler_width_px = 0.0
 
         self._playback.position_changed.connect(self._position_reported)
@@ -535,6 +557,356 @@ class WorkspaceViewModel(QObject):
             self._playback.set_playback_rate(PLAYBACK_RATES[index])
             self.playbackChanged.emit()
 
+    # --- Marking a Clip, and the state that edits one ----------------------
+    #
+    # One editing state serves both: completing a second boundary and editing
+    # an existing Clip open the same form over the same draft, so there is one
+    # editor to learn rather than two. Everything below works on that draft;
+    # the Analysis hears about it once, when the analyst keeps it.
+
+    @Property(bool, notify=editingChanged)
+    def editing(self) -> bool:
+        """Whether the workspace is in the Clip-editing state.
+
+        The shell reads this and gives the editor its 360px; the video comes
+        back to full size on the way out without anything having to remember
+        how big it used to be.
+        """
+
+        return self._draft is not None
+
+    @Property(bool, notify=pendingChanged)
+    def pendingActive(self) -> bool:
+        """Whether one boundary has been marked and the other has not."""
+
+        return self._pending_start_ms is not None
+
+    @Property(int, notify=pendingChanged)
+    def pendingStartMs(self) -> int:
+        return self._pending_start_ms or 0
+
+    @Property(str, notify=pendingChanged)
+    def pendingText(self) -> str:
+        """Where the Clip began and how long it is so far.
+
+        Read against a moving playhead, so it is recomputed rather than
+        stored: a Pending Clip grows for as long as it is pending.
+        """
+
+        if self._pending_start_ms is None:
+            return ""
+        length_ms = max(0, self._current_position_ms() - self._pending_start_ms)
+        return (
+            f"Start {timecode.clock(self._pending_start_ms)}"
+            f"  ·  {timecode.duration(length_ms)}"
+        )
+
+    @Property(str, notify=pendingChanged)
+    def markActionText(self) -> str:
+        """What the mark action does next, which is not always the same thing."""
+
+        return "Ende setzen" if self._pending_start_ms is not None else "Clip markieren"
+
+    @Property(QObject, constant=True)
+    def categoryModel(self) -> QObject:
+        """The Categories the editor offers, with the draft's one marked."""
+
+        return self._categories
+
+    @Property(bool, notify=draftChanged)
+    def draftIsNew(self) -> bool:
+        return self._draft.is_new if self._draft is not None else False
+
+    @Property(str, notify=draftChanged)
+    def draftName(self) -> str:
+        return self._draft.name if self._draft is not None else ""
+
+    @Property(str, notify=draftChanged)
+    def draftNotes(self) -> str:
+        return self._draft.notes if self._draft is not None else ""
+
+    @Property(int, notify=draftChanged)
+    def draftStartMs(self) -> int:
+        return self._draft.start_ms if self._draft is not None else 0
+
+    @Property(int, notify=draftChanged)
+    def draftEndMs(self) -> int:
+        return self._draft.end_ms if self._draft is not None else 0
+
+    @Property(str, notify=draftChanged)
+    def draftStartText(self) -> str:
+        """The start, to the millisecond, in the form the field is sized for."""
+
+        return "" if self._draft is None else timecode.precise(self._draft.start_ms)
+
+    @Property(str, notify=draftChanged)
+    def draftEndText(self) -> str:
+        return "" if self._draft is None else timecode.precise(self._draft.end_ms)
+
+    @Property(str, notify=draftChanged)
+    def draftDurationText(self) -> str:
+        """How long the Clip is, as the boundaries either side of it move."""
+
+        if self._draft is None:
+            return ""
+        return timecode.precise_duration(self._draft.length_ms)
+
+    @Property(str, notify=draftChanged)
+    def draftCategoryColor(self) -> str:
+        """The draft range's colour, or nothing when it has no Category.
+
+        Nothing rather than a grey: what an uncategorised range looks like is
+        the timeline's decision and the token spec's value, and this seam does
+        not carry a second spelling of it.
+        """
+
+        if self._draft is None or self._draft.category_id is None:
+            return ""
+        return self._document.analysis.category(self._draft.category_id).color
+
+    @Property(str, notify=draftChanged)
+    def draftError(self) -> str:
+        """Why the Clip cannot be kept as it stands, in the form's own words."""
+
+        if self._draft is None:
+            return ""
+        return self._boundary_error or self._draft.error
+
+    @Property(bool, notify=draftChanged)
+    def draftValid(self) -> bool:
+        return self._draft is not None and not self.draftError
+
+    @Slot()
+    def markBoundary(self) -> None:
+        """Set the first Clip boundary, or complete it and open the editor.
+
+        The second press is the one that changes what the window is: it stops
+        the video, because a Clip is edited against a still frame rather than
+        against footage running away underneath the form.
+        """
+
+        if self._draft is not None or self._active_source_id is None:
+            return
+        position_ms = self._current_position_ms()
+        if self._pending_start_ms is None:
+            self._pending_start_ms = position_ms
+            self.pendingChanged.emit()
+            return
+        first_ms, self._pending_start_ms = self._pending_start_ms, None
+        self.pendingChanged.emit()
+        self._playback.pause()
+        self._open_editor(
+            ClipDraft.marked(
+                self._active_source_id,
+                first_ms,
+                position_ms,
+                limit_ms=self._duration_ms,
+            )
+        )
+
+    @Slot()
+    def cancelPending(self) -> None:
+        """Drop the mark. It was never part of the Analysis."""
+
+        self._abandon_pending()
+
+    @Slot(str)
+    def editClip(self, clip_id: str) -> None:
+        """Edit an existing Clip, in the state that marks a new one.
+
+        Its Source video is activated and the video is put on the Clip's first
+        frame, because a boundary is only worth editing against the picture it
+        names.
+        """
+
+        identity = _as_uuid(clip_id)
+        clip = next(
+            (clip for clip in self._document.analysis.clips if clip.id == identity),
+            None,
+        )
+        if clip is None:
+            return
+        self._abandon_pending()
+        if clip.source_video_id != self._active_source_id:
+            self._activate_source(clip.source_video_id)
+        self.selectClip(str(clip.id))
+        self._playback.pause()
+        self._open_editor(ClipDraft.of(clip))
+
+    @Slot(str)
+    def setDraftName(self, name: str) -> None:
+        if self._draft is None or name == self._draft.name:
+            return
+        self._draft = replace(self._draft, name=str(name))
+        self._boundary_error = ""
+        self.draftChanged.emit()
+
+    @Slot(str)
+    def setDraftNotes(self, notes: str) -> None:
+        if self._draft is None or notes == self._draft.notes:
+            return
+        self._draft = replace(self._draft, notes=str(notes))
+        self._boundary_error = ""
+        self.draftChanged.emit()
+
+    @Slot(str)
+    def setDraftCategory(self, category_id: str) -> None:
+        """File the Clip under a Category, or under none at all."""
+
+        if self._draft is None:
+            return
+        identity = _as_uuid(category_id)
+        known = {category.id for category in self._document.analysis.categories}
+        if identity not in known:
+            identity = None
+        self._draft = replace(self._draft, category_id=identity)
+        self._boundary_error = ""
+        self._categories.refresh(
+            self._document.analysis, selected_category_id=identity
+        )
+        self.draftChanged.emit()
+
+    @Slot(str)
+    def setDraftStartText(self, text: str) -> None:
+        self._move_boundary(START, timecode.parse(text))
+
+    @Slot(str)
+    def setDraftEndText(self, text: str) -> None:
+        self._move_boundary(END, timecode.parse(text))
+
+    @Slot(str, int)
+    def nudgeDraftBoundary(self, which: str, delta_ms: int) -> None:
+        """Move a boundary by a step, for an analyst who is a frame out."""
+
+        if self._draft is None:
+            return
+        side = START if which == START else END
+        self._move_boundary(side, self._draft.boundary_ms(side) + int(delta_ms))
+
+    @Slot(str)
+    def takeDraftBoundaryFromPlayhead(self, which: str) -> None:
+        """Set a boundary to where the video already is.
+
+        No seek: the frame this names is the one on screen, and asking the
+        player to go where it already is would only cost a decode.
+        """
+
+        self._move_boundary(
+            START if which == START else END,
+            self._current_position_ms(),
+            scrub=False,
+        )
+
+    @Slot()
+    def commitDraft(self) -> None:
+        """Keep the edited Clip, as one change to the Analysis.
+
+        One change rather than a field at a time: a Clip half-written into the
+        document would be a state the Analysis was never meant to hold, and a
+        revision the analyst never asked for.
+        """
+
+        draft = self._draft
+        if draft is None or not self.draftValid:
+            return
+        analysis = self._document.analysis
+        if draft.is_new:
+            kept = analysis.add_clip(
+                draft.source_video_id,
+                draft.name.strip(),
+                draft.start_ms,
+                draft.end_ms,
+                notes=draft.notes,
+                category_id=draft.category_id,
+            ).id
+        else:
+            assert draft.clip_id is not None
+            analysis.update_clip(
+                draft.clip_id,
+                name=draft.name.strip(),
+                start_ms=draft.start_ms,
+                end_ms=draft.end_ms,
+                notes=draft.notes,
+                category_id=draft.category_id,
+            )
+            kept = draft.clip_id
+        self._selected_clip_id = kept
+        self._close_editor()
+        self.selectionChanged.emit()
+
+    @Slot()
+    def cancelDraft(self) -> None:
+        """Leave the editing state, changing nothing.
+
+        A cancelled new Clip never reached the Analysis and a cancelled edit
+        was never applied to it, so both cancel paths are one path: drop the
+        draft, and there is nothing left to undo.
+        """
+
+        self._close_editor()
+
+    # --- Inside the editing state -----------------------------------------
+
+    def _open_editor(self, draft: ClipDraft) -> None:
+        self._draft = draft
+        self._boundary_error = ""
+        self._categories.refresh(
+            self._document.analysis, selected_category_id=draft.category_id
+        )
+        # The playhead goes with the player, because a Source video that was
+        # just activated is still being primed and priming puts the video back
+        # where the playhead says it was.
+        self._show_position(draft.start_ms)
+        self._seek_now(draft.start_ms)
+        self.draftChanged.emit()
+        self.editingChanged.emit()
+
+    def _close_editor(self) -> None:
+        if self._draft is None:
+            return
+        self._draft = None
+        self._boundary_error = ""
+        self._categories.refresh(self._document.analysis, selected_category_id=None)
+        self._refresh_projections()
+        self.draftChanged.emit()
+        self.editingChanged.emit()
+        self.documentChanged.emit()
+
+    def _move_boundary(
+        self, which: str, value_ms: int | None, *, scrub: bool = True
+    ) -> None:
+        """Move one boundary, and take the video with it.
+
+        Scrub-linking is what makes the field worth trusting: the number is
+        only useful if the frame it names is on screen while it is being
+        typed. A boundary that would end the Clip before it began is refused
+        and explained rather than quietly corrected.
+        """
+
+        draft = self._draft
+        if draft is None:
+            return
+        moved = draft.with_boundary(which, value_ms, limit_ms=self._duration_ms)
+        if moved is None:
+            self._boundary_error = NOT_A_TIME if value_ms is None else END_BEFORE_START
+            self.draftChanged.emit()
+            return
+        self._draft = moved
+        self._boundary_error = ""
+        if scrub:
+            self._playback.pause()
+            self._show_position(moved.boundary_ms(which))
+            self._seek_now(moved.boundary_ms(which))
+        self.draftChanged.emit()
+
+    def _abandon_pending(self) -> None:
+        """Forget a marked boundary, wherever the abandoning came from."""
+
+        if self._pending_start_ms is None:
+            return
+        self._pending_start_ms = None
+        self.pendingChanged.emit()
+
     # --- The Analysis this window is about --------------------------------
     #
     # The commands themselves belong to `application_workflow`, which decides
@@ -621,6 +993,13 @@ class WorkspaceViewModel(QObject):
         self._playback.unload()
         # Whatever was being primed is gone with the video it belonged to.
         self._priming = False
+        # Whatever was being marked or edited belonged to the Analysis that is
+        # gone, and there is nothing to keep: neither had reached it.
+        self._abandon_pending()
+        self._draft = None
+        self._boundary_error = ""
+        self.draftChanged.emit()
+        self.editingChanged.emit()
         self._active_source_id = None
         self._position_ms = 0
         self._duration_ms = 0
@@ -640,6 +1019,9 @@ class WorkspaceViewModel(QObject):
     # --- The Active Source video ------------------------------------------
 
     def _activate_source(self, source_id: UUID) -> None:
+        # A Clip belongs to the video its first boundary was marked on, so a
+        # mark does not survive the video it was made against.
+        self._abandon_pending()
         self._active_source_id = source_id
         video = self._document.analysis.source_video(source_id)
         self._playback.load(video.location)

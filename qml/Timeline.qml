@@ -153,6 +153,60 @@ Item {
                 }
             }
         }
+
+        // The Clip being edited, drawn where it will land. It is not in the
+        // range model, because it is not in the Analysis: it is the draft,
+        // and it moves as its boundaries are typed.
+        Item {
+            id: draftRange
+
+            objectName: "draftRange"
+
+            readonly property color tint: workspace.draftCategoryColor === ""
+                                          ? Theme.textFaint
+                                          : workspace.draftCategoryColor
+
+            visible: workspace.editing && root.ready
+            x: root.msToX(workspace.draftStartMs)
+            width: Math.max(Theme.minimumRangeWidth,
+                            root.msToX(workspace.draftEndMs)
+                            - root.msToX(workspace.draftStartMs))
+            y: 0
+            height: track.height
+
+            Rectangle {
+                anchors.fill: parent
+                color: Theme.rangeFill(draftRange.tint, true)
+                border.width: Theme.border
+                border.color: Theme.rangeOutline(draftRange.tint)
+            }
+
+            Rectangle {
+                anchors { top: parent.top; left: parent.left; right: parent.right }
+                height: Theme.border
+                color: draftRange.tint
+            }
+        }
+
+        // Where the first boundary of a Pending Clip was set, and how far the
+        // playhead has carried it since.
+        Rectangle {
+            objectName: "pendingRange"
+            visible: workspace.pendingActive && root.ready
+            x: root.msToX(workspace.pendingStartMs)
+            width: Math.max(Theme.border,
+                            root.msToX(workspace.positionMs)
+                            - root.msToX(workspace.pendingStartMs))
+            y: 0
+            height: track.height
+            color: Theme.pendingRange
+
+            Rectangle {
+                anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+                width: Theme.border
+                color: Theme.text
+            }
+        }
     }
 
     // --- Hover ------------------------------------------------------------

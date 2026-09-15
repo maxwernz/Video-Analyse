@@ -93,9 +93,15 @@ def engine(application: QApplication) -> QQmlApplicationEngine:
 
 def test_the_application_ships_the_components_the_shell_is_made_of() -> None:
     assert {path.name for path in qml_components()} == {
+        "ClipEditor.qml",
         "EmptyStage.qml",
+        "Field.qml",
         "IconButton.qml",
         "Main.qml",
+        "Section.qml",
+        "Stepper.qml",
+        "TextButton.qml",
+        "TimecodeField.qml",
         "Toolbar.qml",
         "ScrollHint.qml",
         "SeekButton.qml",
@@ -651,6 +657,75 @@ class _RefusesToLetGo(_AnswersEverything):
 
     def ask_unsaved_changes(self) -> UnsavedChangesChoice:
         return UnsavedChangesChoice.CANCEL
+
+
+# --- The Clip-editing state, as a state of the shell ------------------------
+
+
+def test_the_mark_action_in_the_transport_opens_the_editing_state(
+    application: QApplication,
+) -> None:
+    """The prototype's transport was inert, and inertness is silent.
+
+    Two presses of the one accent-coloured primary are how an analyst reaches
+    the Clip editor at all, so this presses the real control rather than
+    calling the slot behind it.
+    """
+
+    view_model = WorkspaceViewModel(_an_analysis("Spiel gegen Kiel"), FakePlayback())
+    engine, component, window = _shell_with(view_model)
+    mark = window.findChild(QObject, "markAction")
+    assert mark is not None, "the transport has no mark-Clip action"
+
+    assert QMetaObject.invokeMethod(mark, "clicked")
+    application.processEvents()
+    assert view_model.pendingActive is True
+    assert view_model.editing is False
+
+    assert QMetaObject.invokeMethod(mark, "clicked")
+    application.processEvents()
+    assert view_model.editing is True
+
+    window.deleteLater()
+    del engine, component
+
+
+def test_the_editor_takes_its_room_from_the_video_and_gives_it_back(
+    application: QApplication,
+) -> None:
+    """The 360px comes out of the shell, so leaving the state restores it.
+
+    Nothing has to remember how big the video used to be, which is the whole
+    reason the editor is a sibling of the video area rather than something
+    drawn over it.
+    """
+
+    document = _an_analysis("Spiel gegen Kiel")
+    analysis = document.analysis
+    clip = analysis.add_clip(
+        analysis.source_videos[0].id, "Gegenstoss", 600_000, 612_000
+    )
+    view_model = WorkspaceViewModel(document, FakePlayback())
+    view_model.refresh()
+
+    engine, component, window = _shell_with(view_model)
+    application.processEvents()
+    video_area = window.findChild(QObject, "videoArea")
+    assert video_area is not None, "the shell has no video area"
+    full_width = video_area.property("width")
+    assert full_width > 0, "the shell never laid itself out"
+    editor_width = int(_theme_declarations()["editorWidth"])
+
+    view_model.editClip(str(clip.id))
+    application.processEvents()
+    assert video_area.property("width") == full_width - editor_width
+
+    view_model.cancelDraft()
+    application.processEvents()
+    assert video_area.property("width") == full_width
+
+    window.deleteLater()
+    del engine, component
 
 
 def test_no_component_announces_the_products_name() -> None:

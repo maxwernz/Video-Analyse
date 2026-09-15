@@ -10,8 +10,11 @@ import "."
   control on purpose: in the captured evidence a stock combo box signalled
   "default Qt" more loudly than anything else in the window.
 
-  The mark-Clip action belongs in this row too, as the one accent-coloured
-  primary, and arrives with the Pending Clip in #45.
+  The mark-Clip action is in this row too, as the one accent-coloured
+  primary: the act the whole application is for is the easiest control in the
+  window to find. It says which of its two presses is next, and both it and
+  the speed control stand down while the Clip editor has the room, because
+  marking a second Clip while editing one is not a thing anybody does.
 */
 Rectangle {
     id: root
@@ -146,10 +149,22 @@ Rectangle {
 
         SegmentedControl {
             anchors.verticalCenter: parent.verticalCenter
+            visible: !workspace.editing
             options: workspace.playbackRates
             segmentWidth: Theme.rateSegmentWidth
             currentIndex: workspace.playbackRateIndex
             onSelected: function (index) { workspace.setRateIndex(index) }
+        }
+
+        TextButton {
+            objectName: "markAction"
+            anchors.verticalCenter: parent.verticalCenter
+            visible: !workspace.editing
+            primary: true
+            iconName: workspace.pendingActive ? "square" : "circle-dot"
+            label: workspace.markActionText
+            enabled: workspace.hasVideo
+            onClicked: workspace.markBoundary()
         }
 
         Row {

@@ -44,6 +44,10 @@ _Avoid_: Segment, marker
 A temporary Clip boundary state after a start has been set on the Active Source video but before an end has been set. It is not part of the Analysis and cannot move to another Source video.
 _Avoid_: Recording, unsaved Clip
 
+**Clip draft**:
+The copy of a Clip held while the Clip-editing state is open, carrying the edits an analyst has made but has not kept. It is not part of the Analysis: a newly marked Clip reaches it only when the draft is saved, and an edited Clip is left exactly as it was when the draft is abandoned.
+_Avoid_: Temporary Clip, edit buffer
+
 **Category**:
 An ordered, color-coded, Analysis-wide classification that can group Clips from different Source videos. Renaming a Category preserves its relationship to existing Clips.
 _Avoid_: Folder, tag
