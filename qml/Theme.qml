@@ -23,6 +23,10 @@ QtObject {
     readonly property color controlBorder: "#343941"
     readonly property color controlDisabled: "#1B1E22"
 
+    // A hover that must stay quieter than `controlHover`, for a segment
+    // inside a control that is already drawn on `control`.
+    readonly property color controlSubtleHover: Qt.rgba(1, 1, 1, 0.03)
+
     // Text
     readonly property color text: "#E8EAED"
     readonly property color textMuted: "#8A9099"
@@ -102,6 +106,27 @@ QtObject {
     readonly property int tooltipDelayMs: 550
     readonly property int splitterWidth: 5
     readonly property int paneAnimationMs: 130
+
+    // The transport. The token spec freezes the row's 56px and says the play
+    // control is "rendered larger than its neighbours"; these are the sizes
+    // that were drawn against that, and the play control is the only round
+    // one in the window.
+    readonly property int transportButtonSize: 34
+    readonly property int transportPlaySize: 46
+    readonly property int transportPlayInset: 3
+    readonly property int transportClusterSpacing: 2
+    readonly property int transportGroupSpacing: 12
+    readonly property int timecodeSpacing: 6
+    readonly property int seekLabelSize: 9
+    readonly property int seekLabelOffset: 1
+    readonly property int playIconOffset: 1
+    readonly property int controlPadding: 12
+    readonly property int rateSegmentWidth: 38
+    readonly property int segmentIndicatorHeight: 2
+    readonly property int segmentIndicatorInset: 12
+    readonly property int volumeSliderWidth: 72
+    readonly property int volumeTrackHeight: 3
+    readonly property int volumeKnobSize: 10
 
     // Icons -- 20px in the transport, 16px everywhere else. The stroke weight
     // is applied by `icon_family.py` on the way to the renderer.

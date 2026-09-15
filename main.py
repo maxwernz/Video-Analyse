@@ -13,6 +13,7 @@ from PySide6.QtCore import QFile
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
 
+from analysis import AnalysisDocument
 from app_runtime import (
     REQUIRED_FONT_FAMILIES,
     configure_application_identity,
@@ -21,11 +22,13 @@ from app_runtime import (
     overlay_font_path,
     register_bundled_fonts,
 )
+from playback import MediaPlayerPlayback
 from qml_runtime import (
     show_quick_scene_with_fallback,
     software_rendering_requested,
     use_software_rendering,
 )
+from workspace_view_model import WorkspaceViewModel
 
 
 #: Ask for the QML workspace without a command line.
@@ -73,6 +76,18 @@ def selected_interface(
     return WIDGETS_INTERFACE
 
 
+def build_workspace_context() -> dict[str, WorkspaceViewModel]:
+    """What the QML window is given, and the whole vocabulary it has.
+
+    One view model over one Analysis document and one player. QML never sees
+    either of them; it sees this. The Analysis the window opens into is a new,
+    empty one until the menu bar and the document actions arrive in #47.
+    """
+
+    view_model = WorkspaceViewModel(AnalysisDocument.new(), MediaPlayerPlayback())
+    return {"workspace": view_model}
+
+
 def _run_smoke_check(app: QApplication, log_path: str) -> dict[str, object]:
     from mainwindow import MainWindow
 
@@ -97,7 +112,8 @@ def _run_smoke_check(app: QApplication, log_path: str) -> dict[str, object]:
     # Packaging a Qt Quick presentation layer is the risk this check exists to
     # retire: the QML engine has to find its bundled scene, and the graphics
     # backend has to draw it, on whatever machine the package landed on.
-    scene = show_quick_scene_with_fallback()
+    context = build_workspace_context()
+    scene = show_quick_scene_with_fallback(context_objects=context)
     app.processEvents()
     scene.window.close()
 
@@ -152,10 +168,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
 
         if interface == QML_INTERFACE:
-            scene = show_quick_scene_with_fallback()
+            context = build_workspace_context()
+            scene = show_quick_scene_with_fallback(context_objects=context)
             # The scene owns the window; holding the engine keeps the whole
-            # object tree alive for as long as the application runs.
-            _ = scene
+            # object tree alive for as long as the application runs, and the
+            # context objects are published rather than owned, so they have to
+            # outlive this scope too.
+            _ = (scene, context)
             return app.exec()
 
         from mainwindow import MainWindow

@@ -36,6 +36,7 @@ from app_runtime import (  # noqa: E402
     register_bundled_fonts,
 )
 from application_workflow import UNTITLED_ANALYSIS_TITLE  # noqa: E402
+from main import build_workspace_context  # noqa: E402
 from qml_icons import IconProvider  # noqa: E402
 from qml_runtime import build_engine, quick_scene_path  # noqa: E402
 
@@ -62,7 +63,13 @@ def application() -> QApplication:
 
 @pytest.fixture()
 def engine(application: QApplication) -> QQmlApplicationEngine:
-    return build_engine(QML_ROOT)
+    """An engine holding everything a component's bindings can name.
+
+    The components bind to `workspace`, so a load test without it would report
+    the missing view model rather than the mistake it exists to find.
+    """
+
+    return build_engine(QML_ROOT, context_objects=build_workspace_context())
 
 
 # --- The load test ---------------------------------------------------------
@@ -70,13 +77,17 @@ def engine(application: QApplication) -> QQmlApplicationEngine:
 
 def test_the_application_ships_the_components_the_shell_is_made_of() -> None:
     assert {path.name for path in qml_components()} == {
-        "Main.qml",
-        "Theme.qml",
-        "Toolbar.qml",
         "IconButton.qml",
+        "Main.qml",
+        "Toolbar.qml",
+        "SeekButton.qml",
+        "SegmentedControl.qml",
         "Sidebar.qml",
         "Stage.qml",
+        "Theme.qml",
         "Tip.qml",
+        "Transport.qml",
+        "VolumeSlider.qml",
     }
 
 

@@ -5,7 +5,7 @@ import "."
   The window, and the application's single QML entry point.
 
   This is the shell: the three surfaces, the one hairline, the vendored
-  typography and a toolbar. The timeline, the transport, the Clip list and the
+  typography, a toolbar and the transport. The timeline, the Clip list and the
   Clip editor arrive with the tickets that own them, each taking its place in
   the geometry already laid out here.
 
@@ -93,7 +93,30 @@ Window {
 
         Stage {
             id: stage
-            anchors.fill: parent
+            anchors {
+                top: parent.top
+                left: parent.left
+                right: parent.right
+                bottom: transport.top
+            }
+        }
+
+        // The timeline takes its 60px from between these two in #44.
+
+        Transport {
+            id: transport
+            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         }
     }
+
+    // --- Shortcuts: platform behaviour, kept ------------------------------
+    //
+    // The transport's own keys. The document actions and their shortcuts are
+    // the menu bar's, and land with it in #47.
+
+    Shortcut { sequence: "Space";       onActivated: workspace.playPause() }
+    Shortcut { sequence: "Left";        onActivated: workspace.stepBackward() }
+    Shortcut { sequence: "Right";       onActivated: workspace.stepForward() }
+    Shortcut { sequence: "Shift+Left";  onActivated: workspace.jumpBackward() }
+    Shortcut { sequence: "Shift+Right"; onActivated: workspace.jumpForward() }
 }

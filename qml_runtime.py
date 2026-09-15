@@ -16,11 +16,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from functools import partial
 import logging
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QEventLoop, QTimer, QUrl
+from PySide6.QtCore import QEventLoop, QObject, QTimer, QUrl
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
 
@@ -90,7 +91,11 @@ def rendering_backend_of(window: QQuickWindow) -> str:
     return renderer.graphicsApi().name.lower()
 
 
-def build_engine(qml_root: Path | None = None) -> QQmlApplicationEngine:
+def build_engine(
+    qml_root: Path | None = None,
+    *,
+    context_objects: Mapping[str, QObject] | None = None,
+) -> QQmlApplicationEngine:
     """A QML engine that can find everything this application's QML asks for.
 
     Two things, and they are the same kind of thing: the directory holding the
@@ -99,17 +104,33 @@ def build_engine(qml_root: Path | None = None) -> QQmlApplicationEngine:
     cannot recolour an icon on its own. A component that cannot find either
     logs a warning and renders nothing, so both are set up here rather than by
     whoever remembers.
+
+    The third thing a scene needs is whatever Python objects its bindings name
+    — the workspace view model above all. A component whose `workspace` does
+    not exist logs a warning per binding and draws nothing, so the objects are
+    published on the root context before anything is loaded.
     """
 
     root = quick_scene_path().parent if qml_root is None else qml_root
     engine = QQmlApplicationEngine()
     engine.addImportPath(str(root))
     install_icon_provider(engine)
+    for name, published in (context_objects or {}).items():
+        # The context holds no reference of its own: an object nobody else
+        # keeps is collected, and every binding that named it reads `null`
+        # and renders nothing. Ownerless objects are given to the engine so
+        # that publishing one is enough to keep it.
+        if published.parent() is None:
+            published.setParent(engine)
+        engine.rootContext().setContextProperty(name, published)
     return engine
 
 
 def show_quick_scene(
-    scene: Path | None = None, *, first_frame_timeout_ms: int = FIRST_FRAME_TIMEOUT_MS
+    scene: Path | None = None,
+    *,
+    context_objects: Mapping[str, QObject] | None = None,
+    first_frame_timeout_ms: int = FIRST_FRAME_TIMEOUT_MS,
 ) -> QuickScene:
     """Load the QML scene and wait until the graphics backend has drawn it.
 
@@ -119,7 +140,7 @@ def show_quick_scene(
     """
 
     scene_file = quick_scene_path() if scene is None else scene
-    engine = build_engine(scene_file.parent)
+    engine = build_engine(scene_file.parent, context_objects=context_objects)
     warnings: list[str] = []
     engine.warnings.connect(
         lambda reported: warnings.extend(warning.toString() for warning in reported)
@@ -178,15 +199,19 @@ def _wait_for_first_frame(
 
 
 def show_quick_scene_with_fallback(
-    show: Callable[[], QuickScene] = show_quick_scene,
+    show: Callable[[], QuickScene] | None = None,
     *,
     select_software: Callable[[], None] = use_software_rendering,
+    context_objects: Mapping[str, QObject] | None = None,
 ) -> QuickScene:
     """Show the scene, retrying once on the software backend if the first fails.
 
     A scene that cannot be loaded is not retried: software rendering cannot fix
     a QML file, and loading it twice only doubles the noise.
     """
+
+    if show is None:
+        show = partial(show_quick_scene, context_objects=context_objects)
 
     try:
         return show()
