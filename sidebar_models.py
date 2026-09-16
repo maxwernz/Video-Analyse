@@ -14,7 +14,7 @@ place a colour is written down stays `Theme.qml`.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -205,11 +205,32 @@ class ClipListModel(RoleModel):
 
 
 class SourceVideoModel(RoleModel):
-    """Every Source video in the Analysis, with the active one marked."""
+    """Every Source video in the Analysis, with the active one marked.
 
-    ROLES = ("sourceId", "name", "badge", "durationText", "clipCountText", "active")
+    `available` reflects `ApplicationWorkflow.is_source_video_available`,
+    computed fresh on every refresh: unavailability is presentation state
+    the Videos tab reads, not anything stored in the Analysis itself, so a
+    Source video that resolves differently after a relink or a reopened
+    drive shows up correctly the next time this model is refreshed.
+    """
 
-    def refresh(self, analysis: Analysis, *, active_source_id: UUID | None) -> None:
+    ROLES = (
+        "sourceId",
+        "name",
+        "badge",
+        "durationText",
+        "clipCountText",
+        "active",
+        "available",
+    )
+
+    def refresh(
+        self,
+        analysis: Analysis,
+        *,
+        active_source_id: UUID | None,
+        is_available: Callable[[UUID], bool] = lambda source_id: True,
+    ) -> None:
         badges = source_badges([video.display_name for video in analysis.source_videos])
         self._replace(
             [
@@ -226,6 +247,7 @@ class SourceVideoModel(RoleModel):
                         len(analysis.clips_of_source_video(video.id))
                     ),
                     "active": video.id == active_source_id,
+                    "available": is_available(video.id),
                 }
                 for index, video in enumerate(analysis.source_videos)
             ]

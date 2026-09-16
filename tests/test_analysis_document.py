@@ -3,6 +3,7 @@ from __future__ import annotations
 import pickle
 import json
 import os
+import shutil
 import sys
 import types
 from pathlib import Path
@@ -648,3 +649,122 @@ def test_recovered_content_with_no_bound_file_has_no_external_modification() -> 
 
     assert document.path is None
     assert not document.has_external_modification()
+
+
+# --- Opening an Analysis with missing media ---------------------------------
+#
+# Unavailability is a display state of a Source video, not a load failure:
+# these tests load real `.analysis` files whose recorded media does not
+# exist, and assert the Analysis still opens with every Source video and
+# every Clip intact.
+
+
+def test_an_analysis_with_every_source_video_present_is_fully_available(
+    tmp_path: Path,
+) -> None:
+    video_path = tmp_path / "first-half.mp4"
+    video_path.write_bytes(b"video")
+    document = AnalysisDocument.new("Match")
+    source_video = document.analysis.add_source_video(
+        "first-half.mp4", str(video_path)
+    )
+    saved_path = document.save_as(tmp_path / "match")
+
+    reopened = AnalysisDocument.new()
+    reopened.load(saved_path)
+
+    assert reopened.is_source_video_available(source_video.id)
+    assert reopened.resolve_source_video(source_video.id) == video_path
+
+
+def test_loading_with_an_unavailable_source_video_still_opens_and_keeps_its_clip(
+    tmp_path: Path,
+) -> None:
+    document = AnalysisDocument.new("Match")
+    source_video = document.analysis.add_source_video(
+        "first-half.mp4", str(tmp_path / "gone.mp4"), duration_ms=10_000
+    )
+    clip = document.analysis.add_clip(source_video.id, "Fast break", 1_000, 2_000)
+    saved_path = document.save_as(tmp_path / "match")
+
+    reopened = AnalysisDocument.new()
+    reopened.load(saved_path)
+
+    assert reopened.analysis.source_videos == (
+        reopened.analysis.source_video(source_video.id),
+    )
+    assert reopened.analysis.clip(clip.id).start_ms == 1_000
+    assert not reopened.is_source_video_available(source_video.id)
+    assert reopened.resolve_source_video(source_video.id) is None
+
+
+def test_an_analysis_with_some_sources_missing_marks_only_those_unavailable(
+    tmp_path: Path,
+) -> None:
+    present_path = tmp_path / "first-half.mp4"
+    present_path.write_bytes(b"video")
+    document = AnalysisDocument.new("Match")
+    present = document.analysis.add_source_video("first-half.mp4", str(present_path))
+    missing = document.analysis.add_source_video(
+        "second-half.mp4", str(tmp_path / "second-half-gone.mp4")
+    )
+    saved_path = document.save_as(tmp_path / "match")
+
+    reopened = AnalysisDocument.new()
+    reopened.load(saved_path)
+
+    assert reopened.is_source_video_available(present.id)
+    assert not reopened.is_source_video_available(missing.id)
+
+
+def test_a_source_video_and_its_analysis_moved_together_still_resolves(
+    tmp_path: Path,
+) -> None:
+    """An Analysis and its video, copied to another folder, keep working.
+
+    `relative_source_video_path` records the relative arrangement at add
+    time; after both files move to a new home together, `resolve_source_video`
+    must recover the video from that relative path alone, without the
+    recorded absolute location ever being valid again.
+    """
+
+    original_directory = tmp_path / "original"
+    videos_directory = original_directory / "videos"
+    videos_directory.mkdir(parents=True)
+    video_path = videos_directory / "first-half.mp4"
+    video_path.write_bytes(b"video")
+    document = AnalysisDocument.new("Match")
+    # A brand-new document has no file yet, so nothing is relative to it; a
+    # Source video is added first — an Analysis file needs at least one to
+    # be saveable at all — and only once this document has a path of its own
+    # does `relative_source_video_path` have anything to be relative to.
+    # exactly the order `ApplicationWorkflow.add_source_video_file` uses when
+    # the document it is adding to already has a home.
+    source_video = document.analysis.add_source_video(
+        "first-half.mp4", str(video_path)
+    )
+    saved_path = document.save_as(original_directory / "match.analysis")
+    relative_path = document.relative_source_video_path(video_path)
+    document.analysis.relink_source_video(
+        source_video.id, str(video_path), relative_path=relative_path
+    )
+    document.save()
+
+    moved_directory = tmp_path / "moved"
+    moved_directory.mkdir()
+    shutil.move(str(original_directory / "videos"), str(moved_directory / "videos"))
+    shutil.move(str(saved_path), str(moved_directory / "match.analysis"))
+
+    reopened = AnalysisDocument.new()
+    reopened.load(moved_directory / "match.analysis")
+
+    assert reopened.is_source_video_available(source_video.id)
+    assert reopened.resolve_source_video(source_video.id) == (
+        moved_directory / "videos" / "first-half.mp4"
+    )
+
+
+def test_relative_source_video_path_is_none_before_the_document_has_a_file() -> None:
+    document = AnalysisDocument.new("Match")
+
+    assert document.relative_source_video_path(Path("/videos/first-half.mp4")) is None

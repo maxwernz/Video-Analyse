@@ -4,6 +4,7 @@ from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 from typing import Self
+from uuid import UUID
 
 from ._io import atomic_replace
 from .codec import AnalysisFileCodec, AnalysisFileFormat
@@ -15,6 +16,7 @@ from .errors import (
     LegacySourceOverwriteError,
     SaveAsRequiredError,
 )
+from .location import relative_to_analysis_file, resolve_source_video_location
 from .model import Analysis
 
 
@@ -166,6 +168,35 @@ class AnalysisDocument:
                 "This Analysis has no file on disk to reload from"
             )
         self.load(self._path)
+
+    def resolve_source_video(self, source_video_id: UUID) -> Path | None:
+        """The real, on-disk path backing a Source video, or `None` if missing.
+
+        Only the two locations ADR 0003 allows are ever tried — the recorded
+        location, then path information relative to this document's own
+        file — and this never mutates the Analysis: an Analysis opened
+        read-only, or one nobody has saved anywhere yet, resolves exactly as
+        well as it can without ever marking the document dirty just for
+        having been opened. Persisting a resolved location is what manual
+        relinking, through `Analysis.relink_source_video`, is for.
+        """
+        source_video = self._analysis.source_video(source_video_id)
+        return resolve_source_video_location(
+            source_video.location, source_video.relative_path, self._path
+        )
+
+    def is_source_video_available(self, source_video_id: UUID) -> bool:
+        return self.resolve_source_video(source_video_id) is not None
+
+    def relative_source_video_path(self, video_path: Path) -> str | None:
+        """The portable relative path a newly added or relinked video gets.
+
+        `None` before this document has ever been saved: there is no
+        Analysis-file directory yet for a relative path to be relative to,
+        and a video added at that point still resolves through its recorded
+        location alone until the Analysis itself has a home.
+        """
+        return relative_to_analysis_file(video_path, self._path)
 
     def has_external_modification(self) -> bool:
         """Whether this document's file changed since it was loaded or saved.

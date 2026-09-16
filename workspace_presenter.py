@@ -34,12 +34,21 @@ UNSAVED_CHANGES_QUESTION = (
 OPEN_ANALYSIS_TITLE = "Analyse öffnen"
 SAVE_ANALYSIS_TITLE = "Analyse speichern"
 ADD_SOURCE_VIDEO_TITLE = "Video hinzufügen"
+RELINK_SOURCE_VIDEO_TITLE = "Ersatzmedia auswählen"
 
 EXTERNAL_CHANGE_TITLE = "Datei wurde extern geändert"
 EXTERNAL_CHANGE_QUESTION = (
     "Diese Analyse-Datei wurde außerhalb der Anwendung geändert. Möchten Sie "
     "die geänderte Datei laden (eigene Änderungen gehen verloren) oder Ihre "
     "Änderungen unter einem anderen Namen speichern?"
+)
+
+REPLACEMENT_MISMATCH_TITLE = "Video stimmt nicht überein"
+REPLACEMENT_MISMATCH_QUESTION = (
+    "Die gewählte Datei stimmt nicht mit den gespeicherten Merkmalen von "
+    "„{display_name}“ überein (Größe, Länge, Inhalt). Vorhandene Clip-"
+    "Zeitstempel passen möglicherweise nicht mehr zum Ersatzmedium. Trotzdem "
+    "verknüpfen?"
 )
 
 RECOVERY_OFFER_TITLE = "Nicht gespeicherte Änderungen gefunden"
@@ -156,6 +165,38 @@ class WorkspacePresenter:
             SOURCE_VIDEO_FILE_FILTER,
         )
         return chosen or None
+
+    def choose_replacement_media(self, display_name: str) -> str | None:
+        chosen, _ = QFileDialog.getOpenFileName(
+            None,
+            RELINK_SOURCE_VIDEO_TITLE,
+            QStandardPaths.writableLocation(
+                QStandardPaths.StandardLocation.MoviesLocation
+            ),
+            SOURCE_VIDEO_FILE_FILTER,
+        )
+        return chosen or None
+
+    def confirm_source_video_replacement(self, display_name: str) -> bool:
+        """Ask before adopting media that does not verify against `display_name`.
+
+        A real, consequential question — like `ask_unsaved_changes` and
+        `ask_external_change_conflict` — so it is a native `QMessageBox`
+        rather than anything drawn in QML, and a dismissed dialog reads as
+        No exactly as those two do: the Source video stays unavailable
+        rather than silently adopting unverified media.
+        """
+        question = QMessageBox()
+        question.setIcon(QMessageBox.Icon.Warning)
+        question.setWindowTitle(REPLACEMENT_MISMATCH_TITLE)
+        question.setText(
+            REPLACEMENT_MISMATCH_QUESTION.format(display_name=display_name)
+        )
+        question.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        question.setDefaultButton(QMessageBox.StandardButton.No)
+        return question.exec() == QMessageBox.StandardButton.Yes
 
     def report_failure(self, title: str, message: str) -> None:
         QMessageBox.critical(None, title, message)

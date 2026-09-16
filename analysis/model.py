@@ -317,6 +317,62 @@ class Analysis:
             fingerprint=fingerprint,
         )
 
+    def relink_source_video(
+        self,
+        source_video_id: UUID,
+        location: str,
+        *,
+        relative_path: str | None = None,
+        duration_ms: int | None = None,
+        byte_size: int | None = None,
+        fingerprint: str | None = None,
+    ) -> SourceVideo:
+        """Point an existing Source-video identity at replacement media.
+
+        This is the manual-relink primitive: the caller — `ApplicationWorkflow`
+        — has already decided, either from a verified size/duration/fingerprint
+        match or from an analyst's explicit mismatch confirmation, that
+        ``location`` should now back ``source_video_id``. Every existing Clip
+        keeps naming that same UUID, so none of them move, gain, or lose a
+        relationship; only the identity's own recorded location and probed
+        signals change. Unlike :meth:`add_or_relink_source_video`, this never
+        searches for a matching identity itself — the identity to relink is
+        the caller's decision, not this method's — so it is also what an
+        automatic "moved together" resolution would use if it ever needed to
+        persist what it found, rather than the read-only check that resolution
+        actually performs.
+        """
+        source_video = self.source_video(source_video_id)
+        if not isinstance(location, str) or not location.strip():
+            raise InvalidAnalysisDataError("Source-video location must not be empty")
+        if relative_path is not None and not isinstance(relative_path, str):
+            raise InvalidAnalysisDataError("Source-video relative path must be text")
+        _validate_optional_non_negative_integer(duration_ms, "Source-video duration")
+        _validate_optional_non_negative_integer(byte_size, "Source-video byte size")
+        if fingerprint is not None and not isinstance(fingerprint, str):
+            raise InvalidAnalysisDataError("Source-video fingerprint must be text")
+        if any(
+            other.id != source_video_id and other.location == location
+            for other in self._source_videos
+        ):
+            raise InvalidAnalysisDataError("Source-video location is already in use")
+        if fingerprint is not None and any(
+            other.id != source_video_id and other.fingerprint == fingerprint
+            for other in self._source_videos
+        ):
+            raise InvalidAnalysisDataError("Source video has already been added")
+        relinked = replace(
+            source_video,
+            location=location,
+            relative_path=relative_path,
+            duration_ms=duration_ms,
+            byte_size=byte_size,
+            fingerprint=fingerprint,
+        )
+        self._source_videos[self._source_videos.index(source_video)] = relinked
+        self._revision += 1
+        return relinked
+
     def _matching_source_video(
         self,
         *,

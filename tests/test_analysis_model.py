@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 
 from analysis import (
@@ -460,6 +462,105 @@ def test_media_that_only_partially_matches_never_relinks_and_never_duplicates() 
 
     assert len(analysis.source_videos) == 2
     assert second.location == "/videos/second-half.mp4"
+
+
+def test_relinking_a_source_video_points_its_identity_at_new_media_and_keeps_clips() -> None:
+    analysis = Analysis("Match")
+    original = analysis.add_source_video(
+        "first-half.mp4",
+        "/videos/first-half.mp4",
+        duration_ms=2_700_000,
+        byte_size=123,
+        fingerprint="sampled-sha256:same",
+    )
+    clip = analysis.add_clip(original.id, "Fast break", 1_000, 2_000)
+    revision = analysis.revision
+
+    relinked = analysis.relink_source_video(
+        original.id,
+        "/recovered/first-half.mp4",
+        relative_path="first-half.mp4",
+        duration_ms=2_700_000,
+        byte_size=123,
+        fingerprint="sampled-sha256:same",
+    )
+
+    assert relinked.id == original.id
+    assert relinked.location == "/recovered/first-half.mp4"
+    assert relinked.relative_path == "first-half.mp4"
+    assert analysis.revision == revision + 1
+    assert len(analysis.source_videos) == 1
+    assert analysis.clip(clip.id).source_video_id == original.id
+    assert analysis.clip(clip.id).start_ms == 1_000
+
+
+def test_relinking_can_adopt_a_mismatched_fingerprint_when_the_caller_allows_it() -> None:
+    """Verification belongs to `ApplicationWorkflow`; the model only records."""
+
+    analysis = Analysis("Match")
+    original = analysis.add_source_video(
+        "first-half.mp4",
+        "/videos/first-half.mp4",
+        duration_ms=2_700_000,
+        byte_size=123,
+        fingerprint="sampled-sha256:same",
+    )
+
+    relinked = analysis.relink_source_video(
+        original.id,
+        "/videos/different-recording.mp4",
+        duration_ms=1_000,
+        byte_size=999,
+        fingerprint="sampled-sha256:different",
+    )
+
+    assert relinked.fingerprint == "sampled-sha256:different"
+    assert relinked.duration_ms == 1_000
+    assert relinked.byte_size == 999
+
+
+def test_relinking_rejects_a_location_already_used_by_another_source_video() -> None:
+    analysis = Analysis("Match")
+    first = analysis.add_source_video("first-half.mp4", "/videos/first-half.mp4")
+    analysis.add_source_video("second-half.mp4", "/videos/second-half.mp4")
+
+    with pytest.raises(InvalidAnalysisDataError):
+        analysis.relink_source_video(first.id, "/videos/second-half.mp4")
+
+
+def test_relinking_rejects_a_fingerprint_already_used_by_another_source_video() -> None:
+    analysis = Analysis("Match")
+    first = analysis.add_source_video(
+        "first-half.mp4", "/videos/first-half.mp4", fingerprint="sampled-sha256:a"
+    )
+    analysis.add_source_video(
+        "second-half.mp4", "/videos/second-half.mp4", fingerprint="sampled-sha256:b"
+    )
+
+    with pytest.raises(InvalidAnalysisDataError):
+        analysis.relink_source_video(
+            first.id, "/videos/relinked.mp4", fingerprint="sampled-sha256:b"
+        )
+
+
+def test_relinking_an_unknown_source_video_is_reported_as_unknown() -> None:
+    analysis = Analysis("Match")
+
+    with pytest.raises(UnknownEntityError):
+        analysis.relink_source_video(uuid4(), "/videos/anything.mp4")
+
+
+def test_a_failed_relink_leaves_the_analysis_untouched() -> None:
+    analysis = Analysis("Match")
+    first = analysis.add_source_video("first-half.mp4", "/videos/first-half.mp4")
+    analysis.add_source_video("second-half.mp4", "/videos/second-half.mp4")
+    revision = analysis.revision
+
+    with pytest.raises(InvalidAnalysisDataError), analysis.transaction():
+        analysis.relink_source_video(first.id, "/videos/second-half.mp4")
+
+    assert analysis.revision == revision
+    assert analysis.source_video(first.id).location == "/videos/first-half.mp4"
 
 
 def test_removing_a_source_video_with_clips_reports_how_many_it_takes_with_it() -> None:
