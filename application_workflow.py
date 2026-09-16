@@ -425,7 +425,13 @@ class ApplicationWorkflow:
 
     def relink_source_video(self, source_video_id: UUID) -> bool:
         """Ask for replacement media and relink it to an unavailable Source video."""
-        source_video = self.analysis.source_video(source_video_id)
+        try:
+            source_video = self.analysis.source_video(source_video_id)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Source video could not be relinked", str(error)
+            )
+            return False
         chosen = self._presenter.choose_replacement_media(source_video.display_name)
         if not chosen:
             return False
