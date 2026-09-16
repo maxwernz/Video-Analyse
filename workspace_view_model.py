@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 import time
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import UUID
 
 from PySide6.QtCore import QEvent, Property, QObject, Qt, QTimer, QUrl, Signal, Slot
@@ -1059,9 +1059,10 @@ class WorkspaceViewModel(QObject):
         identities = [_as_uuid(str(value)) for value in ordered_ids]
         if any(identity is None for identity in identities):
             return False
-        reordered = self._workflow.reorder_source_videos(
-            [identity for identity in identities if identity is not None]
-        )
+        # The guard above already proved every entry is a UUID; mypy cannot
+        # narrow a list comprehension's element type from it, so this is a
+        # cast rather than the redundant re-filter it used to be.
+        reordered = self._workflow.reorder_source_videos(cast(list[UUID], identities))
         if reordered:
             self._refresh_projections()
             self.documentChanged.emit()
@@ -1227,10 +1228,16 @@ class WorkspaceViewModel(QObject):
             self._forget_duration()
             remaining = self._document.analysis.source_videos
             if remaining:
+                # Emits its own `playbackChanged`; nothing left to report.
                 self._activate_source(remaining[0].id)
+            else:
+                # Unloaded with nothing to replace it: the one case above
+                # with no other emitter for the playback state that changed.
+                self.playbackChanged.emit()
+        # `documentChanged` is not re-emitted here: the workflow already
+        # reported the document change that led to this callback, before
+        # calling it.
         self._refresh_projections()
-        self.documentChanged.emit()
-        self.playbackChanged.emit()
 
     def _analysis_replaced(self) -> None:
         """A different Analysis is open now; drop everything transient."""

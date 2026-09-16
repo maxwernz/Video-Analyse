@@ -163,6 +163,23 @@ class Analysis:
         byte_size: int | None = None,
         fingerprint: str | None = None,
     ) -> SourceVideo:
+        """Add a Source video unconditionally, as a new identity.
+
+        This is the structural primitive the codec's decoder calls once per
+        JSON entry, and it is deliberately stricter than normal add-time
+        identity verification: it rejects a bare fingerprint collision on
+        its own, without needing byte size or duration to agree too, because
+        two *decoded* entries claiming the same fingerprint is exactly the
+        kind of malformed file `AnalysisFileCodec` must refuse to load.
+        `add_or_relink_source_video` is the operation with the three-signal
+        match a live add or relink actually wants; it calls this method only
+        once it has already decided the media is not a relink of something
+        already present, so the stricter check here is reachable from it
+        only when a fingerprint matches by coincidence while size or
+        duration do not — sha256 collisions of unrelated content are not a
+        real risk, so that path is expected to behave like any other
+        genuine duplicate and raise the same way.
+        """
         if not isinstance(display_name, str) or not display_name.strip():
             raise InvalidAnalysisDataError(
                 "Source-video display name must not be empty"
@@ -264,6 +281,15 @@ class Analysis:
         already on record is rejected as a duplicate; re-adding it from
         anywhere else relinks the existing Source video to that location
         instead of creating a second identity for the same footage.
+
+        A fingerprint match with byte size but not duration — one add
+        probed a duration and the earlier one did not, so one side is
+        `None` — falls through to :meth:`add_source_video` instead of
+        matching here. That still raises: `add_source_video` rejects a
+        bare fingerprint collision on its own. The outcome an analyst sees
+        is the same duplicate rejection either way; only the raised
+        message differs, because this method never reaches its own relink
+        branch for a signal it cannot confirm.
         """
         match = self._matching_source_video(
             duration_ms=duration_ms, byte_size=byte_size, fingerprint=fingerprint
@@ -271,6 +297,13 @@ class Analysis:
         if match is not None:
             if match.location == location:
                 raise InvalidAnalysisDataError("Source video has already been added")
+            if any(
+                source.id != match.id and source.location == location
+                for source in self._source_videos
+            ):
+                raise InvalidAnalysisDataError(
+                    "Source video location is already in use"
+                )
             relinked = replace(match, location=location, relative_path=relative_path)
             self._source_videos[self._source_videos.index(match)] = relinked
             self._revision += 1
