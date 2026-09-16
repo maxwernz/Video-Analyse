@@ -484,6 +484,80 @@ def test_a_source_video_of_unknown_length_says_so_rather_than_guessing(
     assert videos(workspace)[0]["durationText"] == "--:--:--"
 
 
+def test_the_videos_tab_marks_source_videos_that_do_not_resolve_as_unavailable(
+    workspace: WorkspaceViewModel,
+) -> None:
+    """Neither fixture video exists on disk, so both are unavailable.
+
+    The rest of the Analysis stays usable regardless: this only asserts the
+    display state the Videos tab reads, not that anything else broke.
+    """
+
+    assert [row["available"] for row in videos(workspace)] == [False, False]
+
+
+def test_a_source_video_present_on_disk_is_marked_available(
+    tmp_path, player: FakePlayback, scheduler: Scheduler
+) -> None:
+    present_path = tmp_path / "halbzeit-1.mp4"
+    present_path.write_bytes(b"video")
+    analysis = Analysis("Spiel gegen Kiel")
+    analysis.add_source_video("halbzeit-1.mp4", str(present_path))
+    analysis.add_source_video("halbzeit-2.mp4", FIRST_HALF)
+    workspace = WorkspaceViewModel(
+        AnalysisDocument(analysis), player, schedule=scheduler
+    )
+    scheduler.elapse()
+
+    assert [row["available"] for row in videos(workspace)] == [True, False]
+
+
+def test_relinking_an_unavailable_source_video_marks_it_available_and_reloads_it(
+    tmp_path, player: FakePlayback, scheduler: Scheduler
+) -> None:
+    analysis = Analysis("Spiel gegen Kiel")
+    missing_video = analysis.add_source_video("halbzeit-1.mp4", FIRST_HALF)
+    document = AnalysisDocument(analysis)
+    workspace = WorkspaceViewModel(document, player, schedule=scheduler)
+    scheduler.elapse()
+
+    replacement_path = tmp_path / "recovered.mp4"
+    replacement_path.write_bytes(b"video")
+    workspace._workflow.relink_source_video = (  # type: ignore[method-assign]
+        lambda source_video_id: document.analysis.relink_source_video(
+            source_video_id,
+            str(replacement_path),
+            duration_ms=1_000,
+            byte_size=1,
+            fingerprint="fake",
+        )
+        is not None
+    )
+
+    relinked = workspace.relinkSourceVideo(str(missing_video.id))
+    scheduler.elapse()
+
+    assert relinked is True
+    assert videos(workspace)[0]["available"] is True
+    assert player.location() == str(replacement_path)
+
+
+def test_a_failed_relink_leaves_the_source_video_unavailable(
+    workspace: WorkspaceViewModel,
+) -> None:
+    missing = videos(workspace)[0]["sourceId"]
+    workspace._workflow.relink_source_video = lambda source_video_id: False  # type: ignore[method-assign]
+
+    assert workspace.relinkSourceVideo(missing) is False
+    assert videos(workspace)[0]["available"] is False
+
+
+def test_relinking_an_unknown_source_video_id_does_nothing(
+    workspace: WorkspaceViewModel,
+) -> None:
+    assert workspace.relinkSourceVideo("not-a-uuid") is False
+
+
 def test_choosing_a_source_video_makes_it_the_one_the_player_shows(
     workspace: WorkspaceViewModel, player: FakePlayback, scheduler: Scheduler
 ) -> None:
