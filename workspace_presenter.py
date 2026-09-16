@@ -10,9 +10,8 @@ appearance and keeps native *behaviour*, and a file dialog is behaviour: it is
 where sidebar favourites, network volumes and iCloud live. Nothing here asks Qt
 to draw a dialog itself.
 
-They are parentless, because the workspace's window is a `QQuickWindow` rather
-than a `QWidget` and cannot parent one. Qt gives a parentless dialog to the
-active window, which in a single-window application is the workspace.
+Each dialog is transient to the shown `QQuickWindow`. That keeps the platform
+panel associated with the QML window that opened it without needing a QWidget.
 """
 
 from __future__ import annotations
@@ -20,6 +19,7 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import QStandardPaths
+from PySide6.QtGui import QWindow
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from analysis import UnsavedChangesChoice
@@ -38,6 +38,53 @@ ADD_SOURCE_VIDEO_TITLE = "Video hinzufügen"
 
 class WorkspacePresenter:
     """Every decision the workflow needs a person for, and every report."""
+
+    def __init__(self) -> None:
+        self._scene_window: QWindow | None = None
+
+    def set_scene_window(self, window: QWindow) -> None:
+        """Remember the shown workspace window that owns native file panels.
+
+        A QQuickWindow cannot be a QWidget parent, but macOS needs the native
+        panel to have this window as its transient parent when QML input opens
+        it. The window is supplied only after the scene is shown, when Qt has
+        made it a real platform window.
+        """
+
+        self._scene_window = window
+
+    def _choose_file(
+        self,
+        *,
+        title: str,
+        directory: str,
+        name_filter: str,
+        accept_mode: QFileDialog.AcceptMode,
+        file_mode: QFileDialog.FileMode,
+        suggested_name: str | None = None,
+    ) -> str | None:
+        """Present one native file panel while preserving the workflow contract."""
+
+        dialog = QFileDialog()
+        dialog.setWindowTitle(title)
+        dialog.setAcceptMode(accept_mode)
+        dialog.setFileMode(file_mode)
+        dialog.setNameFilter(name_filter)
+        if _existing_directory(directory):
+            dialog.setDirectory(directory)
+        if suggested_name:
+            dialog.selectFile(suggested_name)
+
+        if self._scene_window is not None:
+            dialog.winId()
+            window_handle = dialog.windowHandle()
+            if window_handle is not None:
+                window_handle.setTransientParent(self._scene_window)
+
+        if not dialog.exec():
+            return None
+        selected = dialog.selectedFiles()
+        return selected[0] if selected else None
 
     def ask_unsaved_changes(self) -> UnsavedChangesChoice:
         """Ask whether unsaved work should be saved, discarded or kept.
@@ -66,33 +113,34 @@ class WorkspacePresenter:
         return UnsavedChangesChoice.CANCEL
 
     def choose_analysis_to_open(self) -> str | None:
-        chosen, _ = QFileDialog.getOpenFileName(
-            None,
-            OPEN_ANALYSIS_TITLE,
-            _documents_directory(),
-            ANALYSIS_FILE_FILTER,
+        return self._choose_file(
+            title=OPEN_ANALYSIS_TITLE,
+            directory=_documents_directory(),
+            name_filter=ANALYSIS_FILE_FILTER,
+            accept_mode=QFileDialog.AcceptMode.AcceptOpen,
+            file_mode=QFileDialog.FileMode.ExistingFile,
         )
-        return chosen or None
 
     def choose_analysis_destination(self, suggested_name: str) -> str | None:
-        chosen, _ = QFileDialog.getSaveFileName(
-            None,
-            SAVE_ANALYSIS_TITLE,
-            os.path.join(_documents_directory(), suggested_name),
-            ANALYSIS_FILE_FILTER,
+        return self._choose_file(
+            title=SAVE_ANALYSIS_TITLE,
+            directory=_documents_directory(),
+            name_filter=ANALYSIS_FILE_FILTER,
+            accept_mode=QFileDialog.AcceptMode.AcceptSave,
+            file_mode=QFileDialog.FileMode.AnyFile,
+            suggested_name=suggested_name,
         )
-        return chosen or None
 
     def choose_source_video(self) -> str | None:
-        chosen, _ = QFileDialog.getOpenFileName(
-            None,
-            ADD_SOURCE_VIDEO_TITLE,
-            QStandardPaths.writableLocation(
+        return self._choose_file(
+            title=ADD_SOURCE_VIDEO_TITLE,
+            directory=QStandardPaths.writableLocation(
                 QStandardPaths.StandardLocation.MoviesLocation
             ),
-            SOURCE_VIDEO_FILE_FILTER,
+            name_filter=SOURCE_VIDEO_FILE_FILTER,
+            accept_mode=QFileDialog.AcceptMode.AcceptOpen,
+            file_mode=QFileDialog.FileMode.ExistingFile,
         )
-        return chosen or None
 
     def report_failure(self, title: str, message: str) -> None:
         QMessageBox.critical(None, title, message)
@@ -102,3 +150,14 @@ def _documents_directory() -> str:
     return QStandardPaths.writableLocation(
         QStandardPaths.StandardLocation.DocumentsLocation
     )
+
+
+def _existing_directory(directory: str) -> bool:
+    """Only give native panels a start location the file system can open.
+
+    iCloud Drive can leave a stale Documents or Movies path in QStandardPaths.
+    Omitting an invalid directory lets the native panel choose its own valid
+    default instead of attempting to open a location that no longer exists.
+    """
+
+    return os.path.isdir(directory)

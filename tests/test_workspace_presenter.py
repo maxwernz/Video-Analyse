@@ -20,6 +20,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtGui import QWindow  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
 
 from analysis import UnsavedChangesChoice  # noqa: E402
@@ -41,32 +42,83 @@ def presenter(application: QApplication) -> WorkspacePresenter:
     return WorkspacePresenter()
 
 
+class DialogHandle:
+    """The visible dialog window, reduced to its ownership relationship."""
+
+    def __init__(self) -> None:
+        self.transient_parent: QWindow | None = None
+
+    def setTransientParent(self, parent: QWindow) -> None:
+        self.transient_parent = parent
+
+
 class DialogCall:
-    """What a stood-in dialog was asked for, and what it answers."""
+    """A native dialog stand-in that records the choices it is configured with."""
 
-    def __init__(self, answer: Any) -> None:
+    def __init__(self, answer: str | None) -> None:
         self.answer = answer
-        self.arguments: tuple[Any, ...] = ()
-        self.keywords: dict[str, Any] = {}
+        self.window_handle = DialogHandle()
+        self.title = ""
+        self.name_filter = ""
+        self.directory: str | None = None
+        self.selected_name = ""
         self.calls = 0
+        self.native_handle_requested = False
 
-    def __call__(self, *arguments: Any, **keywords: Any) -> Any:
+    def setWindowTitle(self, title: str) -> None:
+        self.title = title
+
+    def setAcceptMode(self, _mode: QFileDialog.AcceptMode) -> None:
+        pass
+
+    def setFileMode(self, _mode: QFileDialog.FileMode) -> None:
+        pass
+
+    def setNameFilter(self, name_filter: str) -> None:
+        self.name_filter = name_filter
+
+    def setDirectory(self, directory: str) -> None:
+        self.directory = directory
+
+    def selectFile(self, name: str) -> None:
+        self.selected_name = name
+
+    def winId(self) -> int:
+        self.native_handle_requested = True
+        return 0
+
+    def windowHandle(self) -> DialogHandle:
+        return self.window_handle
+
+    def exec(self) -> int:
         self.calls += 1
-        self.arguments = arguments
-        self.keywords = keywords
-        return self.answer
+        return int(bool(self.answer))
 
-    @property
-    def everything_passed(self) -> list[Any]:
-        return [*self.arguments, *self.keywords.values()]
+    def selectedFiles(self) -> list[str]:
+        return [self.answer] if self.answer else []
 
 
 def _stand_in_for(
-    monkeypatch: pytest.MonkeyPatch, name: str, answer: Any
+    monkeypatch: pytest.MonkeyPatch, answer: str | None
 ) -> DialogCall:
     call = DialogCall(answer)
-    monkeypatch.setattr(QFileDialog, name, staticmethod(call))
+
+    class StandInFileDialog:
+        AcceptMode = QFileDialog.AcceptMode
+        FileMode = QFileDialog.FileMode
+
+        def __new__(cls) -> DialogCall:
+            return call
+
+    monkeypatch.setattr("workspace_presenter.QFileDialog", StandInFileDialog)
     return call
+
+
+FILE_CHOOSERS = [
+    lambda presenter: presenter.choose_analysis_to_open(),
+    lambda presenter: presenter.choose_source_video(),
+    lambda presenter: presenter.choose_analysis_destination("Analyse.analysis"),
+]
 
 
 # --- The unsaved-changes question ------------------------------------------
@@ -130,18 +182,16 @@ def test_the_analysis_to_open_is_chosen_from_the_platforms_dialog(
     presenter: WorkspacePresenter, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     chosen = tmp_path / "spiel.analysis"
-    dialog = _stand_in_for(
-        monkeypatch, "getOpenFileName", (str(chosen), ANALYSIS_FILE_FILTER)
-    )
+    dialog = _stand_in_for(monkeypatch, str(chosen))
 
     assert presenter.choose_analysis_to_open() == str(chosen)
-    assert ANALYSIS_FILE_FILTER in dialog.everything_passed
+    assert dialog.name_filter == ANALYSIS_FILE_FILTER
 
 
 def test_a_dismissed_open_dialog_means_no_file(
     presenter: WorkspacePresenter, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _stand_in_for(monkeypatch, "getOpenFileName", ("", ""))
+    _stand_in_for(monkeypatch, None)
 
     assert presenter.choose_analysis_to_open() is None
 
@@ -150,24 +200,19 @@ def test_the_destination_dialog_offers_the_name_the_workflow_suggests(
     presenter: WorkspacePresenter, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     destination = tmp_path / "spiel.analysis"
-    dialog = _stand_in_for(
-        monkeypatch, "getSaveFileName", (str(destination), ANALYSIS_FILE_FILTER)
-    )
+    dialog = _stand_in_for(monkeypatch, str(destination))
 
     assert presenter.choose_analysis_destination("Spiel gegen Kiel.analysis") == str(
         destination
     )
-    offered = [value for value in dialog.everything_passed if isinstance(value, str)]
-    assert any(
-        value.endswith("Spiel gegen Kiel.analysis") for value in offered
-    ), offered
-    assert ANALYSIS_FILE_FILTER in dialog.everything_passed
+    assert dialog.selected_name == "Spiel gegen Kiel.analysis"
+    assert dialog.name_filter == ANALYSIS_FILE_FILTER
 
 
 def test_a_dismissed_destination_dialog_means_no_file(
     presenter: WorkspacePresenter, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _stand_in_for(monkeypatch, "getSaveFileName", ("", ""))
+    _stand_in_for(monkeypatch, None)
 
     assert presenter.choose_analysis_destination("Analyse.analysis") is None
 
@@ -178,44 +223,57 @@ def test_a_source_video_is_chosen_with_the_video_filter(
     """The dialog is ready before the action that opens it lands in #48."""
 
     video = tmp_path / "halbzeit-1.mp4"
-    dialog = _stand_in_for(
-        monkeypatch, "getOpenFileName", (str(video), SOURCE_VIDEO_FILE_FILTER)
-    )
+    dialog = _stand_in_for(monkeypatch, str(video))
 
     assert presenter.choose_source_video() == str(video)
-    assert SOURCE_VIDEO_FILE_FILTER in dialog.everything_passed
+    assert dialog.name_filter == SOURCE_VIDEO_FILE_FILTER
 
 
 @pytest.mark.parametrize(
-    ("chooser", "request_file"),
-    [
-        ("getOpenFileName", lambda p: p.choose_analysis_to_open()),
-        ("getOpenFileName", lambda p: p.choose_source_video()),
-        (
-            "getSaveFileName",
-            lambda p: p.choose_analysis_destination("Analyse.analysis"),
-        ),
-    ],
+    "request_file",
+    FILE_CHOOSERS,
     ids=["open-analysis", "add-video", "save-analysis"],
 )
-def test_no_file_dialog_asks_qt_to_draw_its_own(
+def test_every_file_dialog_has_the_shown_scene_as_its_transient_parent(
     presenter: WorkspacePresenter,
     monkeypatch: pytest.MonkeyPatch,
-    chooser: str,
     request_file: Any,
 ) -> None:
-    """Native dialogs, per ADR 0007: appearance is owned, behaviour is not."""
+    """The offscreen seam covers ownership; Cocoa input delivery needs live proof."""
 
-    dialog = _stand_in_for(monkeypatch, chooser, ("", ""))
+    scene_window = QWindow()
+    presenter.set_scene_window(scene_window)
+    dialog = _stand_in_for(monkeypatch, None)
 
     request_file(presenter)
 
     assert dialog.calls == 1
-    assert not any(
-        isinstance(value, QFileDialog.Option)
-        and value & QFileDialog.Option.DontUseNativeDialog
-        for value in dialog.everything_passed
+    assert dialog.native_handle_requested
+    assert dialog.window_handle.transient_parent is scene_window
+
+
+@pytest.mark.parametrize(
+    "request_file",
+    FILE_CHOOSERS,
+    ids=["open-analysis", "add-video", "save-analysis"],
+)
+def test_a_missing_start_directory_is_not_given_to_the_native_dialog(
+    presenter: WorkspacePresenter,
+    monkeypatch: pytest.MonkeyPatch,
+    request_file: Any,
+) -> None:
+    """A stale iCloud location must leave Qt to choose a directory it can open."""
+
+    missing_directory = "/not-a-real-video-analyse-directory"
+    monkeypatch.setattr(
+        "workspace_presenter.QStandardPaths.writableLocation",
+        lambda _location: missing_directory,
     )
+    dialog = _stand_in_for(monkeypatch, None)
+
+    request_file(presenter)
+
+    assert dialog.directory is None
 
 
 # --- Reporting a failure ---------------------------------------------------

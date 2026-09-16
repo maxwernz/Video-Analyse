@@ -23,6 +23,7 @@ from app_runtime import (
 )
 from playback import MediaPlayerPlayback
 from qml_runtime import (
+    QuickScene,
     show_quick_scene_with_fallback,
     software_rendering_requested,
     use_software_rendering,
@@ -42,7 +43,9 @@ def build_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def build_workspace_context() -> dict[str, WorkspaceViewModel]:
+def build_workspace_context(
+    *, presenter: WorkspacePresenter | None = None
+) -> dict[str, WorkspaceViewModel]:
     """What the QML window is given, and the whole vocabulary it has.
 
     One view model over one Analysis document and one player. QML never sees
@@ -58,9 +61,19 @@ def build_workspace_context() -> dict[str, WorkspaceViewModel]:
     view_model = WorkspaceViewModel(
         new_analysis_document(),
         MediaPlayerPlayback(),
-        presenter=WorkspacePresenter(),
+        presenter=presenter or WorkspacePresenter(),
     )
     return {"workspace": view_model}
+
+
+def _show_workspace_scene(
+    context_objects: dict[str, WorkspaceViewModel], presenter: WorkspacePresenter
+):
+    """Show the QML scene before handing its real window to native dialogs."""
+
+    scene = show_quick_scene_with_fallback(context_objects=context_objects)
+    presenter.set_scene_window(scene.window)
+    return scene
 
 
 def _run_smoke_check(app: QApplication, log_path: str) -> dict[str, object]:
@@ -76,8 +89,9 @@ def _run_smoke_check(app: QApplication, log_path: str) -> dict[str, object]:
 
     # The QML engine has to find its bundled scene, and the graphics backend has
     # to draw it, on whatever machine the package landed on.
-    context = build_workspace_context()
-    scene = show_quick_scene_with_fallback(context_objects=context)
+    presenter = WorkspacePresenter()
+    context = build_workspace_context(presenter=presenter)
+    scene = _show_workspace_scene(context, presenter)
     app.processEvents()
     scene.window.close()
 
@@ -135,8 +149,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             _publish_smoke_report(report)
             return 0
 
-        context = build_workspace_context()
-        scene = show_quick_scene_with_fallback(context_objects=context)
+        presenter = WorkspacePresenter()
+        context = build_workspace_context(presenter=presenter)
+        scene = _show_workspace_scene(context, presenter)
         # On macOS the menu bar is a real QMenuBar with no parent — the system
         # menu bar — so nothing else is holding it, and Close goes through the
         # window, which is where the unsaved-changes question is asked.
