@@ -304,6 +304,145 @@ def test_removing_a_source_video_removes_its_clips() -> None:
     assert analysis.clips == ()
 
 
+def test_renaming_a_source_video_preserves_its_clips() -> None:
+    analysis = _analysis_with_source()
+    source_video = analysis.source_videos[0]
+    clip = analysis.add_clip(source_video.id, "Fast break", 1_000, 2_000)
+
+    renamed = analysis.rename_source_video(source_video.id, "Halbzeit 1")
+
+    assert renamed.id == source_video.id
+    assert renamed.display_name == "Halbzeit 1"
+    assert analysis.clip(clip.id).source_video_id == source_video.id
+
+
+def test_reordering_source_videos_preserves_every_clip_relationship() -> None:
+    analysis = Analysis("Match")
+    first = analysis.add_source_video("first-half.mp4", "/videos/first.mp4")
+    second = analysis.add_source_video("second-half.mp4", "/videos/second.mp4")
+    first_clip = analysis.add_clip(first.id, "Fast break", 1_000, 2_000)
+    second_clip = analysis.add_clip(second.id, "Turnover", 3_000, 4_000)
+    revision = analysis.revision
+
+    analysis.reorder_source_videos([second.id, first.id])
+
+    assert [source.id for source in analysis.source_videos] == [second.id, first.id]
+    assert analysis.clip(first_clip.id).source_video_id == first.id
+    assert analysis.clip(second_clip.id).source_video_id == second.id
+    assert analysis.revision > revision
+
+
+def test_reordering_to_the_same_order_does_not_advance_the_revision() -> None:
+    analysis = Analysis("Match")
+    first = analysis.add_source_video("first-half.mp4", "/videos/first.mp4")
+    second = analysis.add_source_video("second-half.mp4", "/videos/second.mp4")
+    revision = analysis.revision
+
+    analysis.reorder_source_videos([first.id, second.id])
+
+    assert analysis.revision == revision
+
+
+def test_reordering_rejects_anything_but_a_permutation_of_every_source_video() -> None:
+    analysis = Analysis("Match")
+    first = analysis.add_source_video("first-half.mp4", "/videos/first.mp4")
+    analysis.add_source_video("second-half.mp4", "/videos/second.mp4")
+
+    with pytest.raises(InvalidAnalysisDataError):
+        analysis.reorder_source_videos([first.id])
+
+
+def test_adding_media_matching_an_existing_source_video_by_location_is_a_duplicate() -> None:
+    analysis = Analysis("Match")
+    analysis.add_source_video(
+        "first-half.mp4",
+        "/videos/first-half.mp4",
+        duration_ms=2_700_000,
+        byte_size=123,
+        fingerprint="sampled-sha256:same",
+    )
+
+    with pytest.raises(InvalidAnalysisDataError):
+        analysis.add_or_relink_source_video(
+            "first-half.mp4",
+            "/videos/first-half.mp4",
+            duration_ms=2_700_000,
+            byte_size=123,
+            fingerprint="sampled-sha256:same",
+        )
+
+
+def test_adding_media_matching_an_existing_source_video_from_elsewhere_relinks_it() -> None:
+    analysis = Analysis("Match")
+    original = analysis.add_source_video(
+        "first-half.mp4",
+        "/videos/first-half.mp4",
+        duration_ms=2_700_000,
+        byte_size=123,
+        fingerprint="sampled-sha256:same",
+    )
+    clip = analysis.add_clip(original.id, "Fast break", 1_000, 2_000)
+
+    relinked = analysis.add_or_relink_source_video(
+        "first-half.mp4",
+        "/moved/first-half.mp4",
+        duration_ms=2_700_000,
+        byte_size=123,
+        fingerprint="sampled-sha256:same",
+    )
+
+    assert relinked.id == original.id
+    assert relinked.location == "/moved/first-half.mp4"
+    assert len(analysis.source_videos) == 1
+    assert analysis.clip(clip.id).source_video_id == original.id
+
+
+def test_media_that_only_partially_matches_never_relinks_and_never_duplicates() -> None:
+    analysis = Analysis("Match")
+    analysis.add_source_video(
+        "first-half.mp4",
+        "/videos/first-half.mp4",
+        duration_ms=2_700_000,
+        byte_size=123,
+        fingerprint="sampled-sha256:same",
+    )
+
+    second = analysis.add_or_relink_source_video(
+        "second-half.mp4",
+        "/videos/second-half.mp4",
+        duration_ms=2_700_000,
+        byte_size=456,
+        fingerprint="sampled-sha256:different",
+    )
+
+    assert len(analysis.source_videos) == 2
+    assert second.location == "/videos/second-half.mp4"
+
+
+def test_removing_a_source_video_with_clips_reports_how_many_it_takes_with_it() -> None:
+    analysis = _analysis_with_source()
+    source_video = analysis.source_videos[0]
+    analysis.add_clip(source_video.id, "Fast break", 1_000, 2_000)
+    analysis.add_clip(source_video.id, "Turnover", 3_000, 4_000)
+
+    assert len(analysis.clips_of_source_video(source_video.id)) == 2
+
+    analysis.remove_source_video(source_video.id)
+
+    assert analysis.clips == ()
+
+
+def test_removing_the_last_source_video_leaves_an_empty_analysis_still_valid() -> None:
+    analysis = _analysis_with_source()
+    source_video = analysis.source_videos[0]
+
+    analysis.remove_source_video(source_video.id)
+
+    assert analysis.source_videos == ()
+    assert analysis.title == "Match"
+    assert analysis.clips == ()
+
+
 def test_a_clip_may_not_exceed_its_source_video_duration() -> None:
     analysis = Analysis("Match")
     source_video = analysis.add_source_video(

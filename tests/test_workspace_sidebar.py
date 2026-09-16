@@ -532,6 +532,132 @@ def test_choosing_a_source_video_that_is_not_in_the_analysis_does_nothing(
     assert player.location() == FIRST_HALF
 
 
+# --- Renaming, reordering and removing Source videos ------------------------
+
+
+def test_renaming_a_source_video_updates_the_videos_tab(
+    workspace: WorkspaceViewModel, analysis: Analysis
+) -> None:
+    first_id = str(analysis.source_videos[0].id)
+
+    assert workspace.renameSourceVideo(first_id, "Halbzeit 1") is True
+
+    assert [row["name"] for row in videos(workspace)] == [
+        "Halbzeit 1",
+        "halbzeit-2.mp4",
+    ]
+
+
+def test_reordering_source_videos_reorders_the_videos_tab(
+    workspace: WorkspaceViewModel, analysis: Analysis
+) -> None:
+    first_id, second_id = (str(source.id) for source in analysis.source_videos)
+
+    assert workspace.reorderSourceVideos([second_id, first_id]) is True
+
+    assert [row["sourceId"] for row in videos(workspace)] == [second_id, first_id]
+
+
+def test_moving_a_source_video_later_swaps_it_with_its_neighbour(
+    workspace: WorkspaceViewModel, analysis: Analysis
+) -> None:
+    first_id, second_id = (str(source.id) for source in analysis.source_videos)
+
+    assert workspace.moveSourceVideoLater(first_id) is True
+
+    assert [row["sourceId"] for row in videos(workspace)] == [second_id, first_id]
+
+
+def test_moving_the_last_source_video_later_does_nothing(
+    workspace: WorkspaceViewModel, analysis: Analysis
+) -> None:
+    second_id = str(analysis.source_videos[1].id)
+
+    assert workspace.moveSourceVideoLater(second_id) is False
+
+    assert [row["sourceId"] for row in videos(workspace)] == [
+        str(analysis.source_videos[0].id),
+        second_id,
+    ]
+
+
+def test_moving_the_first_source_video_earlier_does_nothing(
+    workspace: WorkspaceViewModel, analysis: Analysis
+) -> None:
+    first_id = str(analysis.source_videos[0].id)
+
+    assert workspace.moveSourceVideoEarlier(first_id) is False
+
+
+def test_clip_count_for_a_source_video_is_what_removing_it_would_take(
+    workspace: WorkspaceViewModel, analysis: Analysis
+) -> None:
+    a_clip(analysis, name="Tor", half=0)
+    a_clip(analysis, name="7m", half=0)
+    workspace.refresh()
+    first_id = str(analysis.source_videos[0].id)
+    second_id = str(analysis.source_videos[1].id)
+
+    assert workspace.clipCountForSourceVideo(first_id) == 2
+    assert workspace.clipCountForSourceVideo(second_id) == 0
+
+
+def test_removing_a_source_video_without_clips_leaves_the_other_active(
+    workspace: WorkspaceViewModel, analysis: Analysis, player: FakePlayback
+) -> None:
+    second_id = str(analysis.source_videos[1].id)
+
+    assert workspace.removeSourceVideo(second_id) is True
+
+    assert len(videos(workspace)) == 1
+    assert player.location() == FIRST_HALF
+    assert workspace.hasVideo is True
+
+
+def test_removing_the_active_source_video_takes_its_clips_and_switches_video(
+    workspace: WorkspaceViewModel,
+    analysis: Analysis,
+    player: FakePlayback,
+    scheduler: Scheduler,
+) -> None:
+    clip = a_clip(analysis, name="Tor", half=0)
+    workspace.refresh()
+    workspace.navigateToClip(str(clip.id))
+    first_id = str(analysis.source_videos[0].id)
+
+    assert workspace.removeSourceVideo(first_id) is True
+    scheduler.elapse()
+
+    assert [row["sourceId"] for row in videos(workspace)] == [
+        str(analysis.source_videos[0].id)
+    ]
+    assert player.location() == SECOND_HALF
+    assert workspace.selectedClipId == ""
+    assert clip_rows(workspace) == []
+
+
+def test_removing_the_last_source_video_leaves_no_stale_player_or_selection(
+    document: AnalysisDocument,
+    analysis: Analysis,
+    player: FakePlayback,
+    scheduler: Scheduler,
+) -> None:
+    # Trim to one Source video first, so removing it removes the last one.
+    second_id = analysis.source_videos[1].id
+    analysis.remove_source_video(second_id)
+    workspace = WorkspaceViewModel(document, player, schedule=scheduler)
+    scheduler.elapse()
+    first_id = str(analysis.source_videos[0].id)
+
+    assert workspace.removeSourceVideo(first_id) is True
+    scheduler.elapse()
+
+    assert videos(workspace) == ()
+    assert workspace.hasVideo is False
+    assert player.is_loaded() is False
+    assert analysis.source_videos == ()
+
+
 # --- Which tab is showing ---------------------------------------------------
 
 

@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 import time
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import UUID
 
 from PySide6.QtCore import QEvent, Property, QObject, Qt, QTimer, QUrl, Signal, Slot
@@ -227,6 +227,7 @@ class WorkspaceViewModel(QObject):
             on_analysis_replaced=self._analysis_replaced,
             on_document_changed=self._document_reported,
             on_source_video_added=self._source_video_added,
+            on_source_video_removed=self._source_video_removed,
         )
         self._document = document
         self._playback = playback
@@ -1038,6 +1039,94 @@ class WorkspaceViewModel(QObject):
                 added = True
         return added
 
+    @Slot(str, str, result=bool)
+    def renameSourceVideo(self, source_id: str, display_name: str) -> bool:
+        """Give a Source video an editable display name of its own."""
+
+        identity = _as_uuid(source_id)
+        if identity is None:
+            return False
+        renamed = self._workflow.rename_source_video(identity, display_name)
+        if renamed:
+            self._refresh_projections()
+            self.documentChanged.emit()
+        return renamed
+
+    @Slot(list, result=bool)
+    def reorderSourceVideos(self, ordered_ids: list[object]) -> bool:
+        """Set the durable order the Videos tab reads Source videos in."""
+
+        identities = [_as_uuid(str(value)) for value in ordered_ids]
+        if any(identity is None for identity in identities):
+            return False
+        # The guard above already proved every entry is a UUID; mypy cannot
+        # narrow a list comprehension's element type from it, so this is a
+        # cast rather than the redundant re-filter it used to be.
+        reordered = self._workflow.reorder_source_videos(cast(list[UUID], identities))
+        if reordered:
+            self._refresh_projections()
+            self.documentChanged.emit()
+        return reordered
+
+    @Slot(str, result=bool)
+    def moveSourceVideoEarlier(self, source_id: str) -> bool:
+        """Swap a Source video with the one before it in the durable order."""
+
+        return self._swap_source_video(source_id, by=-1)
+
+    @Slot(str, result=bool)
+    def moveSourceVideoLater(self, source_id: str) -> bool:
+        """Swap a Source video with the one after it in the durable order."""
+
+        return self._swap_source_video(source_id, by=1)
+
+    def _swap_source_video(self, source_id: str, *, by: int) -> bool:
+        identity = _as_uuid(source_id)
+        if identity is None:
+            return False
+        order = [source.id for source in self._document.analysis.source_videos]
+        try:
+            position = order.index(identity)
+        except ValueError:
+            return False
+        target = position + by
+        if not 0 <= target < len(order):
+            return False
+        order[position], order[target] = order[target], order[position]
+        reordered = self._workflow.reorder_source_videos(order)
+        if reordered:
+            self._refresh_projections()
+            self.documentChanged.emit()
+        return reordered
+
+    @Slot(str, result=int)
+    def clipCountForSourceVideo(self, source_id: str) -> int:
+        """How many Clips would be removed along with this Source video.
+
+        The Videos tab asks this before confirming a removal, so the
+        confirmation it shows can report the exact cascade rather than a
+        vague warning.
+        """
+
+        identity = _as_uuid(source_id)
+        if identity is None:
+            return 0
+        return self._workflow.clip_count_for_source_video(identity)
+
+    @Slot(str, result=bool)
+    def removeSourceVideo(self, source_id: str) -> bool:
+        """Remove a Source video and every Clip that belongs to it.
+
+        The Videos tab is responsible for confirming the cascade with the
+        analyst first, using :meth:`clipCountForSourceVideo`; this always
+        carries the removal out once asked.
+        """
+
+        identity = _as_uuid(source_id)
+        if identity is None:
+            return False
+        return self._workflow.remove_source_video(identity)
+
     @Property(list, constant=True)
     def menus(self) -> list:
         """The menu bar, as data, for the platforms that draw it in the window.
@@ -1109,6 +1198,46 @@ class WorkspaceViewModel(QObject):
             return
         self._refresh_projections()
         self.documentChanged.emit()
+
+    def _source_video_removed(self, removed_id: UUID) -> None:
+        """Drop whatever pointed at a Source video that no longer exists.
+
+        Its Clips are already gone from the Analysis by the time this runs.
+        What is left is presentation state that would otherwise dangle: the
+        player showing it, a draft or Pending Clip bound to it, a selection
+        naming one of its Clips, and the timeline scaled to its length.
+        """
+
+        if self._draft is not None and self._draft.source_video_id == removed_id:
+            self._draft = None
+            self._boundary_error = ""
+            self.draftChanged.emit()
+            self.editingChanged.emit()
+        if self._selected_clip_id is not None and not any(
+            clip.id == self._selected_clip_id
+            for clip in self._document.analysis.clips
+        ):
+            self._selected_clip_id = None
+            self.selectionChanged.emit()
+        if removed_id == self._active_source_id:
+            self._playback.pause()
+            self._playback.unload()
+            self._priming = False
+            self._abandon_pending()
+            self._active_source_id = None
+            self._forget_duration()
+            remaining = self._document.analysis.source_videos
+            if remaining:
+                # Emits its own `playbackChanged`; nothing left to report.
+                self._activate_source(remaining[0].id)
+            else:
+                # Unloaded with nothing to replace it: the one case above
+                # with no other emitter for the playback state that changed.
+                self.playbackChanged.emit()
+        # `documentChanged` is not re-emitted here: the workflow already
+        # reported the document change that led to this callback, before
+        # calling it.
+        self._refresh_projections()
 
     def _analysis_replaced(self) -> None:
         """A different Analysis is open now; drop everything transient."""

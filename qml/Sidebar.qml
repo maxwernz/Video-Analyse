@@ -265,9 +265,20 @@ Rectangle {
             required property var model
             required property int index
             property string sourceId: videoItem.model.sourceId
+            property bool renaming: false
+            // Armed by a first click on the remove control; a second click
+            // within the window confirms it. Left this way by any other
+            // interaction, so a stray click can never remove a video.
+            property bool removeArmed: false
 
             width: videoList.width
             height: Theme.sourceRowHeight
+
+            Timer {
+                id: disarmTimer
+                interval: 3000
+                onTriggered: videoItem.removeArmed = false
+            }
 
             Rectangle {
                 anchors.fill: parent
@@ -300,13 +311,57 @@ Rectangle {
                                                                   : Theme.textMuted)
             }
 
+            // The full-row hit target for selecting this Source video.
+            // Declared before `videoName`, so a later sibling's own input
+            // handling — the rename text's double-click, `rowActions`'
+            // buttons — sits above it for the region each one covers, the
+            // same stacking rule `rowActions` below relies on.
+            MouseArea {
+                id: videoArea
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: {
+                    videoList.currentIndex = videoItem.index
+                    workspace.selectSourceVideo(videoItem.model.sourceId)
+                }
+            }
+
+            // What an armed removal will take with it, in the row itself
+            // rather than a tooltip: the two-click confirmation has no hover
+            // dwell for a tooltip to appear during, so the Clip count has to
+            // be something the analyst is already looking at.
             Text {
-                id: videoName
+                id: removeWarning
+                visible: videoItem.removeArmed
                 anchors {
                     left: filmIcon.right
                     leftMargin: Theme.sourceRowIconGap
-                    right: parent.right
-                    rightMargin: Theme.gutter
+                    right: rowActions.left
+                    rightMargin: Theme.gap
+                    verticalCenter: parent.verticalCenter
+                }
+                text: {
+                    var count = workspace.clipCountForSourceVideo(videoItem.sourceId)
+                    return count === 0
+                        ? "Video ohne Clips entfernen?"
+                        : "Wirklich entfernen? " + count
+                          + (count === 1 ? " Clip" : " Clips")
+                }
+                elide: Text.ElideRight
+                color: Theme.warning
+                font.family: Theme.uiFamily
+                font.pixelSize: Theme.sizeRow
+                font.weight: Theme.medium
+            }
+
+            Text {
+                id: videoName
+                visible: !videoItem.renaming && !videoItem.removeArmed
+                anchors {
+                    left: filmIcon.right
+                    leftMargin: Theme.sourceRowIconGap
+                    right: rowActions.left
+                    rightMargin: Theme.gap
                     top: parent.top
                     topMargin: Theme.sourceRowNameTop
                 }
@@ -318,9 +373,68 @@ Rectangle {
                 font.family: Theme.uiFamily
                 font.pixelSize: Theme.sizeRow
                 font.weight: Theme.medium
+
+                // Above `videoArea` for this text's own bounds (see the
+                // comment on `videoArea`), so it has to repeat the single
+                // click as well as add the double click, or a click on the
+                // name itself would stop selecting the video.
+                MouseArea {
+                    id: renameArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.IBeamCursor
+                    onClicked: {
+                        videoList.currentIndex = videoItem.index
+                        workspace.selectSourceVideo(videoItem.model.sourceId)
+                    }
+                    onDoubleClicked: {
+                        renameField.text = videoItem.model.name
+                        videoItem.renaming = true
+                        renameField.forceActiveFocus()
+                        renameField.selectAll()
+                    }
+                }
+            }
+
+            TextInput {
+                id: renameField
+                visible: videoItem.renaming
+                anchors {
+                    left: videoName.left
+                    right: videoName.right
+                    top: videoName.top
+                }
+                color: Theme.text
+                font.family: Theme.uiFamily
+                font.pixelSize: Theme.sizeRow
+                font.weight: Theme.medium
+                selectByMouse: true
+
+                function commit() {
+                    if (!videoItem.renaming)
+                        return
+                    videoItem.renaming = false
+                    var trimmed = renameField.text.trim()
+                    if (trimmed.length > 0 && trimmed !== videoItem.model.name)
+                        workspace.renameSourceVideo(videoItem.sourceId, trimmed)
+                    // The field is about to go invisible; leaving active
+                    // focus on an invisible item is what left the Videos
+                    // tab's own arrow-key navigation silently dead.
+                    videoList.forceActiveFocus()
+                }
+
+                function cancel() {
+                    videoItem.renaming = false
+                    videoList.forceActiveFocus()
+                }
+
+                onAccepted: renameField.commit()
+                onEditingFinished: renameField.commit()
+                Keys.onEscapePressed: renameField.cancel()
             }
 
             Row {
+                visible: !videoItem.removeArmed
                 anchors {
                     left: videoName.left
                     top: videoName.bottom
@@ -345,13 +459,55 @@ Rectangle {
                 }
             }
 
-            MouseArea {
-                id: videoArea
-                anchors.fill: parent
-                hoverEnabled: true
-                onClicked: {
-                    videoList.currentIndex = videoItem.index
-                    workspace.selectSourceVideo(videoItem.model.sourceId)
+            // Reorder and remove: shown on hover so the resting row reads as
+            // plainly as the Clip list, and armed rather than a modal
+            // confirmation for removal, which no drawn-primitive component
+            // in this visual system yet has to offer. Declared after
+            // `videoArea` so its buttons sit above that full-row MouseArea
+            // and actually receive the click.
+            Row {
+                id: rowActions
+                anchors { right: parent.right; rightMargin: Theme.gutter; verticalCenter: parent.verticalCenter }
+                spacing: 0
+                visible: videoArea.containsMouse || videoItem.removeArmed
+
+                IconButton {
+                    // No "chevron-up" is vendored in assets/icons/lucide/ —
+                    // only chevron-down and chevron-right — so the up arrow
+                    // is the down chevron rotated rather than a second icon.
+                    iconName: "chevron-down"
+                    rotation: 180
+                    tooltip: "Nach oben verschieben"
+                    enabled: videoItem.index > 0
+                    onClicked: workspace.moveSourceVideoEarlier(videoItem.sourceId)
+                }
+
+                IconButton {
+                    iconName: "chevron-down"
+                    tooltip: "Nach unten verschieben"
+                    enabled: videoItem.index < videoList.count - 1
+                    onClicked: workspace.moveSourceVideoLater(videoItem.sourceId)
+                }
+
+                IconButton {
+                    id: removeButton
+                    iconName: "trash-2"
+                    // The Clip count itself is `removeWarning`, in the row
+                    // rather than here: a tooltip needs hover dwell the
+                    // click-then-click confirmation never provides.
+                    tooltip: videoItem.removeArmed ? "Entfernen bestätigen"
+                                                   : "Video entfernen"
+                    iconColor: videoItem.removeArmed ? Theme.warning : Theme.textMuted
+                    onClicked: {
+                        if (videoItem.removeArmed) {
+                            disarmTimer.stop()
+                            videoItem.removeArmed = false
+                            workspace.removeSourceVideo(videoItem.sourceId)
+                        } else {
+                            videoItem.removeArmed = true
+                            disarmTimer.restart()
+                        }
+                    }
                 }
             }
         }

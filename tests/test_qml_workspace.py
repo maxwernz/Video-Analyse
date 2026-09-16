@@ -528,7 +528,7 @@ def test_the_empty_analysis_keeps_the_normal_workspace_and_shows_the_drop_target
     application: QApplication, tmp_path: Path
 ) -> None:
     video = tmp_path / "erste-halbzeit.mp4"
-    video.write_bytes(b"not real media")
+    video.write_bytes(f"not real media: {video.name}".encode())
     document = AnalysisDocument.new()
     view_model = WorkspaceViewModel(
         document,
@@ -561,8 +561,8 @@ def test_the_toolbar_can_add_a_source_video_without_replacing_existing_ones(
 ) -> None:
     first = tmp_path / "erste-halbzeit.mp4"
     second = tmp_path / "zweite-halbzeit.mp4"
-    first.write_bytes(b"not real media")
-    second.write_bytes(b"not real media")
+    first.write_bytes(f"not real media: {first.name}".encode())
+    second.write_bytes(f"not real media: {second.name}".encode())
     document = AnalysisDocument.new("Spiel gegen Kiel")
     document.analysis.add_source_video(first.name, str(first))
     view_model = WorkspaceViewModel(
@@ -587,8 +587,8 @@ def test_dropping_videos_on_the_window_adds_every_one_to_the_analysis(
 ) -> None:
     first = tmp_path / "erste-halbzeit.mp4"
     second = tmp_path / "zweite-halbzeit.mov"
-    first.write_bytes(b"not real media")
-    second.write_bytes(b"not real media")
+    first.write_bytes(f"not real media: {first.name}".encode())
+    second.write_bytes(f"not real media: {second.name}".encode())
     document = AnalysisDocument.new()
     view_model = WorkspaceViewModel(document, FakePlayback())
     engine, component, window = _shell_with(view_model)

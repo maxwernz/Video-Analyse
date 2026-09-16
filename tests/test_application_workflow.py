@@ -11,6 +11,7 @@ from analysis import (
     new_analysis_document,
 )
 from application_workflow import ApplicationWorkflow
+from media_probe import ProbedMedia
 
 
 class FakePresenter:
@@ -49,6 +50,23 @@ class RecordedEvents:
         self.changes = 0
 
 
+class FakeMediaProbe:
+    """Reports whatever `ProbedMedia` a test pins to a path, no bytes read.
+
+    Mirrors the parent Analysis-document spec's fake player/probe seam: a
+    controller test can then assert duplicate-rejection and relink behaviour
+    against exact byte size, duration and fingerprint values without a real
+    video file to decode.
+    """
+
+    def __init__(self) -> None:
+        self.by_path: dict[Path, ProbedMedia] = {}
+        self.default = ProbedMedia(byte_size=1, fingerprint="fake", duration_ms=None)
+
+    def probe(self, path: Path) -> ProbedMedia:
+        return self.by_path.get(path, self.default)
+
+
 @pytest.fixture
 def presenter() -> FakePresenter:
     return FakePresenter()
@@ -75,8 +93,15 @@ def workflow(presenter: FakePresenter, events: RecordedEvents) -> ApplicationWor
 
 
 def _video(tmp_path: Path, name: str = "first-half.mp4") -> Path:
+    """A file distinct enough for the fingerprinting probe to tell apart.
+
+    Every call with a different ``name`` must produce different sampled
+    content: the probe combines sampled bytes with size, and two files this
+    small are read in full, so the name has to be part of what gets hashed
+    rather than just what the file is called.
+    """
     video_path = tmp_path / name
-    video_path.write_bytes(b"not a real video")
+    video_path.write_bytes(f"not a real video: {name}".encode())
     return video_path
 
 
@@ -563,3 +588,186 @@ def test_an_explicitly_supplied_document_is_adopted(
 
     assert workflow.document is document
     assert workflow.analysis.title == "Vorhanden"
+
+
+# --- Source-video identity and lifecycle -----------------------------------
+
+
+def test_adding_a_video_records_its_probed_identity(
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    probe = FakeMediaProbe()
+    video_path = _video(tmp_path)
+    probe.by_path[video_path] = ProbedMedia(
+        byte_size=999, fingerprint="sampled-sha256:abc", duration_ms=2_700_000
+    )
+    workflow = ApplicationWorkflow(presenter, media_probe=probe)
+
+    source_video = workflow.add_source_video_file(video_path)
+
+    assert source_video is not None
+    assert source_video.byte_size == 999
+    assert source_video.fingerprint == "sampled-sha256:abc"
+    assert source_video.duration_ms == 2_700_000
+
+
+def test_adding_the_exact_same_media_again_is_rejected_as_a_duplicate(
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    probe = FakeMediaProbe()
+    video_path = _video(tmp_path)
+    probe.by_path[video_path] = ProbedMedia(
+        byte_size=999, fingerprint="sampled-sha256:abc", duration_ms=1_000
+    )
+    workflow = ApplicationWorkflow(presenter, media_probe=probe)
+    workflow.add_source_video_file(video_path)
+    revision = workflow.analysis.revision
+
+    added_again = workflow.add_source_video_file(video_path)
+
+    assert added_again is None
+    assert len(workflow.analysis.source_videos) == 1
+    assert workflow.analysis.revision == revision
+    assert len(presenter.failures) == 1
+
+
+def test_a_moved_source_video_relinks_instead_of_duplicating(
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    probe = FakeMediaProbe()
+    original_path = tmp_path / "match.mp4"
+    original_path.write_bytes(b"original")
+    identity = ProbedMedia(
+        byte_size=999, fingerprint="sampled-sha256:abc", duration_ms=2_700_000
+    )
+    probe.by_path[original_path] = identity
+    workflow = ApplicationWorkflow(presenter, media_probe=probe)
+    original = workflow.add_source_video_file(original_path)
+    assert original is not None
+    clip = workflow.analysis.add_clip(original.id, "Fast break", 1_000, 2_000)
+
+    moved_directory = tmp_path / "moved"
+    moved_directory.mkdir()
+    moved_path = moved_directory / "match.mp4"
+    moved_path.write_bytes(b"same content, new home")
+    probe.by_path[moved_path] = identity
+
+    relinked = workflow.add_source_video_file(moved_path)
+
+    assert relinked is not None
+    assert relinked.id == original.id
+    assert relinked.location == str(moved_path)
+    assert len(workflow.analysis.source_videos) == 1
+    assert workflow.analysis.clip(clip.id).source_video_id == original.id
+    assert presenter.failures == []
+
+
+def test_renaming_a_source_video_keeps_its_clips(
+    workflow: ApplicationWorkflow,
+    tmp_path: Path,
+    events: RecordedEvents,
+) -> None:
+    _analysis_with_work(workflow, tmp_path)
+    source_video = workflow.analysis.source_videos[0]
+    clip = workflow.analysis.clips[0]
+    changes_before = events.changes
+
+    renamed = workflow.rename_source_video(source_video.id, "Halbzeit 1")
+
+    assert renamed is True
+    assert workflow.analysis.source_video(source_video.id).display_name == (
+        "Halbzeit 1"
+    )
+    assert workflow.analysis.clip(clip.id).source_video_id == source_video.id
+    assert events.changes == changes_before + 1
+
+
+def test_renaming_a_source_video_to_an_empty_name_is_reported_and_rejected(
+    workflow: ApplicationWorkflow,
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    _analysis_with_work(workflow, tmp_path)
+    source_video = workflow.analysis.source_videos[0]
+
+    assert workflow.rename_source_video(source_video.id, "   ") is False
+
+    assert workflow.analysis.source_video(source_video.id).display_name == (
+        source_video.display_name
+    )
+    assert len(presenter.failures) == 1
+
+
+def test_reordering_source_videos_sets_the_durable_display_order(
+    workflow: ApplicationWorkflow,
+    tmp_path: Path,
+) -> None:
+    first = workflow.add_source_video_file(_video(tmp_path))
+    second = workflow.add_source_video_file(_video(tmp_path, "second-half.mp4"))
+    assert first is not None and second is not None
+
+    assert workflow.reorder_source_videos([second.id, first.id]) is True
+
+    assert [source.id for source in workflow.analysis.source_videos] == [
+        second.id,
+        first.id,
+    ]
+
+
+def test_removing_a_source_video_without_clips_leaves_no_trace_of_it(
+    workflow: ApplicationWorkflow,
+    tmp_path: Path,
+) -> None:
+    source_video = workflow.add_source_video_file(_video(tmp_path))
+    assert source_video is not None
+    assert workflow.clip_count_for_source_video(source_video.id) == 0
+
+    assert workflow.remove_source_video(source_video.id) is True
+
+    assert workflow.analysis.source_videos == ()
+
+
+def test_removing_a_source_video_reports_and_takes_its_clips_with_it(
+    workflow: ApplicationWorkflow,
+    tmp_path: Path,
+) -> None:
+    _analysis_with_work(workflow, tmp_path)
+    source_video = workflow.analysis.source_videos[0]
+    workflow.analysis.add_clip(source_video.id, "Turnover", 3_000, 4_000)
+
+    assert workflow.clip_count_for_source_video(source_video.id) == 2
+
+    assert workflow.remove_source_video(source_video.id) is True
+
+    assert workflow.analysis.source_videos == ()
+    assert workflow.analysis.clips == ()
+
+
+def test_removed_source_video_is_reported_through_its_own_callback(
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    removed_ids: list = []
+    workflow = ApplicationWorkflow(
+        presenter, on_source_video_removed=removed_ids.append
+    )
+    source_video = workflow.add_source_video_file(_video(tmp_path))
+    assert source_video is not None
+
+    assert workflow.remove_source_video(source_video.id) is True
+
+    assert removed_ids == [source_video.id]
+
+
+def test_removing_an_unknown_source_video_is_reported_and_changes_nothing(
+    workflow: ApplicationWorkflow,
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    from uuid import uuid4
+
+    assert workflow.remove_source_video(uuid4()) is False
+    assert len(presenter.failures) == 1

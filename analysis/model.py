@@ -163,6 +163,23 @@ class Analysis:
         byte_size: int | None = None,
         fingerprint: str | None = None,
     ) -> SourceVideo:
+        """Add a Source video unconditionally, as a new identity.
+
+        This is the structural primitive the codec's decoder calls once per
+        JSON entry, and it is deliberately stricter than normal add-time
+        identity verification: it rejects a bare fingerprint collision on
+        its own, without needing byte size or duration to agree too, because
+        two *decoded* entries claiming the same fingerprint is exactly the
+        kind of malformed file `AnalysisFileCodec` must refuse to load.
+        `add_or_relink_source_video` is the operation with the three-signal
+        match a live add or relink actually wants; it calls this method only
+        once it has already decided the media is not a relink of something
+        already present, so the stricter check here is reachable from it
+        only when a fingerprint matches by coincidence while size or
+        duration do not — sha256 collisions of unrelated content are not a
+        real risk, so that path is expected to behave like any other
+        genuine duplicate and raise the same way.
+        """
         if not isinstance(display_name, str) or not display_name.strip():
             raise InvalidAnalysisDataError(
                 "Source-video display name must not be empty"
@@ -224,6 +241,107 @@ class Analysis:
         ]
         self._renumber_clips()
         self._revision += 1
+
+    def reorder_source_videos(self, source_video_ids: Sequence[UUID]) -> None:
+        """Set the durable, user-controlled order of every Source video.
+
+        Position is never identity: every Clip keeps naming its Source video
+        by UUID, so reordering cannot disturb a single Clip relationship.
+        """
+        ordered_ids = list(source_video_ids)
+        known_ids = {source.id for source in self._source_videos}
+        if len(ordered_ids) != len(known_ids) or set(ordered_ids) != known_ids:
+            raise InvalidAnalysisDataError(
+                "Source-video order must name every Source video exactly once"
+            )
+        by_id = {source.id: source for source in self._source_videos}
+        reordered = [by_id[identity] for identity in ordered_ids]
+        if reordered == self._source_videos:
+            return
+        self._source_videos = reordered
+        self._revision += 1
+
+    def add_or_relink_source_video(
+        self,
+        display_name: str,
+        location: str,
+        *,
+        relative_path: str | None = None,
+        duration_ms: int | None = None,
+        byte_size: int | None = None,
+        fingerprint: str | None = None,
+    ) -> SourceVideo:
+        """Add a Source video, or recognize it as media already present.
+
+        Normal identity verification never touches every byte of the file: a
+        sampled fingerprint combined with byte size and duration is stable
+        enough to tell one physical recording from another. When all three
+        match an existing Source video, the media is the same recording
+        under a possibly different path. Re-adding it from the location
+        already on record is rejected as a duplicate; re-adding it from
+        anywhere else relinks the existing Source video to that location
+        instead of creating a second identity for the same footage.
+
+        A fingerprint match with byte size but not duration — one add
+        probed a duration and the earlier one did not, so one side is
+        `None` — falls through to :meth:`add_source_video` instead of
+        matching here. That still raises: `add_source_video` rejects a
+        bare fingerprint collision on its own. The outcome an analyst sees
+        is the same duplicate rejection either way; only the raised
+        message differs, because this method never reaches its own relink
+        branch for a signal it cannot confirm.
+        """
+        match = self._matching_source_video(
+            duration_ms=duration_ms, byte_size=byte_size, fingerprint=fingerprint
+        )
+        if match is not None:
+            if match.location == location:
+                raise InvalidAnalysisDataError("Source video has already been added")
+            if any(
+                source.id != match.id and source.location == location
+                for source in self._source_videos
+            ):
+                raise InvalidAnalysisDataError(
+                    "Source video location is already in use"
+                )
+            relinked = replace(match, location=location, relative_path=relative_path)
+            self._source_videos[self._source_videos.index(match)] = relinked
+            self._revision += 1
+            return relinked
+        return self.add_source_video(
+            display_name,
+            location,
+            relative_path=relative_path,
+            duration_ms=duration_ms,
+            byte_size=byte_size,
+            fingerprint=fingerprint,
+        )
+
+    def _matching_source_video(
+        self,
+        *,
+        duration_ms: int | None,
+        byte_size: int | None,
+        fingerprint: str | None,
+    ) -> SourceVideo | None:
+        """Find an existing Source video verified identical to this media.
+
+        All three signals must be present and agree; a full-file hash is
+        never required, but a missing signal never counts as a match either,
+        so an unprobed video can never silently absorb another's identity.
+        """
+        if duration_ms is None or byte_size is None or fingerprint is None:
+            return None
+        return next(
+            (
+                source
+                for source in self._source_videos
+                if source.fingerprint == fingerprint
+                and source.byte_size == byte_size
+                and source.duration_ms == duration_ms
+            ),
+            None,
+        )
 
     def add_category(
         self,
