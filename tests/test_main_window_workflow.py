@@ -873,6 +873,47 @@ def test_saving_and_reopening_preserves_identities_and_content(
     assert workspace.dirty is False
 
 
+def test_filing_a_clip_under_a_category_and_taking_it_off_round_trips_through_save_and_reopen(
+    workspace: WorkspaceViewModel,
+    presenter: RecordingPresenter,
+    loop: Loop,
+    tmp_path: Path,
+) -> None:
+    """#68: the startup Analysis must offer the same Categories File > New does.
+
+    Filing survives a save and reopen because a Clip's `category_id` is
+    ordinary Analysis content; taking the Category off again and reopening
+    once more proves the codec preserves "no Category" just as faithfully as
+    it preserves one, rather than defaulting an absent field back onto the
+    first Category in the file.
+    """
+
+    add_video(workspace, presenter, loop, tmp_path)
+    clip_id = mark_clip(workspace, category="Angriff")
+    analysis_path = tmp_path / "match.analysis"
+    save_to(workspace, presenter, analysis_path)
+
+    presenter.analysis_to_open = str(analysis_path)
+    assert workspace.openAnalysis() is True
+    loop.advance(PRIMING_MS * 2)
+    presenter.analysis_to_open = None
+
+    assert clips_under(workspace, "Angriff")[0]["clipId"] == clip_id
+
+    workspace.editClip(clip_id)
+    workspace.setDraftCategory("")
+    workspace.commitDraft()
+    save_to(workspace, presenter, analysis_path)
+
+    presenter.analysis_to_open = str(analysis_path)
+    assert workspace.openAnalysis() is True
+    loop.advance(PRIMING_MS * 2)
+    presenter.analysis_to_open = None
+
+    assert clips_under(workspace, "Angriff") == []
+    assert clip_row(workspace, "Fast break")["categoryName"] == "Ohne Kategorie"
+
+
 def test_a_cancelled_save_prevents_close_and_keeps_unsaved_work(
     workspace: WorkspaceViewModel,
     document: AnalysisDocument,

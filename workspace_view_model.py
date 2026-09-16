@@ -282,6 +282,18 @@ class WorkspaceViewModel(QObject):
         if sources:
             self._activate_source(sources[0].id)
 
+    @property
+    def document(self) -> AnalysisDocument:
+        """The Analysis document this view model was built over.
+
+        Not a Qt property: QML never sees an Analysis document, only the
+        properties, slots and item models below. This exists for the same
+        reason `ApplicationWorkflow.document` does — so a test can inspect
+        the Analysis a view model wraps without a window.
+        """
+
+        return self._document
+
     # --- What QML is allowed to see ---------------------------------------
 
     @Property(bool, notify=documentChanged)

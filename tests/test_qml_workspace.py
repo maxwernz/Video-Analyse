@@ -160,6 +160,27 @@ def test_the_shipped_entry_point_is_the_shell_this_ticket_builds() -> None:
     assert "Toolbar" in quick_scene_path().read_text(encoding="utf-8")
 
 
+# --- The starting Analysis carries the default Category template -----------
+
+
+def test_the_analysis_the_application_opens_into_carries_the_category_template() -> (
+    None
+):
+    """The startup Analysis must be seeded the same way File > New seeds it.
+
+    #68: the Clip editor's chooser was empty on launch because the Analysis
+    `build_workspace_context` handed the view model was a bare `Analysis`,
+    never passed through `new_analysis_document`.
+    """
+
+    context = build_workspace_context()
+    workspace = context["workspace"]
+    assert isinstance(workspace, WorkspaceViewModel)
+
+    names = [category.name for category in workspace.document.analysis.categories]
+    assert names == ["Abwehr", "Angriff", "Tor"]
+
+
 # --- No Qt Quick Controls --------------------------------------------------
 
 
