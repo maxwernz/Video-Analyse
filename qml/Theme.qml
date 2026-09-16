@@ -40,22 +40,6 @@ QtObject {
     readonly property color accentOn: "#FFFFFF"
     readonly property color selection: "#33172A"
 
-    // The fixed Category palette. Ten colours at roughly constant lightness
-    // and chroma, with the magenta/pink band left empty so no Category can
-    // collide with the accent. There is no free colour picker.
-    readonly property var categoryPalette: [
-        "#E2564A",  // 1  Rot
-        "#DE8241",  // 2  Orange
-        "#C9A227",  // 3  Bernstein
-        "#8FAE3C",  // 4  Limette
-        "#4BA46A",  // 5  Gruen
-        "#3AA6A0",  // 6  Petrol
-        "#3E9BC4",  // 7  Cyan
-        "#5B87D6",  // 8  Blau
-        "#8B7BD8",  // 9  Violett
-        "#A96BC0"   // 10 Purpur
-    ]
-
     // Typography -- bundled, so both platforms render identically.
     readonly property string uiFamily: "Inter"
     readonly property string monoFamily: "JetBrains Mono"

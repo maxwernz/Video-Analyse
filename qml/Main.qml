@@ -93,6 +93,7 @@ Window {
         onOpenAnalysisRequested: workspace.openAnalysis()
         onSaveAnalysisRequested: workspace.saveAnalysis()
         onAddVideoRequested: workspace.addSourceVideo()
+        onCategoriesRequested: workspace.showCategoryManagement()
         onSidebarToggleRequested: window.sidebarVisible = !window.sidebarVisible
     }
 

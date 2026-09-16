@@ -24,8 +24,10 @@ from analysis import (
     AnalysisError,
     SourceVideo,
     UnsavedChangesChoice,
+    CategoryTemplateStore,
     new_analysis_document,
 )
+from category_template_settings import installation_category_template_store
 from media_probe import FileMediaProbe, MediaProbe
 
 APPLICATION_TITLE = "Video Analyse"
@@ -80,9 +82,15 @@ class ApplicationWorkflow:
         on_source_video_added: Callable[[SourceVideo], None] | None = None,
         on_source_video_removed: Callable[[UUID], None] | None = None,
         media_probe: MediaProbe | None = None,
+        template_store: CategoryTemplateStore | None = None,
     ) -> None:
         self._presenter = presenter
-        self._document = document if document is not None else new_analysis_document()
+        self._template_store = template_store or installation_category_template_store()
+        self._document = (
+            document
+            if document is not None
+            else new_analysis_document(template_store=self._template_store)
+        )
         self._analysis_replaced = on_analysis_replaced or _do_nothing
         self._document_changed = on_document_changed or _do_nothing
         self._source_video_added = on_source_video_added or _ignore_source_video
@@ -96,6 +104,12 @@ class ApplicationWorkflow:
     @property
     def analysis(self) -> Analysis:
         return self._document.analysis
+
+    @property
+    def template_store(self) -> CategoryTemplateStore:
+        """Share the installation setting used when this workflow starts over."""
+
+        return self._template_store
 
     @property
     def window_title(self) -> str:
@@ -122,7 +136,7 @@ class ApplicationWorkflow:
         """Start an empty Analysis, seeded with the default Category template."""
         if not self.may_replace_analysis():
             return False
-        self.adopt_document(new_analysis_document())
+        self.adopt_document(new_analysis_document(template_store=self._template_store))
         return True
 
     def open_analysis(self) -> bool:

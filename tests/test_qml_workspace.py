@@ -40,6 +40,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 import icon_family  # noqa: E402
 from analysis import AnalysisDocument, UnsavedChangesChoice  # noqa: E402
+from analysis.category_palette import CATEGORY_PALETTE  # noqa: E402
 from playback import FakePlayback  # noqa: E402
 from workspace_view_model import WorkspaceViewModel  # noqa: E402
 from app_runtime import (  # noqa: E402
@@ -94,6 +95,7 @@ def engine(application: QApplication) -> QQmlApplicationEngine:
 def test_the_application_ships_the_components_the_shell_is_made_of() -> None:
     assert {path.name for path in qml_components()} == {
         "ClipEditor.qml",
+        "CategoryManager.qml",
         "EmptyStage.qml",
         "Field.qml",
         "IconButton.qml",
@@ -288,13 +290,11 @@ def test_the_theme_invents_no_colour_the_spec_does_not_name() -> None:
     )
 
 
-def test_the_category_palette_is_carried_in_the_spec_s_order() -> None:
-    declaration = _theme_declarations()["categoryPalette"]
-    block = THEME.read_text(encoding="utf-8").split("categoryPalette", 1)[1]
-    assert declaration.startswith("[")
-    assert [
-        value.upper() for value in _COLOUR_LITERAL.findall(block.split("]", 1)[0])
-    ] == _specified_category_palette()
+def test_the_category_palette_is_carried_once_in_the_spec_s_order() -> None:
+    """QML receives Category colours in rows, not through a second token list."""
+
+    assert [value.upper() for value in CATEGORY_PALETTE] == _specified_category_palette()
+    assert "categoryPalette" not in THEME.read_text(encoding="utf-8")
 
 
 #: The metrics table in the token spec, mapped onto the properties that carry
