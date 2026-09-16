@@ -811,12 +811,6 @@ class WorkspaceViewModel(QObject):
             self._category_error = str(error)
         self._managed_categories_changed()
 
-    @Slot()
-    def restoreCategoryTemplate(self) -> None:
-        self._template_store.restore_builtin()
-        if self._category_management_scope == "template":
-            self._managed_categories_changed()
-
     def _move_managed_category(self, category_id: str, offset: int) -> None:
         identity = _as_uuid(category_id)
         rows = self._managed_categories.rows()

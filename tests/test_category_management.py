@@ -33,8 +33,8 @@ def test_category_management_keeps_analysis_and_template_edits_separate(tmp_path
 
     workspace.setCategoryManagementScope("template")
     workspace.addManagedCategory()
-    workspace.restoreCategoryTemplate()
 
+    # The template gained a Category; the open Analysis must not have.
     assert [category.name for category in analysis.categories] == [
         "Angriff Mitte",
         "Neue Kategorie",
@@ -43,6 +43,7 @@ def test_category_management_keeps_analysis_and_template_edits_separate(tmp_path
         "Abwehr",
         "Angriff",
         "Tor",
+        "Neue Kategorie",
     ]
 
 

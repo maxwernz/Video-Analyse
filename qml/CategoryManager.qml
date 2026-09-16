@@ -226,12 +226,6 @@ Rectangle {
                 iconName: "plus"
                 onClicked: workspace.addManagedCategory()
             }
-            TextButton {
-                visible: workspace.categoryManagementScope === "template"
-                label: "Handball-Vorlage wiederherstellen"
-                iconName: "rotate-ccw"
-                onClicked: workspace.restoreCategoryTemplate()
-            }
         }
     }
 }

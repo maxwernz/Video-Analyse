@@ -86,11 +86,6 @@ class CategoryTemplateStore:
         template.reorder_categories(category_ids)
         self._write(template.categories)
 
-    def restore_builtin(self) -> None:
-        """Replace only future-Analysis defaults with the handball starting set."""
-
-        self._write(_built_in_categories())
-
     def _as_analysis(self) -> Analysis:
         template = Analysis("Category template")
         for category in self.categories():
