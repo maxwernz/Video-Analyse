@@ -392,7 +392,7 @@ def test_choosing_the_first_source_video_turns_the_empty_stage_into_a_player(
     tmp_path: Path,
 ) -> None:
     video = tmp_path / "erste-halbzeit.mp4"
-    video.write_bytes(b"not real media")
+    video.write_bytes(f"not real media: {video.name}".encode())
     presenter.source_video = str(video)
     workspace = _workspace(AnalysisDocument.new(), player, presenter)
 
@@ -410,7 +410,7 @@ def test_choosing_another_source_video_adds_it_without_interrupting_the_active_o
     document = _document_with_a_video()
     workspace = _workspace(document, player, presenter)
     second = tmp_path / "zweite-halbzeit.mov"
-    second.write_bytes(b"not real media")
+    second.write_bytes(f"not real media: {second.name}".encode())
     presenter.source_video = str(second)
 
     assert workspace.addSourceVideo() is True
@@ -435,8 +435,8 @@ def test_dropping_source_videos_adds_every_one_to_the_current_analysis(
     workspace = _workspace(document, player, presenter)
     second = tmp_path / "zweite-halbzeit.mp4"
     third = tmp_path / "verlaengerung.MOV"
-    second.write_bytes(b"not real media")
-    third.write_bytes(b"not real media")
+    second.write_bytes(f"not real media: {second.name}".encode())
+    third.write_bytes(f"not real media: {third.name}".encode())
 
     assert workspace.addDroppedSourceVideos(
         [QUrl.fromLocalFile(str(second)), QUrl.fromLocalFile(str(third))]

@@ -154,7 +154,7 @@ def test_media_player_playback_loads_a_source_video_from_its_location(
     from playback import MediaPlayerPlayback
 
     video_path = tmp_path / "first-half.mp4"
-    video_path.write_bytes(b"not a real video")
+    video_path.write_bytes(f"not a real video: {video_path.name}".encode())
     player = MediaPlayerPlayback()
 
     player.load(str(video_path))
@@ -226,7 +226,7 @@ def test_both_playbacks_report_the_same_location_for_the_same_video(
     from playback import MediaPlayerPlayback
 
     video_path = tmp_path / "first-half.mp4"
-    video_path.write_bytes(b"not a real video")
+    video_path.write_bytes(f"not a real video: {video_path.name}".encode())
     real = MediaPlayerPlayback()
     fake = FakePlayback()
 

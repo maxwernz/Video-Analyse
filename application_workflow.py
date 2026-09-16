@@ -13,9 +13,10 @@ testable without widgets, dialogs, or media.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Protocol
+from uuid import UUID
 
 from analysis import (
     Analysis,
@@ -25,6 +26,7 @@ from analysis import (
     UnsavedChangesChoice,
     new_analysis_document,
 )
+from media_probe import FileMediaProbe, MediaProbe
 
 APPLICATION_TITLE = "Video Analyse"
 UNTITLED_ANALYSIS_TITLE = "Unbenannte Analyse"
@@ -76,12 +78,16 @@ class ApplicationWorkflow:
         on_analysis_replaced: Callable[[], None] | None = None,
         on_document_changed: Callable[[], None] | None = None,
         on_source_video_added: Callable[[SourceVideo], None] | None = None,
+        on_source_video_removed: Callable[[UUID], None] | None = None,
+        media_probe: MediaProbe | None = None,
     ) -> None:
         self._presenter = presenter
         self._document = document if document is not None else new_analysis_document()
         self._analysis_replaced = on_analysis_replaced or _do_nothing
         self._document_changed = on_document_changed or _do_nothing
         self._source_video_added = on_source_video_added or _ignore_source_video
+        self._source_video_removed = on_source_video_removed or _ignore_source_video_id
+        self._media_probe: MediaProbe = media_probe or FileMediaProbe()
 
     @property
     def document(self) -> AnalysisDocument:
@@ -200,11 +206,21 @@ class ApplicationWorkflow:
 
         The first video also titles an Analysis that has no title yet. Both
         changes are one transaction, so a rejected video leaves neither a
-        Source video nor a title behind.
+        Source video nor a title behind. The file is probed before the
+        transaction opens, so a probe failure — a missing or unreadable path
+        — is reported the same way a rejected identity is, without touching
+        the Analysis at all.
         """
         if not path:
             return None
         video_path = Path(path)
+        try:
+            probed = self._media_probe.probe(video_path)
+        except OSError as error:
+            self._presenter.report_failure(
+                "Source video could not be added", str(error)
+            )
+            return None
         analysis = self.analysis
         try:
             with analysis.transaction():
@@ -212,9 +228,12 @@ class ApplicationWorkflow:
                     suggested_title = video_path.stem.strip()
                     if suggested_title:
                         analysis.set_title(suggested_title)
-                source_video = analysis.add_source_video(
+                source_video = analysis.add_or_relink_source_video(
                     video_path.name,
                     str(video_path),
+                    duration_ms=probed.duration_ms,
+                    byte_size=probed.byte_size,
+                    fingerprint=probed.fingerprint,
                 )
         except AnalysisError as error:
             self._presenter.report_failure(
@@ -224,6 +243,56 @@ class ApplicationWorkflow:
         self._document_changed()
         self._source_video_added(source_video)
         return source_video
+
+    def rename_source_video(self, source_video_id: UUID, display_name: str) -> bool:
+        """Give a Source video an editable display name of its own."""
+
+        try:
+            self.analysis.rename_source_video(source_video_id, display_name)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Source video could not be renamed", str(error)
+            )
+            return False
+        self._document_changed()
+        return True
+
+    def reorder_source_videos(self, source_video_ids: Sequence[UUID]) -> bool:
+        """Set the durable order the analyst wants Source videos to read in."""
+
+        try:
+            self.analysis.reorder_source_videos(source_video_ids)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Source videos could not be reordered", str(error)
+            )
+            return False
+        self._document_changed()
+        return True
+
+    def clip_count_for_source_video(self, source_video_id: UUID) -> int:
+        """How many Clips a removal of this Source video would take with it."""
+
+        return len(self.analysis.clips_of_source_video(source_video_id))
+
+    def remove_source_video(self, source_video_id: UUID) -> bool:
+        """Remove a Source video and every Clip that belongs to it.
+
+        The caller is responsible for confirming a non-zero
+        :meth:`clip_count_for_source_video` with the analyst first; this
+        method itself always carries the cascade out, exactly as
+        `Analysis.remove_source_video` defines it.
+        """
+        try:
+            self.analysis.remove_source_video(source_video_id)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Source video could not be removed", str(error)
+            )
+            return False
+        self._document_changed()
+        self._source_video_removed(source_video_id)
+        return True
 
     def add_dropped_source_video(self, path: str | Path) -> bool:
         """Add a dropped file only when it is a supported Source video."""
@@ -265,4 +334,8 @@ def _do_nothing() -> None:
 
 
 def _ignore_source_video(source_video: SourceVideo) -> None:
+    return None
+
+
+def _ignore_source_video_id(source_video_id: UUID) -> None:
     return None

@@ -12,6 +12,7 @@ import pytest
 
 from analysis import (
     AnalysisDocument,
+    EmptyAnalysisError,
     InvalidAnalysisDataError,
     LegacySourceOverwriteError,
     MalformedJSONError,
@@ -151,6 +152,66 @@ def test_legacy_analysis_requires_save_as_then_round_trips_as_json(
         reopened.analysis.categories,
         reopened.analysis.clips,
     ) == imported_state
+
+
+def test_renamed_and_reordered_source_videos_survive_save_and_reopen(
+    tmp_path: Path,
+) -> None:
+    document = AnalysisDocument.new("Match")
+    first = document.analysis.add_source_video(
+        "first-half.mp4",
+        "/videos/first-half.mp4",
+        duration_ms=2_700_000,
+        byte_size=123_456,
+        fingerprint="sampled-sha256:first",
+    )
+    second = document.analysis.add_source_video(
+        "second-half.mp4",
+        "/videos/second-half.mp4",
+        duration_ms=2_700_000,
+        byte_size=654_321,
+        fingerprint="sampled-sha256:second",
+    )
+    first_clip = document.analysis.add_clip(first.id, "Fast break", 1_000, 2_000)
+    second_clip = document.analysis.add_clip(second.id, "Turnover", 3_000, 4_000)
+
+    document.analysis.rename_source_video(first.id, "Halbzeit 1")
+    document.analysis.reorder_source_videos([second.id, first.id])
+
+    saved_path = document.save_as(tmp_path / "match")
+    reopened = AnalysisDocument.new()
+    reopened.load(saved_path)
+
+    reopened_sources = reopened.analysis.source_videos
+    assert [source.id for source in reopened_sources] == [second.id, first.id]
+    assert reopened.analysis.source_video(first.id).display_name == "Halbzeit 1"
+    assert reopened.analysis.source_video(first.id).byte_size == 123_456
+    assert reopened.analysis.source_video(first.id).fingerprint == (
+        "sampled-sha256:first"
+    )
+    assert reopened.analysis.clip(first_clip.id).source_video_id == first.id
+    assert reopened.analysis.clip(second_clip.id).source_video_id == second.id
+
+
+def test_an_empty_analysis_after_removing_its_last_source_video_cannot_be_saved(
+    tmp_path: Path,
+) -> None:
+    document = AnalysisDocument.new("Match")
+    source_video = document.analysis.add_source_video(
+        "first-half.mp4", "/videos/first-half.mp4"
+    )
+
+    document.analysis.remove_source_video(source_video.id)
+
+    assert document.analysis.source_videos == ()
+    with pytest.raises(EmptyAnalysisError):
+        document.save_as(tmp_path / "match")
+
+    document.analysis.add_source_video(
+        "second-half.mp4", "/videos/second-half.mp4"
+    )
+    saved_path = document.save_as(tmp_path / "match")
+    assert saved_path.is_file()
 
 
 @pytest.mark.parametrize("duplicate_kind", ["identity", "media"])

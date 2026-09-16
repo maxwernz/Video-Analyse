@@ -521,11 +521,15 @@ def test_no_entry_in_the_drawn_menu_does_nothing(
         destination = tmp_path / f"{entry.command}.analysis"
         opened = tmp_path / "kiel.analysis"
         _an_analysis("Spiel gegen Kiel").save_as(opened)
+        added_video = tmp_path / f"{entry.command}.mp4"
+        added_video.write_bytes(f"not real media: {entry.command}".encode())
         view_model = WorkspaceViewModel(
             _an_analysis("Spiel gegen Flensburg"),
             FakePlayback(),
             presenter=_AnswersEverything(
-                to_open=str(opened), destination=str(destination)
+                to_open=str(opened),
+                destination=str(destination),
+                source_video=str(added_video),
             ),
         )
         ran: list[str] = []

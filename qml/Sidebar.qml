@@ -265,9 +265,20 @@ Rectangle {
             required property var model
             required property int index
             property string sourceId: videoItem.model.sourceId
+            property bool renaming: false
+            // Armed by a first click on the remove control; a second click
+            // within the window confirms it. Left this way by any other
+            // interaction, so a stray click can never remove a video.
+            property bool removeArmed: false
 
             width: videoList.width
             height: Theme.sourceRowHeight
+
+            Timer {
+                id: disarmTimer
+                interval: 3000
+                onTriggered: videoItem.removeArmed = false
+            }
 
             Rectangle {
                 anchors.fill: parent
@@ -302,11 +313,12 @@ Rectangle {
 
             Text {
                 id: videoName
+                visible: !videoItem.renaming
                 anchors {
                     left: filmIcon.right
                     leftMargin: Theme.sourceRowIconGap
-                    right: parent.right
-                    rightMargin: Theme.gutter
+                    right: rowActions.left
+                    rightMargin: Theme.gap
                     top: parent.top
                     topMargin: Theme.sourceRowNameTop
                 }
@@ -318,6 +330,47 @@ Rectangle {
                 font.family: Theme.uiFamily
                 font.pixelSize: Theme.sizeRow
                 font.weight: Theme.medium
+
+                MouseArea {
+                    id: renameArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.IBeamCursor
+                    onDoubleClicked: {
+                        renameField.text = videoItem.model.name
+                        videoItem.renaming = true
+                        renameField.forceActiveFocus()
+                        renameField.selectAll()
+                    }
+                }
+            }
+
+            TextInput {
+                id: renameField
+                visible: videoItem.renaming
+                anchors {
+                    left: videoName.left
+                    right: videoName.right
+                    top: videoName.top
+                }
+                color: Theme.text
+                font.family: Theme.uiFamily
+                font.pixelSize: Theme.sizeRow
+                font.weight: Theme.medium
+                selectByMouse: true
+
+                function commit() {
+                    if (!videoItem.renaming)
+                        return
+                    videoItem.renaming = false
+                    var trimmed = renameField.text.trim()
+                    if (trimmed.length > 0 && trimmed !== videoItem.model.name)
+                        workspace.renameSourceVideo(videoItem.sourceId, trimmed)
+                }
+
+                onAccepted: renameField.commit()
+                onEditingFinished: renameField.commit()
+                Keys.onEscapePressed: videoItem.renaming = false
             }
 
             Row {
@@ -352,6 +405,55 @@ Rectangle {
                 onClicked: {
                     videoList.currentIndex = videoItem.index
                     workspace.selectSourceVideo(videoItem.model.sourceId)
+                }
+            }
+
+            // Reorder and remove: shown on hover so the resting row reads as
+            // plainly as the Clip list, and armed rather than a modal
+            // confirmation for removal, which no drawn-primitive component
+            // in this visual system yet has to offer. Declared after
+            // `videoArea` so its buttons sit above that full-row MouseArea
+            // and actually receive the click.
+            Row {
+                id: rowActions
+                anchors { right: parent.right; rightMargin: Theme.gutter; verticalCenter: parent.verticalCenter }
+                spacing: 0
+                visible: videoArea.containsMouse || videoItem.removeArmed
+
+                IconButton {
+                    iconName: "chevron-down"
+                    rotation: 180
+                    tooltip: "Nach oben verschieben"
+                    enabled: videoItem.index > 0
+                    onClicked: workspace.moveSourceVideoEarlier(videoItem.sourceId)
+                }
+
+                IconButton {
+                    iconName: "chevron-down"
+                    tooltip: "Nach unten verschieben"
+                    enabled: videoItem.index < videoList.count - 1
+                    onClicked: workspace.moveSourceVideoLater(videoItem.sourceId)
+                }
+
+                IconButton {
+                    id: removeButton
+                    iconName: "trash-2"
+                    tooltip: videoItem.removeArmed
+                             ? ("Wirklich entfernen? "
+                                + workspace.clipCountForSourceVideo(videoItem.sourceId)
+                                + " Clips")
+                             : "Video entfernen"
+                    iconColor: videoItem.removeArmed ? Theme.warning : Theme.textMuted
+                    onClicked: {
+                        if (videoItem.removeArmed) {
+                            disarmTimer.stop()
+                            videoItem.removeArmed = false
+                            workspace.removeSourceVideo(videoItem.sourceId)
+                        } else {
+                            videoItem.removeArmed = true
+                            disarmTimer.restart()
+                        }
+                    }
                 }
             }
         }

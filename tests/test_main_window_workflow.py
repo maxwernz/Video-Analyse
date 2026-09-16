@@ -256,7 +256,7 @@ def add_video(
     """Add one Source video, and let its surface finish being primed."""
 
     video_path = tmp_path / name
-    video_path.write_bytes(b"not a real video")
+    video_path.write_bytes(f"not a real video: {video_path.name}".encode())
     presenter.source_video = str(video_path)
     assert workspace.addSourceVideo() is True
     presenter.source_video = None
@@ -1006,7 +1006,7 @@ def test_a_dropped_video_is_added_to_the_current_analysis(
 ) -> None:
     add_video(workspace, presenter, loop, tmp_path)
     dropped = tmp_path / "second-half.MOV"
-    dropped.write_bytes(b"not a real video")
+    dropped.write_bytes(f"not a real video: {dropped.name}".encode())
 
     assert workspace.addDroppedSourceVideos([QUrl.fromLocalFile(str(dropped))]) is True
 
@@ -1271,7 +1271,7 @@ def test_the_call_to_action_adds_a_video_and_gives_way_to_the_player(
     tmp_path: Path,
 ) -> None:
     video_path = tmp_path / "first-half.mp4"
-    video_path.write_bytes(b"not a real video")
+    video_path.write_bytes(f"not a real video: {video_path.name}".encode())
     presenter.source_video = str(video_path)
 
     assert workspace.addSourceVideo() is True
