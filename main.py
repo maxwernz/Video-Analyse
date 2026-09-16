@@ -12,7 +12,7 @@ from PIL import ImageFont
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
 
-from analysis import AnalysisDocument
+from analysis import new_analysis_document
 from app_runtime import (
     REQUIRED_FONT_FAMILIES,
     configure_application_identity,
@@ -46,13 +46,17 @@ def build_workspace_context() -> dict[str, WorkspaceViewModel]:
     """What the QML window is given, and the whole vocabulary it has.
 
     One view model over one Analysis document and one player. QML never sees
-    either of them; it sees this. The application opens into a new, empty
-    Analysis, and every document command runs through the same workflow — the
-    presenter is the only part of that which knows what a dialog is.
+    either of them; it sees this. The application opens into a new Analysis
+    seeded with the default Category template — `new_analysis_document` is
+    the same construction `ApplicationWorkflow.new_analysis` uses for File >
+    New, so the Analysis an analyst starts from and the one File > New hands
+    them cannot diverge. Every document command after that runs through the
+    same workflow — the presenter is the only part of that which knows what a
+    dialog is.
     """
 
     view_model = WorkspaceViewModel(
-        AnalysisDocument.new(),
+        new_analysis_document(),
         MediaPlayerPlayback(),
         presenter=WorkspacePresenter(),
     )
