@@ -34,6 +34,7 @@ from application_workflow import (
     ApplicationWorkflow,
     WorkflowPresenter,
 )
+from category_models import AnalysisCategoryModel, CategoryTemplateModel
 from clip_editor import (
     END,
     END_BEFORE_START,
@@ -53,7 +54,7 @@ from timeline_models import RulerModel, TimelineRangeModel
 #: Analysis: it lives here and is never written to a file, because reopening
 #: an Analysis on a tab somebody left it on a week ago would be a surprise
 #: rather than a memory.
-SIDEBAR_TABS = ("clips", "videos")
+SIDEBAR_TABS = ("clips", "videos", "categories")
 
 
 #: The speeds the segmented control offers, in the order it draws them.
@@ -202,6 +203,8 @@ class WorkspaceViewModel(QObject):
     pendingChanged = Signal()
     draftChanged = Signal()
     editingChanged = Signal()
+    categoryTemplateChanged = Signal()
+    templateEditingChanged = Signal()
 
     #: The Close command, which is a request of the *window* rather than of
     #: the Analysis: every way out arrives at `requestClose`, so the
@@ -228,6 +231,7 @@ class WorkspaceViewModel(QObject):
             on_document_changed=self._document_reported,
             on_source_video_added=self._source_video_added,
             on_source_video_removed=self._source_video_removed,
+            on_category_template_changed=self._category_template_reported,
         )
         self._document = document
         self._playback = playback
@@ -265,6 +269,12 @@ class WorkspaceViewModel(QObject):
         self._draft: ClipDraft | None = None
         self._boundary_error = ""
 
+        # Whether the Category-template management surface is open. A
+        # property of this session, like `_sidebar_tab`: the template is
+        # installation-local state, not part of the Analysis, so there is
+        # nowhere in a document for "was the editor open" to belong either.
+        self._template_editing = False
+
         # What the timeline and the sidebar draw. All four are projections of
         # the Analysis; none of them is ever handed a Clip.
         self._ranges = TimelineRangeModel(self)
@@ -272,6 +282,9 @@ class WorkspaceViewModel(QObject):
         self._clips = ClipListModel(self)
         self._sources = SourceVideoModel(self)
         self._categories = CategoryModel(self)
+        self._category_management = AnalysisCategoryModel(self)
+        self._category_template = CategoryTemplateModel(self)
+        self._category_template.refresh(self._workflow.category_template_entries)
         self._ruler_width_px = 0.0
 
         self._playback.position_changed.connect(self._position_reported)
@@ -602,8 +615,199 @@ class WorkspaceViewModel(QObject):
         known = {category.id for category in self._document.analysis.categories}
         if identity is None or identity not in known:
             return
-        self._document.analysis.remove_category(identity)
+        self._workflow.remove_category(identity)
         self.refresh()
+
+    # --- Categories of this Analysis ---------------------------------------
+    #
+    # Deliberately separate from the Category-template section below, which
+    # is a different scope entirely: see `ApplicationWorkflow`'s own comment
+    # on the same split.
+
+    @Property(QObject, constant=True)
+    def categoryManagementModel(self) -> QObject:
+        """This Analysis's Categories, with how many Clips each one carries."""
+
+        return self._category_management
+
+    @Slot(str, str, result=bool)
+    def addCategory(self, name: str, color: str) -> bool:
+        added = self._workflow.add_category(name, color) is not None
+        if added:
+            self._refresh_projections()
+            self.documentChanged.emit()
+        return added
+
+    @Slot(str, str, result=bool)
+    def renameCategory(self, category_id: str, name: str) -> bool:
+        identity = _as_uuid(category_id)
+        if identity is None:
+            return False
+        renamed = self._workflow.rename_category(identity, name)
+        if renamed:
+            self._refresh_projections()
+            self.documentChanged.emit()
+        return renamed
+
+    @Slot(str, str, result=bool)
+    def recolorCategory(self, category_id: str, color: str) -> bool:
+        identity = _as_uuid(category_id)
+        if identity is None:
+            return False
+        recolored = self._workflow.recolor_category(identity, color)
+        if recolored:
+            self._refresh_projections()
+            self.documentChanged.emit()
+        return recolored
+
+    @Slot(list, result=bool)
+    def reorderCategories(self, ordered_ids: list[object]) -> bool:
+        identities = [_as_uuid(str(value)) for value in ordered_ids]
+        if any(identity is None for identity in identities):
+            return False
+        reordered = self._workflow.reorder_categories(cast(list[UUID], identities))
+        if reordered:
+            self._refresh_projections()
+            self.documentChanged.emit()
+        return reordered
+
+    @Slot(str, result=bool)
+    def moveCategoryEarlier(self, category_id: str) -> bool:
+        return self._swap_category(category_id, by=-1)
+
+    @Slot(str, result=bool)
+    def moveCategoryLater(self, category_id: str) -> bool:
+        return self._swap_category(category_id, by=1)
+
+    def _swap_category(self, category_id: str, *, by: int) -> bool:
+        identity = _as_uuid(category_id)
+        if identity is None:
+            return False
+        order = [category.id for category in self._document.analysis.categories]
+        try:
+            position = order.index(identity)
+        except ValueError:
+            return False
+        target = position + by
+        if not 0 <= target < len(order):
+            return False
+        order[position], order[target] = order[target], order[position]
+        reordered = self._workflow.reorder_categories(order)
+        if reordered:
+            self._refresh_projections()
+            self.documentChanged.emit()
+        return reordered
+
+    @Slot(str, result=int)
+    def clipCountForCategory(self, category_id: str) -> int:
+        """How many Clips a removal of this Category would leave uncategorized."""
+
+        identity = _as_uuid(category_id)
+        if identity is None:
+            return 0
+        return self._workflow.clip_count_for_category(identity)
+
+    # --- The Category template ----------------------------------------------
+    #
+    # This is the installation-local template, never the open Analysis: see
+    # `analysis.template`'s module docstring for the isolation this relies
+    # on. Nothing here can mark the Analysis document dirty or change a
+    # Category any Analysis already holds.
+
+    @Property(bool, notify=templateEditingChanged)
+    def templateEditing(self) -> bool:
+        """Whether the Category-template management surface is open."""
+
+        return self._template_editing
+
+    @Slot()
+    def openCategoryTemplateEditor(self) -> None:
+        if self._template_editing:
+            return
+        self._template_editing = True
+        self.templateEditingChanged.emit()
+
+    @Slot()
+    def closeCategoryTemplateEditor(self) -> None:
+        if not self._template_editing:
+            return
+        self._template_editing = False
+        self.templateEditingChanged.emit()
+
+    @Property(QObject, constant=True)
+    def categoryTemplateModel(self) -> QObject:
+        """The installation-local Category template's own entries."""
+
+        return self._category_template
+
+    @Slot(str, str, result=bool)
+    def addTemplateCategory(self, name: str, color: str) -> bool:
+        return self._workflow.add_template_category(name, color) is not None
+
+    @Slot(str, str, result=bool)
+    def renameTemplateCategory(self, entry_id: str, name: str) -> bool:
+        identity = _as_uuid(entry_id)
+        if identity is None:
+            return False
+        return self._workflow.rename_template_category(identity, name)
+
+    @Slot(str, str, result=bool)
+    def recolorTemplateCategory(self, entry_id: str, color: str) -> bool:
+        identity = _as_uuid(entry_id)
+        if identity is None:
+            return False
+        return self._workflow.recolor_template_category(identity, color)
+
+    @Slot(list, result=bool)
+    def reorderTemplateCategories(self, ordered_ids: list[object]) -> bool:
+        identities = [_as_uuid(str(value)) for value in ordered_ids]
+        if any(identity is None for identity in identities):
+            return False
+        return self._workflow.reorder_template_categories(cast(list[UUID], identities))
+
+    @Slot(str, result=bool)
+    def moveTemplateCategoryEarlier(self, entry_id: str) -> bool:
+        return self._swap_template_category(entry_id, by=-1)
+
+    @Slot(str, result=bool)
+    def moveTemplateCategoryLater(self, entry_id: str) -> bool:
+        return self._swap_template_category(entry_id, by=1)
+
+    def _swap_template_category(self, entry_id: str, *, by: int) -> bool:
+        identity = _as_uuid(entry_id)
+        if identity is None:
+            return False
+        order = [entry.id for entry in self._workflow.category_template_entries]
+        try:
+            position = order.index(identity)
+        except ValueError:
+            return False
+        target = position + by
+        if not 0 <= target < len(order):
+            return False
+        order[position], order[target] = order[target], order[position]
+        return self._workflow.reorder_template_categories(order)
+
+    @Slot(str, result=bool)
+    def removeTemplateCategory(self, entry_id: str) -> bool:
+        identity = _as_uuid(entry_id)
+        if identity is None:
+            return False
+        return self._workflow.remove_template_category(identity)
+
+    @Slot(result=bool)
+    def restoreDefaultCategoryTemplate(self) -> bool:
+        return self._workflow.restore_default_category_template()
+
+    def _category_template_reported(self) -> None:
+        """The durable template changed; redraw the surface that shows it.
+
+        Never emits `documentChanged`: the template is not part of the
+        Analysis document, and nothing about its dirty state changes here.
+        """
+
+        self._category_template.refresh(self._workflow.category_template_entries)
+        self.categoryTemplateChanged.emit()
 
     @Slot(str)
     def setAnalysisTitle(self, title: str) -> None:
@@ -1316,6 +1520,7 @@ class WorkspaceViewModel(QObject):
         )
         self._clips.refresh(analysis, selected_clip_id=self._selected_clip_id)
         self._sources.refresh(analysis, active_source_id=self._active_source_id)
+        self._category_management.refresh(analysis)
 
     def _prime_video_surface(self) -> None:
         """Make a newly loaded Source video show a frame instead of black.

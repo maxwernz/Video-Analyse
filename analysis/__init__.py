@@ -17,6 +17,8 @@ from .legacy import LegacyAnalysisImporter
 from .model import Analysis, Category, Clip, SourceVideo, normalize_category_name
 from .template import (
     DEFAULT_CATEGORY_TEMPLATE,
+    CategoryTemplate,
+    CategoryTemplateEntry,
     apply_category_template,
     new_analysis_document,
 )
@@ -30,6 +32,8 @@ __all__ = [
     "AnalysisFileFormat",
     "apply_category_template",
     "Category",
+    "CategoryTemplate",
+    "CategoryTemplateEntry",
     "Clip",
     "DEFAULT_CATEGORY_TEMPLATE",
     "EmptyAnalysisError",

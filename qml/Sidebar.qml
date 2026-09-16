@@ -31,11 +31,12 @@ Rectangle {
 
         SegmentedControl {
             anchors.fill: parent
-            options: ["Clips", "Videos"]
-            segmentWidth: Math.floor((parent.width - Theme.border * 2) / 2)
-            currentIndex: workspace.sidebarTab === "clips" ? 0 : 1
+            options: ["Clips", "Videos", "Kategorien"]
+            segmentWidth: Math.floor((parent.width - Theme.border * 2) / 3)
+            currentIndex: workspace.sidebarTab === "clips" ? 0
+                          : (workspace.sidebarTab === "videos" ? 1 : 2)
             onSelected: function (index) {
-                workspace.setSidebarTab(index === 0 ? "clips" : "videos")
+                workspace.setSidebarTab(["clips", "videos", "categories"][index])
             }
         }
     }

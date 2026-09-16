@@ -22,10 +22,13 @@ from analysis import (
     Analysis,
     AnalysisDocument,
     AnalysisError,
+    Category,
     SourceVideo,
     UnsavedChangesChoice,
     new_analysis_document,
 )
+from analysis.template import CategoryTemplateEntry
+from category_template_store import CategoryTemplateStore
 from media_probe import FileMediaProbe, MediaProbe
 
 APPLICATION_TITLE = "Video Analyse"
@@ -79,7 +82,9 @@ class ApplicationWorkflow:
         on_document_changed: Callable[[], None] | None = None,
         on_source_video_added: Callable[[SourceVideo], None] | None = None,
         on_source_video_removed: Callable[[UUID], None] | None = None,
+        on_category_template_changed: Callable[[], None] | None = None,
         media_probe: MediaProbe | None = None,
+        category_template_store: CategoryTemplateStore | None = None,
     ) -> None:
         self._presenter = presenter
         self._document = document if document is not None else new_analysis_document()
@@ -87,7 +92,10 @@ class ApplicationWorkflow:
         self._document_changed = on_document_changed or _do_nothing
         self._source_video_added = on_source_video_added or _ignore_source_video
         self._source_video_removed = on_source_video_removed or _ignore_source_video_id
+        self._category_template_changed = on_category_template_changed or _do_nothing
         self._media_probe: MediaProbe = media_probe or FileMediaProbe()
+        self._category_template_store = category_template_store or CategoryTemplateStore()
+        self._category_template = self._category_template_store.load()
 
     @property
     def document(self) -> AnalysisDocument:
@@ -293,6 +301,175 @@ class ApplicationWorkflow:
         self._document_changed()
         self._source_video_removed(source_video_id)
         return True
+
+    # --- Categories of this Analysis ---------------------------------------
+    #
+    # These operate on the open Analysis and mark its document dirty. They
+    # are a deliberately separate group of methods from the Category-template
+    # section below rather than one set that takes a "which scope" flag: an
+    # Analysis's Categories and the installation template are different data
+    # with different lifetimes, and a shared method would have to keep asking
+    # itself which one it was touching.
+
+    def add_category(self, name: str, color: str) -> Category | None:
+        try:
+            category = self.analysis.add_category(name, color)
+        except AnalysisError as error:
+            self._presenter.report_failure("Category could not be added", str(error))
+            return None
+        self._document_changed()
+        return category
+
+    def rename_category(self, category_id: UUID, name: str) -> bool:
+        try:
+            self.analysis.update_category(category_id, name=name)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Category could not be renamed", str(error)
+            )
+            return False
+        self._document_changed()
+        return True
+
+    def recolor_category(self, category_id: UUID, color: str) -> bool:
+        try:
+            self.analysis.update_category(category_id, color=color)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Category could not be recolored", str(error)
+            )
+            return False
+        self._document_changed()
+        return True
+
+    def reorder_categories(self, category_ids: Sequence[UUID]) -> bool:
+        try:
+            self.analysis.reorder_categories(category_ids)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Categories could not be reordered", str(error)
+            )
+            return False
+        self._document_changed()
+        return True
+
+    def clip_count_for_category(self, category_id: UUID) -> int:
+        """How many Clips a removal of this Category would leave uncategorized."""
+
+        return sum(
+            1
+            for clip in self.analysis.clips
+            if clip.category_id == category_id
+        )
+
+    def remove_category(self, category_id: UUID) -> bool:
+        """Remove a Category; every Clip that named it becomes uncategorized.
+
+        The caller is responsible for confirming with the analyst first,
+        using :meth:`clip_count_for_category`; this always carries the
+        removal out once asked, exactly as `Analysis.remove_category` defines
+        it.
+        """
+        try:
+            self.analysis.remove_category(category_id)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Category could not be removed", str(error)
+            )
+            return False
+        self._document_changed()
+        return True
+
+    # --- The Category template ----------------------------------------------
+    #
+    # These operate on the installation-local durable template
+    # (`category_template_store.CategoryTemplateStore`), never on the open
+    # Analysis. Editing or restoring the template never marks the Analysis
+    # document dirty and never changes a Category any Analysis already holds
+    # — see `analysis.template`'s module docstring for why a copy can never
+    # be reached from here.
+
+    @property
+    def category_template_entries(self) -> tuple[CategoryTemplateEntry, ...]:
+        return self._category_template.entries
+
+    def add_template_category(self, name: str, color: str) -> CategoryTemplateEntry | None:
+        try:
+            entry = self._category_template.add(name, color)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Template Category could not be added", str(error)
+            )
+            return None
+        self._save_category_template()
+        return entry
+
+    def rename_template_category(self, entry_id: UUID, name: str) -> bool:
+        try:
+            self._category_template.rename(entry_id, name)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Template Category could not be renamed", str(error)
+            )
+            return False
+        self._save_category_template()
+        return True
+
+    def recolor_template_category(self, entry_id: UUID, color: str) -> bool:
+        try:
+            self._category_template.recolor(entry_id, color)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Template Category could not be recolored", str(error)
+            )
+            return False
+        self._save_category_template()
+        return True
+
+    def reorder_template_categories(self, entry_ids: Sequence[UUID]) -> bool:
+        try:
+            self._category_template.reorder(entry_ids)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Template Categories could not be reordered", str(error)
+            )
+            return False
+        self._save_category_template()
+        return True
+
+    def remove_template_category(self, entry_id: UUID) -> bool:
+        try:
+            self._category_template.remove(entry_id)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Template Category could not be removed", str(error)
+            )
+            return False
+        self._save_category_template()
+        return True
+
+    def restore_default_category_template(self) -> bool:
+        """Replace the durable template with the built-in handball set."""
+
+        try:
+            self._category_template = self._category_template_store.restore_default()
+        except OSError as error:
+            self._presenter.report_failure(
+                "Category template could not be restored", str(error)
+            )
+            return False
+        self._category_template_changed()
+        return True
+
+    def _save_category_template(self) -> None:
+        try:
+            self._category_template_store.save(self._category_template)
+        except OSError as error:
+            self._presenter.report_failure(
+                "Category template could not be saved", str(error)
+            )
+            return
+        self._category_template_changed()
 
     def add_dropped_source_video(self, path: str | Path) -> bool:
         """Add a dropped file only when it is a supported Source video."""

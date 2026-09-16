@@ -400,6 +400,26 @@ class Analysis:
         self._revision += 1
         return updated
 
+    def reorder_categories(self, category_ids: Sequence[UUID]) -> None:
+        """Set the durable, user-controlled order of every Category.
+
+        Position is never identity: a Clip keeps naming its Category by UUID
+        (or names none at all), so reordering Categories cannot disturb a
+        single Clip relationship. Mirrors `reorder_source_videos`.
+        """
+        ordered_ids = list(category_ids)
+        known_ids = {category.id for category in self._categories}
+        if len(ordered_ids) != len(known_ids) or set(ordered_ids) != known_ids:
+            raise InvalidAnalysisDataError(
+                "Category order must name every Category exactly once"
+            )
+        by_id = {category.id: category for category in self._categories}
+        reordered = [by_id[identity] for identity in ordered_ids]
+        if reordered == self._categories:
+            return
+        self._categories = reordered
+        self._revision += 1
+
     def remove_category(self, category_id: UUID) -> None:
         category = self.category(category_id)
         self._categories.remove(category)

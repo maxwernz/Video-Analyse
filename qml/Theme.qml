@@ -172,6 +172,15 @@ QtObject {
     readonly property int sourceRowNameTop: 9
     readonly property int sourceRowLineGap: 3
 
+    // The Categories tab: management rows for this Analysis's Categories and
+    // the Category-template editor. Both read the swatch and picker sizes
+    // below; the row height matches the Videos tab's single interactive row.
+    readonly property int categoryManagementRowHeight: 40
+    readonly property int categorySwatchSize: 14
+    readonly property int categoryPaletteSwatchSize: 20
+    readonly property int categoryPalettePickerHeight: 32
+    readonly property int categoryAddRowHeight: 44
+
     // The width below which a Clip row stops showing how long the Clip is.
     //
     // The row cannot carry a title, a Source-video cue, a start and a length
