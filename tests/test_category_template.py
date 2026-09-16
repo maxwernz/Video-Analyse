@@ -21,7 +21,7 @@ def test_missing_or_invalid_template_falls_back_to_the_handball_categories(
     )
 
 
-def test_template_customization_and_restoration_do_not_reach_existing_analyses(
+def test_template_customization_does_not_reach_existing_analyses(
     tmp_path,
 ) -> None:
     store = CategoryTemplateStore(tmp_path / "category-template.json")
@@ -32,7 +32,8 @@ def test_template_customization_and_restoration_do_not_reach_existing_analyses(
     first = new_analysis_document(template_store=store).analysis
     first_categories = tuple(first.categories)
 
-    store.restore_builtin()
+    # The template changes again after the first Analysis was made from it.
+    store.remove_category(counter.id)
     second = new_analysis_document(template_store=store).analysis
 
     assert [category.name for category in first.categories] == [
