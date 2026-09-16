@@ -45,10 +45,14 @@ class AnalysisCategories:
     def update_category(
         self, category_id: UUID, *, name: str | None = None, color: str | None = None
     ) -> Category:
+        # Applied as two independent calls, never an early return after just
+        # one: a caller naming both a new name and colour must get both, not
+        # have the colour silently dropped because the name branch returned
+        # first.
         if name is not None:
-            return self._analysis.update_category(category_id, name=name)
+            self._analysis.update_category(category_id, name=name)
         if color is not None:
-            return self._analysis.update_category(category_id, color=color)
+            self._analysis.update_category(category_id, color=color)
         return self._analysis.category(category_id)
 
     def remove_category(self, category_id: UUID) -> None:
@@ -76,11 +80,15 @@ class TemplateCategories:
     def update_category(
         self, category_id: UUID, *, name: str | None = None, color: str | None = None
     ) -> Category:
+        # Same two-independent-calls shape as AnalysisCategories, so naming
+        # both a new name and colour changes both, and the unknown-identity
+        # error matches the Analysis scope's (an AnalysisError, not a bare
+        # StopIteration a caller's `except AnalysisError` would miss).
         if name is not None:
-            return self._store.update_category(category_id, name=name)
+            self._store.update_category(category_id, name=name)
         if color is not None:
-            return self._store.update_category(category_id, color=color)
-        return next(category for category in self.categories() if category.id == category_id)
+            self._store.update_category(category_id, color=color)
+        return self._store.category(category_id)
 
     def remove_category(self, category_id: UUID) -> None:
         self._store.remove_category(category_id)

@@ -705,7 +705,10 @@ class WorkspaceViewModel(QObject):
         if identity is None or color not in CATEGORY_PALETTE:
             return
         self._category_error = ""
-        self._managed_collection().update_category(identity, color=color)
+        try:
+            self._managed_collection().update_category(identity, color=color)
+        except AnalysisError as error:
+            self._category_error = str(error)
         self._managed_categories_changed()
 
     @Slot(str)
@@ -744,7 +747,11 @@ class WorkspaceViewModel(QObject):
         identity = _as_uuid(category_id)
         if identity is None:
             return
-        self._managed_collection().remove_category(identity)
+        self._category_error = ""
+        try:
+            self._managed_collection().remove_category(identity)
+        except AnalysisError as error:
+            self._category_error = str(error)
         self._managed_categories_changed()
 
     @Slot()
@@ -767,7 +774,11 @@ class WorkspaceViewModel(QObject):
             return
         ordered[index], ordered[destination] = ordered[destination], ordered[index]
         category_ids = [category for category in ordered if category is not None]
-        self._managed_collection().reorder_categories(category_ids)
+        self._category_error = ""
+        try:
+            self._managed_collection().reorder_categories(category_ids)
+        except AnalysisError as error:
+            self._category_error = str(error)
         self._managed_categories_changed()
 
     def _next_category_name(self) -> str:
@@ -783,10 +794,20 @@ class WorkspaceViewModel(QObject):
 
     def _managed_categories_changed(self) -> None:
         self._refresh_managed_categories()
-        self._categories.refresh(self._document.analysis, selected_category_id=None)
-        self._refresh_projections()
+        # A template edit never touches this Analysis, so the open Clip
+        # editor's Category list -- and the draft's own selection within it
+        # -- must survive it untouched. Only an Analysis-scope edit can have
+        # changed what `self._categories` or the draft's Category reference
+        # to.
+        if self._category_management_scope == "analysis":
+            known = {category.id for category in self._document.analysis.categories}
+            if self._draft is not None and self._draft.category_id not in known:
+                self._draft = replace(self._draft, category_id=None)
+            selected = self._draft.category_id if self._draft is not None else None
+            self._categories.refresh(self._document.analysis, selected_category_id=selected)
+            self._refresh_projections()
+            self.documentChanged.emit()
         self.categoryManagementChanged.emit()
-        self.documentChanged.emit()
 
     def _refresh_managed_categories(self) -> None:
         collection = self._managed_collection()

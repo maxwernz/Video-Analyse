@@ -45,6 +45,11 @@ class CategoryTemplateStore:
         except (OSError, UnicodeDecodeError, json.JSONDecodeError, InvalidAnalysisDataError):
             return self._fallback_categories
 
+    def category(self, category_id: UUID) -> Category:
+        """Raise the same way an Analysis does when the identity is unknown."""
+
+        return self._as_analysis().category(category_id)
+
     def add_category(self, name: str, color: str = "#808080") -> Category:
         template = self._as_analysis()
         category = template.add_category(name, color)
