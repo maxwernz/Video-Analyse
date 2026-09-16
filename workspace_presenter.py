@@ -66,39 +66,88 @@ class WorkspacePresenter:
         return UnsavedChangesChoice.CANCEL
 
     def choose_analysis_to_open(self) -> str | None:
-        chosen, _ = QFileDialog.getOpenFileName(
-            None,
-            OPEN_ANALYSIS_TITLE,
-            _documents_directory(),
-            ANALYSIS_FILE_FILTER,
+        return self._choose_file(
+            title=OPEN_ANALYSIS_TITLE,
+            directory=_documents_directory(),
+            name_filter=ANALYSIS_FILE_FILTER,
+            accept_mode=QFileDialog.AcceptMode.AcceptOpen,
+            file_mode=QFileDialog.FileMode.ExistingFile,
         )
-        return chosen or None
 
     def choose_analysis_destination(self, suggested_name: str) -> str | None:
-        chosen, _ = QFileDialog.getSaveFileName(
-            None,
-            SAVE_ANALYSIS_TITLE,
-            os.path.join(_documents_directory(), suggested_name),
-            ANALYSIS_FILE_FILTER,
+        return self._choose_file(
+            title=SAVE_ANALYSIS_TITLE,
+            directory=_documents_directory(),
+            name_filter=ANALYSIS_FILE_FILTER,
+            accept_mode=QFileDialog.AcceptMode.AcceptSave,
+            file_mode=QFileDialog.FileMode.AnyFile,
+            suggested_name=suggested_name,
         )
-        return chosen or None
 
     def choose_source_video(self) -> str | None:
-        chosen, _ = QFileDialog.getOpenFileName(
-            None,
-            ADD_SOURCE_VIDEO_TITLE,
-            QStandardPaths.writableLocation(
+        return self._choose_file(
+            title=ADD_SOURCE_VIDEO_TITLE,
+            directory=QStandardPaths.writableLocation(
                 QStandardPaths.StandardLocation.MoviesLocation
             ),
-            SOURCE_VIDEO_FILE_FILTER,
+            name_filter=SOURCE_VIDEO_FILE_FILTER,
+            accept_mode=QFileDialog.AcceptMode.AcceptOpen,
+            file_mode=QFileDialog.FileMode.ExistingFile,
         )
-        return chosen or None
 
     def report_failure(self, title: str, message: str) -> None:
         QMessageBox.critical(None, title, message)
+
+    def _choose_file(
+        self,
+        *,
+        title: str,
+        directory: str,
+        name_filter: str,
+        accept_mode: QFileDialog.AcceptMode,
+        file_mode: QFileDialog.FileMode,
+        suggested_name: str | None = None,
+    ) -> str | None:
+        """Present one native file panel through a real `QFileDialog`.
+
+        An instance rather than the static convenience functions, because the
+        instance is what a future caller can still configure or inspect (a
+        start directory guarded against not existing, below) without parsing
+        a tuple. It carries no parent and no transient-parent hint: #69 found
+        that a `QQuickItem`'s hover/cursor tracking — not the panel's owner —
+        is what makes the native panel cancel itself, so nothing here claims
+        to fix that.
+        """
+
+        dialog = QFileDialog()
+        dialog.setWindowTitle(title)
+        dialog.setAcceptMode(accept_mode)
+        dialog.setFileMode(file_mode)
+        dialog.setNameFilter(name_filter)
+        if _existing_directory(directory):
+            dialog.setDirectory(directory)
+        if suggested_name:
+            dialog.selectFile(suggested_name)
+
+        if not dialog.exec():
+            return None
+        selected = dialog.selectedFiles()
+        return selected[0] if selected else None
 
 
 def _documents_directory() -> str:
     return QStandardPaths.writableLocation(
         QStandardPaths.StandardLocation.DocumentsLocation
     )
+
+
+def _existing_directory(directory: str) -> bool:
+    """Only give native panels a start location the file system can open.
+
+    iCloud Drive can leave a stale Documents or Movies path in
+    `QStandardPaths`. Omitting an invalid directory lets the native panel
+    choose its own valid default instead of attempting to open a location
+    that no longer exists.
+    """
+
+    return os.path.isdir(directory)

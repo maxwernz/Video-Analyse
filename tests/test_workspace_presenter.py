@@ -28,6 +28,7 @@ from application_workflow import (  # noqa: E402
     SOURCE_VIDEO_FILE_FILTER,
     WorkflowPresenter,
 )
+import workspace_presenter  # noqa: E402
 from workspace_presenter import WorkspacePresenter  # noqa: E402
 
 
@@ -42,31 +43,82 @@ def presenter(application: QApplication) -> WorkspacePresenter:
 
 
 class DialogCall:
-    """What a stood-in dialog was asked for, and what it answers."""
+    """A native dialog stand-in that records what it was configured with.
 
-    def __init__(self, answer: Any) -> None:
+    `WorkspacePresenter` builds a real `QFileDialog` instance rather than
+    calling the static convenience functions, so the stand-in mirrors the
+    instance API instead of intercepting a single class method.
+    """
+
+    def __init__(self, answer: str | None) -> None:
         self.answer = answer
-        self.arguments: tuple[Any, ...] = ()
-        self.keywords: dict[str, Any] = {}
+        self.title = ""
+        self.accept_mode: QFileDialog.AcceptMode | None = None
+        self.file_mode: QFileDialog.FileMode | None = None
+        self.name_filter = ""
+        self.directory: str | None = None
+        self.selected_name = ""
+        self.options_set: list[QFileDialog.Option] = []
         self.calls = 0
 
-    def __call__(self, *arguments: Any, **keywords: Any) -> Any:
-        self.calls += 1
-        self.arguments = arguments
-        self.keywords = keywords
-        return self.answer
+    def setWindowTitle(self, title: str) -> None:
+        self.title = title
 
-    @property
-    def everything_passed(self) -> list[Any]:
-        return [*self.arguments, *self.keywords.values()]
+    def setAcceptMode(self, mode: QFileDialog.AcceptMode) -> None:
+        self.accept_mode = mode
+
+    def setFileMode(self, mode: QFileDialog.FileMode) -> None:
+        self.file_mode = mode
+
+    def setNameFilter(self, name_filter: str) -> None:
+        self.name_filter = name_filter
+
+    def setDirectory(self, directory: str) -> None:
+        self.directory = directory
+
+    def selectFile(self, name: str) -> None:
+        self.selected_name = name
+
+    def setOption(self, option: QFileDialog.Option, *_args: Any) -> None:
+        self.options_set.append(option)
+
+    def exec(self) -> int:
+        self.calls += 1
+        return int(bool(self.answer))
+
+    def selectedFiles(self) -> list[str]:
+        return [self.answer] if self.answer else []
 
 
 def _stand_in_for(
-    monkeypatch: pytest.MonkeyPatch, name: str, answer: Any
+    monkeypatch: pytest.MonkeyPatch, answer: str | None
 ) -> DialogCall:
-    call = DialogCall(answer)
-    monkeypatch.setattr(QFileDialog, name, staticmethod(call))
-    return call
+    """Replace the `QFileDialog` the presenter builds with a recording stub.
+
+    A single stand-in serves every chooser: the presenter always goes through
+    one instance-building seam (`_choose_file`) regardless of which document
+    command asked for a file.
+    """
+
+    dialog = DialogCall(answer)
+
+    class _StandInDialogClass:
+        """A stand-in for the `QFileDialog` class, not just one instance.
+
+        The presenter reads `QFileDialog.AcceptMode`/`FileMode`/`Option` off
+        the class itself, so the stand-in has to be a class-like object too,
+        not merely a factory function.
+        """
+
+        AcceptMode = QFileDialog.AcceptMode
+        FileMode = QFileDialog.FileMode
+        Option = QFileDialog.Option
+
+        def __new__(cls) -> DialogCall:  # type: ignore[misc]
+            return dialog
+
+    monkeypatch.setattr(workspace_presenter, "QFileDialog", _StandInDialogClass)
+    return dialog
 
 
 # --- The unsaved-changes question ------------------------------------------
@@ -130,18 +182,17 @@ def test_the_analysis_to_open_is_chosen_from_the_platforms_dialog(
     presenter: WorkspacePresenter, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     chosen = tmp_path / "spiel.analysis"
-    dialog = _stand_in_for(
-        monkeypatch, "getOpenFileName", (str(chosen), ANALYSIS_FILE_FILTER)
-    )
+    dialog = _stand_in_for(monkeypatch, str(chosen))
 
     assert presenter.choose_analysis_to_open() == str(chosen)
-    assert ANALYSIS_FILE_FILTER in dialog.everything_passed
+    assert dialog.name_filter == ANALYSIS_FILE_FILTER
+    assert dialog.accept_mode == QFileDialog.AcceptMode.AcceptOpen
 
 
 def test_a_dismissed_open_dialog_means_no_file(
     presenter: WorkspacePresenter, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _stand_in_for(monkeypatch, "getOpenFileName", ("", ""))
+    _stand_in_for(monkeypatch, None)
 
     assert presenter.choose_analysis_to_open() is None
 
@@ -150,24 +201,20 @@ def test_the_destination_dialog_offers_the_name_the_workflow_suggests(
     presenter: WorkspacePresenter, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     destination = tmp_path / "spiel.analysis"
-    dialog = _stand_in_for(
-        monkeypatch, "getSaveFileName", (str(destination), ANALYSIS_FILE_FILTER)
-    )
+    dialog = _stand_in_for(monkeypatch, str(destination))
 
     assert presenter.choose_analysis_destination("Spiel gegen Kiel.analysis") == str(
         destination
     )
-    offered = [value for value in dialog.everything_passed if isinstance(value, str)]
-    assert any(
-        value.endswith("Spiel gegen Kiel.analysis") for value in offered
-    ), offered
-    assert ANALYSIS_FILE_FILTER in dialog.everything_passed
+    assert dialog.selected_name == "Spiel gegen Kiel.analysis"
+    assert dialog.name_filter == ANALYSIS_FILE_FILTER
+    assert dialog.accept_mode == QFileDialog.AcceptMode.AcceptSave
 
 
 def test_a_dismissed_destination_dialog_means_no_file(
     presenter: WorkspacePresenter, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _stand_in_for(monkeypatch, "getSaveFileName", ("", ""))
+    _stand_in_for(monkeypatch, None)
 
     assert presenter.choose_analysis_destination("Analyse.analysis") is None
 
@@ -178,44 +225,74 @@ def test_a_source_video_is_chosen_with_the_video_filter(
     """The dialog is ready before the action that opens it lands in #48."""
 
     video = tmp_path / "halbzeit-1.mp4"
-    dialog = _stand_in_for(
-        monkeypatch, "getOpenFileName", (str(video), SOURCE_VIDEO_FILE_FILTER)
-    )
+    dialog = _stand_in_for(monkeypatch, str(video))
 
     assert presenter.choose_source_video() == str(video)
-    assert SOURCE_VIDEO_FILE_FILTER in dialog.everything_passed
+    assert dialog.name_filter == SOURCE_VIDEO_FILE_FILTER
+    assert dialog.accept_mode == QFileDialog.AcceptMode.AcceptOpen
 
 
 @pytest.mark.parametrize(
-    ("chooser", "request_file"),
+    "request_file",
     [
-        ("getOpenFileName", lambda p: p.choose_analysis_to_open()),
-        ("getOpenFileName", lambda p: p.choose_source_video()),
-        (
-            "getSaveFileName",
-            lambda p: p.choose_analysis_destination("Analyse.analysis"),
-        ),
+        lambda p: p.choose_analysis_to_open(),
+        lambda p: p.choose_source_video(),
+        lambda p: p.choose_analysis_destination("Analyse.analysis"),
     ],
     ids=["open-analysis", "add-video", "save-analysis"],
 )
 def test_no_file_dialog_asks_qt_to_draw_its_own(
     presenter: WorkspacePresenter,
     monkeypatch: pytest.MonkeyPatch,
-    chooser: str,
     request_file: Any,
 ) -> None:
     """Native dialogs, per ADR 0007: appearance is owned, behaviour is not."""
 
-    dialog = _stand_in_for(monkeypatch, chooser, ("", ""))
+    dialog = _stand_in_for(monkeypatch, None)
 
     request_file(presenter)
 
     assert dialog.calls == 1
-    assert not any(
-        isinstance(value, QFileDialog.Option)
-        and value & QFileDialog.Option.DontUseNativeDialog
-        for value in dialog.everything_passed
+    assert QFileDialog.Option.DontUseNativeDialog not in dialog.options_set
+
+
+# --- The start directory ----------------------------------------------------
+#
+# iCloud Drive can leave a stale Documents or Movies path in
+# `QStandardPaths`; a native panel given one refuses to open at all. This is
+# not #69's self-closing dialog — that cause is a `QQuickItem`'s hover/cursor
+# tracking during the panel's modal loop (see `workspace_presenter`'s
+# `_choose_file` docstring), which is not assertable under the offscreen
+# platform this suite runs under. This is the one piece of #69's
+# investigation that *is* a Python-level seam: the presenter must not hand
+# the panel a start directory that cannot be opened.
+
+
+def test_a_missing_start_directory_is_left_to_the_panels_own_default(
+    presenter: WorkspacePresenter, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    missing = tmp_path / "does-not-exist"
+    monkeypatch.setattr(
+        workspace_presenter, "_documents_directory", lambda: str(missing)
     )
+    dialog = _stand_in_for(monkeypatch, None)
+
+    presenter.choose_analysis_to_open()
+
+    assert dialog.directory is None
+
+
+def test_an_existing_start_directory_is_still_offered(
+    presenter: WorkspacePresenter, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        workspace_presenter, "_documents_directory", lambda: str(tmp_path)
+    )
+    dialog = _stand_in_for(monkeypatch, None)
+
+    presenter.choose_analysis_to_open()
+
+    assert dialog.directory == str(tmp_path)
 
 
 # --- Reporting a failure ---------------------------------------------------
