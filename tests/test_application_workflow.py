@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -853,6 +854,21 @@ def test_declining_the_mismatch_confirmation_leaves_the_source_video_unavailable
     )
     assert workflow.analysis.clip(clip.id).source_video_id == source_video.id
     assert workflow.is_source_video_available(source_video.id) is False
+
+
+def test_relinking_an_unknown_source_video_is_reported_rather_than_raised(
+    workflow: ApplicationWorkflow,
+    presenter: FakePresenter,
+) -> None:
+    """A stale Source-video id must be reported, not raised past the Slot.
+
+    `relink_source_video` looks the Source video up first, to name it in the
+    replacement-media dialog; that lookup can fail exactly like every other
+    domain call in this module, and must fail the same way — reported to the
+    presenter — rather than letting `UnknownEntityError` escape uncaught.
+    """
+    assert workflow.relink_source_video(uuid4()) is False
+    assert len(presenter.failures) == 1
 
 
 def test_a_cancelled_relink_dialog_leaves_the_source_video_unavailable(

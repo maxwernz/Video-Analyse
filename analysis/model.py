@@ -184,14 +184,13 @@ class Analysis:
             raise InvalidAnalysisDataError(
                 "Source-video display name must not be empty"
             )
-        if not isinstance(location, str) or not location.strip():
-            raise InvalidAnalysisDataError("Source-video location must not be empty")
-        if relative_path is not None and not isinstance(relative_path, str):
-            raise InvalidAnalysisDataError("Source-video relative path must be text")
-        _validate_optional_non_negative_integer(duration_ms, "Source-video duration")
-        _validate_optional_non_negative_integer(byte_size, "Source-video byte size")
-        if fingerprint is not None and not isinstance(fingerprint, str):
-            raise InvalidAnalysisDataError("Source-video fingerprint must be text")
+        _validate_source_video_fields(
+            location,
+            relative_path=relative_path,
+            duration_ms=duration_ms,
+            byte_size=byte_size,
+            fingerprint=fingerprint,
+        )
         identity = source_video_id or uuid4()
         if not isinstance(identity, UUID):
             raise InvalidAnalysisDataError("Source-video identity must be a UUID")
@@ -322,10 +321,10 @@ class Analysis:
         source_video_id: UUID,
         location: str,
         *,
-        relative_path: str | None = None,
-        duration_ms: int | None = None,
-        byte_size: int | None = None,
-        fingerprint: str | None = None,
+        relative_path: str | None | _Unchanged = UNCHANGED,
+        duration_ms: int | None | _Unchanged = UNCHANGED,
+        byte_size: int | None | _Unchanged = UNCHANGED,
+        fingerprint: str | None | _Unchanged = UNCHANGED,
     ) -> SourceVideo:
         """Point an existing Source-video identity at replacement media.
 
@@ -341,33 +340,58 @@ class Analysis:
         automatic "moved together" resolution would use if it ever needed to
         persist what it found, rather than the read-only check that resolution
         actually performs.
+
+        The probed signals default to `UNCHANGED` rather than `None`: a
+        caller that relinks only a location — recording where "moved
+        together" resolution found the media, say — must not wipe out a
+        duration, byte size, or fingerprint this identity already carried.
+        `ApplicationWorkflow.relink_source_video_file` always has a fresh
+        probe and passes every signal explicitly; `UNCHANGED` exists for
+        every other caller, including a future one that has only a location.
         """
         source_video = self.source_video(source_video_id)
-        if not isinstance(location, str) or not location.strip():
-            raise InvalidAnalysisDataError("Source-video location must not be empty")
-        if relative_path is not None and not isinstance(relative_path, str):
-            raise InvalidAnalysisDataError("Source-video relative path must be text")
-        _validate_optional_non_negative_integer(duration_ms, "Source-video duration")
-        _validate_optional_non_negative_integer(byte_size, "Source-video byte size")
-        if fingerprint is not None and not isinstance(fingerprint, str):
-            raise InvalidAnalysisDataError("Source-video fingerprint must be text")
+        effective_relative_path = (
+            source_video.relative_path
+            if isinstance(relative_path, _Unchanged)
+            else relative_path
+        )
+        effective_duration_ms = (
+            source_video.duration_ms
+            if isinstance(duration_ms, _Unchanged)
+            else duration_ms
+        )
+        effective_byte_size = (
+            source_video.byte_size if isinstance(byte_size, _Unchanged) else byte_size
+        )
+        effective_fingerprint = (
+            source_video.fingerprint
+            if isinstance(fingerprint, _Unchanged)
+            else fingerprint
+        )
+        _validate_source_video_fields(
+            location,
+            relative_path=effective_relative_path,
+            duration_ms=effective_duration_ms,
+            byte_size=effective_byte_size,
+            fingerprint=effective_fingerprint,
+        )
         if any(
             other.id != source_video_id and other.location == location
             for other in self._source_videos
         ):
             raise InvalidAnalysisDataError("Source-video location is already in use")
-        if fingerprint is not None and any(
-            other.id != source_video_id and other.fingerprint == fingerprint
+        if effective_fingerprint is not None and any(
+            other.id != source_video_id and other.fingerprint == effective_fingerprint
             for other in self._source_videos
         ):
             raise InvalidAnalysisDataError("Source video has already been added")
         relinked = replace(
             source_video,
             location=location,
-            relative_path=relative_path,
-            duration_ms=duration_ms,
-            byte_size=byte_size,
-            fingerprint=fingerprint,
+            relative_path=effective_relative_path,
+            duration_ms=effective_duration_ms,
+            byte_size=effective_byte_size,
+            fingerprint=effective_fingerprint,
         )
         self._source_videos[self._source_videos.index(source_video)] = relinked
         self._revision += 1
@@ -643,3 +667,29 @@ def _validate_optional_non_negative_integer(
         return
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise InvalidAnalysisDataError(f"{field} must be a non-negative integer")
+
+
+def _validate_source_video_fields(
+    location: str,
+    *,
+    relative_path: str | None,
+    duration_ms: int | None,
+    byte_size: int | None,
+    fingerprint: str | None,
+) -> None:
+    """The shape every Source-video identity's fields must satisfy.
+
+    Shared by `Analysis.add_source_video` and `Analysis.relink_source_video`
+    so the one set of rules cannot drift into two: `relink_source_video`
+    calls this with the *effective* values — after resolving `UNCHANGED`
+    against what the identity already carried — so it validates exactly
+    what will actually be stored, the same as a fresh add.
+    """
+    if not isinstance(location, str) or not location.strip():
+        raise InvalidAnalysisDataError("Source-video location must not be empty")
+    if relative_path is not None and not isinstance(relative_path, str):
+        raise InvalidAnalysisDataError("Source-video relative path must be text")
+    _validate_optional_non_negative_integer(duration_ms, "Source-video duration")
+    _validate_optional_non_negative_integer(byte_size, "Source-video byte size")
+    if fingerprint is not None and not isinstance(fingerprint, str):
+        raise InvalidAnalysisDataError("Source-video fingerprint must be text")

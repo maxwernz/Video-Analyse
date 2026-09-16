@@ -494,6 +494,31 @@ def test_relinking_a_source_video_points_its_identity_at_new_media_and_keeps_cli
     assert analysis.clip(clip.id).start_ms == 1_000
 
 
+def test_relinking_only_a_location_preserves_previously_recorded_signals() -> None:
+    """`UNCHANGED` is the default so a partial relink cannot wipe out data.
+
+    A caller — an automatic "moved together" resolution persisting what it
+    found, say — that relinks only `location` must not erase a duration,
+    byte size, or fingerprint this identity already carried.
+    """
+
+    analysis = Analysis("Match")
+    original = analysis.add_source_video(
+        "first-half.mp4",
+        "/videos/first-half.mp4",
+        duration_ms=2_700_000,
+        byte_size=123,
+        fingerprint="sampled-sha256:same",
+    )
+
+    relinked = analysis.relink_source_video(original.id, "/recovered/first-half.mp4")
+
+    assert relinked.location == "/recovered/first-half.mp4"
+    assert relinked.duration_ms == 2_700_000
+    assert relinked.byte_size == 123
+    assert relinked.fingerprint == "sampled-sha256:same"
+
+
 def test_relinking_can_adopt_a_mismatched_fingerprint_when_the_caller_allows_it() -> None:
     """Verification belongs to `ApplicationWorkflow`; the model only records."""
 
