@@ -256,6 +256,49 @@ def test_renaming_a_category_preserves_its_clips() -> None:
     assert analysis.revision > revision
 
 
+def test_reordering_categories_preserves_clip_relationships() -> None:
+    analysis = _analysis_with_source()
+    attack = analysis.add_category("Angriff", "#EF4444")
+    defence = analysis.add_category("Abwehr", "#3B82F6")
+    clip = analysis.add_clip(
+        analysis.source_videos[0].id,
+        "Fast break",
+        1_000,
+        2_000,
+        category_id=attack.id,
+    )
+
+    analysis.reorder_categories([defence.id, attack.id])
+
+    assert [category.id for category in analysis.categories] == [defence.id, attack.id]
+    assert analysis.clip(clip.id).category_id == attack.id
+
+
+def test_category_identity_and_order_survive_an_analysis_file_round_trip(tmp_path) -> None:
+    document = AnalysisDocument(_analysis_with_source())
+    analysis = document.analysis
+    attack = analysis.add_category("Angriff", "#EF4444")
+    defence = analysis.add_category("Abwehr", "#3B82F6")
+    clip = analysis.add_clip(
+        analysis.source_videos[0].id,
+        "Fast break",
+        1_000,
+        2_000,
+        category_id=attack.id,
+    )
+    analysis.reorder_categories([defence.id, attack.id])
+    path = document.save_as(tmp_path / "match.analysis")
+
+    reopened = AnalysisDocument.new()
+    reopened.load(path)
+
+    assert [category.id for category in reopened.analysis.categories] == [
+        defence.id,
+        attack.id,
+    ]
+    assert reopened.analysis.clip(clip.id).category_id == attack.id
+
+
 def test_category_names_stay_unique_after_trimmed_case_insensitive_comparison() -> None:
     analysis = _analysis_with_source()
     analysis.add_category("Angriff", "#EF4444")

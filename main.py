@@ -21,6 +21,7 @@ from app_runtime import (
     overlay_font_path,
     register_bundled_fonts,
 )
+from category_template_settings import installation_category_template_store
 from playback import MediaPlayerPlayback
 from qml_runtime import (
     show_quick_scene_with_fallback,
@@ -55,10 +56,12 @@ def build_workspace_context() -> dict[str, WorkspaceViewModel]:
     dialog is.
     """
 
+    template_store = installation_category_template_store()
     view_model = WorkspaceViewModel(
-        new_analysis_document(),
+        new_analysis_document(template_store=template_store),
         MediaPlayerPlayback(),
         presenter=WorkspacePresenter(),
+        template_store=template_store,
     )
     return {"workspace": view_model}
 

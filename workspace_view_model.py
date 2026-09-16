@@ -28,7 +28,14 @@ from PySide6.QtGui import QKeyEvent, QKeySequence
 
 import menu_bar
 import timecode
-from analysis import AnalysisDocument, SourceVideo, UnsavedChangesChoice
+from analysis import (
+    AnalysisDocument,
+    AnalysisError,
+    CategoryTemplateStore,
+    SourceVideo,
+    UnsavedChangesChoice,
+)
+from analysis.category_palette import CATEGORY_PALETTE
 from application_workflow import (
     UNTITLED_ANALYSIS_TITLE,
     ApplicationWorkflow,
@@ -42,6 +49,9 @@ from clip_editor import (
     CategoryModel,
     ClipDraft,
 )
+from category_models import ManagedCategoryModel
+from category_template_settings import installation_category_template_store
+from category_management import AnalysisCategories, CategoryCollection, TemplateCategories
 from playback import Playback
 from sidebar_models import ClipListModel, SourceVideoModel
 from timeline_models import RulerModel, TimelineRangeModel
@@ -202,6 +212,7 @@ class WorkspaceViewModel(QObject):
     pendingChanged = Signal()
     draftChanged = Signal()
     editingChanged = Signal()
+    categoryManagementChanged = Signal()
 
     #: The Close command, which is a request of the *window* rather than of
     #: the Analysis: every way out arrives at `requestClose`, so the
@@ -218,6 +229,7 @@ class WorkspaceViewModel(QObject):
         presenter: WorkflowPresenter | None = None,
         clock: Clock = time.monotonic,
         ticker: Ticker | None = None,
+        template_store: CategoryTemplateStore | None = None,
     ) -> None:
         super().__init__(parent)
         self._menu_shortcut_filter: _MenuShortcutFilter | None = None
@@ -228,8 +240,10 @@ class WorkspaceViewModel(QObject):
             on_document_changed=self._document_reported,
             on_source_video_added=self._source_video_added,
             on_source_video_removed=self._source_video_removed,
+            template_store=template_store or installation_category_template_store(),
         )
         self._document = document
+        self._template_store = self._workflow.template_store
         self._playback = playback
         self._playback.setParent(self)
         self._schedule = schedule
@@ -272,6 +286,10 @@ class WorkspaceViewModel(QObject):
         self._clips = ClipListModel(self)
         self._sources = SourceVideoModel(self)
         self._categories = CategoryModel(self)
+        self._managed_categories = ManagedCategoryModel(self)
+        self._managing_categories = False
+        self._category_management_scope = "analysis"
+        self._category_error = ""
         self._ruler_width_px = 0.0
 
         self._playback.position_changed.connect(self._position_reported)
@@ -279,6 +297,7 @@ class WorkspaceViewModel(QObject):
         self._playback.playing_changed.connect(self._playing_reported)
 
         self._refresh_projections()
+        self._refresh_managed_categories()
         sources = self._document.analysis.source_videos
         if sources:
             self._activate_source(sources[0].id)
@@ -604,6 +623,181 @@ class WorkspaceViewModel(QObject):
             return
         self._document.analysis.remove_category(identity)
         self.refresh()
+
+    # --- Category management ---------------------------------------------
+
+    @Property(bool, notify=categoryManagementChanged)
+    def managingCategories(self) -> bool:
+        """Keep Category administration a deliberate sidebar state."""
+
+        return self._managing_categories
+
+    @Property(str, notify=categoryManagementChanged)
+    def categoryManagementScope(self) -> str:
+        """Make the boundary between this Analysis and future ones visible."""
+
+        return self._category_management_scope
+
+    @Property(str, notify=categoryManagementChanged)
+    def categoryError(self) -> str:
+        """Return the refusal where the analyst can correct the Category."""
+
+        return self._category_error
+
+    @Property(QObject, constant=True)
+    def managedCategoryModel(self) -> QObject:
+        """Preserve the QML boundary while the manager needs ordered rows."""
+
+        return self._managed_categories
+
+    @Slot()
+    def showCategoryManagement(self) -> None:
+        self._managing_categories = True
+        self._category_error = ""
+        self._refresh_managed_categories()
+        self.categoryManagementChanged.emit()
+
+    @Slot()
+    def closeCategoryManagement(self) -> None:
+        if not self._managing_categories:
+            return
+        self._managing_categories = False
+        self._category_error = ""
+        self.categoryManagementChanged.emit()
+
+    @Slot(str)
+    def setCategoryManagementScope(self, scope: str) -> None:
+        if scope not in ("analysis", "template"):
+            return
+        self._category_management_scope = scope
+        self._category_error = ""
+        self._refresh_managed_categories()
+        self.categoryManagementChanged.emit()
+
+    @Slot()
+    def addManagedCategory(self) -> None:
+        self._category_error = ""
+        name = self._next_category_name()
+        color = CATEGORY_PALETTE[
+            len(self._managed_categories.rows()) % len(CATEGORY_PALETTE)
+        ]
+        try:
+            self._managed_collection().add_category(name, color)
+        except AnalysisError as error:
+            self._category_error = str(error)
+        self._managed_categories_changed()
+
+    @Slot(str, str)
+    def setManagedCategoryName(self, category_id: str, name: str) -> None:
+        identity = _as_uuid(category_id)
+        if identity is None:
+            return
+        self._category_error = ""
+        try:
+            self._managed_collection().update_category(identity, name=name)
+        except AnalysisError as error:
+            self._category_error = str(error)
+        self._managed_categories_changed()
+
+    @Slot(str, str)
+    def setManagedCategoryColor(self, category_id: str, color: str) -> None:
+        identity = _as_uuid(category_id)
+        if identity is None or color not in CATEGORY_PALETTE:
+            return
+        self._category_error = ""
+        self._managed_collection().update_category(identity, color=color)
+        self._managed_categories_changed()
+
+    @Slot(str)
+    def cycleManagedCategoryColor(self, category_id: str) -> None:
+        identity = _as_uuid(category_id)
+        if identity is None:
+            return
+        category = next(
+            (
+                category
+                for category in self._managed_categories.rows()
+                if category["categoryId"] == str(identity)
+            ),
+            None,
+        )
+        if category is None:
+            return
+        current = str(category["color"])
+        color = (
+            CATEGORY_PALETTE[(CATEGORY_PALETTE.index(current) + 1) % len(CATEGORY_PALETTE)]
+            if current in CATEGORY_PALETTE
+            else CATEGORY_PALETTE[0]
+        )
+        self.setManagedCategoryColor(str(identity), color)
+
+    @Slot(str)
+    def moveManagedCategoryEarlier(self, category_id: str) -> None:
+        self._move_managed_category(category_id, -1)
+
+    @Slot(str)
+    def moveManagedCategoryLater(self, category_id: str) -> None:
+        self._move_managed_category(category_id, 1)
+
+    @Slot(str)
+    def removeManagedCategory(self, category_id: str) -> None:
+        identity = _as_uuid(category_id)
+        if identity is None:
+            return
+        self._managed_collection().remove_category(identity)
+        self._managed_categories_changed()
+
+    @Slot()
+    def restoreCategoryTemplate(self) -> None:
+        self._template_store.restore_builtin()
+        if self._category_management_scope == "template":
+            self._managed_categories_changed()
+
+    def _move_managed_category(self, category_id: str, offset: int) -> None:
+        identity = _as_uuid(category_id)
+        rows = self._managed_categories.rows()
+        if identity is None:
+            return
+        ordered = [_as_uuid(str(row["categoryId"])) for row in rows]
+        if identity not in ordered:
+            return
+        index = ordered.index(identity)
+        destination = index + offset
+        if not 0 <= destination < len(ordered):
+            return
+        ordered[index], ordered[destination] = ordered[destination], ordered[index]
+        category_ids = [category for category in ordered if category is not None]
+        self._managed_collection().reorder_categories(category_ids)
+        self._managed_categories_changed()
+
+    def _next_category_name(self) -> str:
+        existing = {
+            str(row["name"]).casefold() for row in self._managed_categories.rows()
+        }
+        suffix = 1
+        while True:
+            name = "Neue Kategorie" if suffix == 1 else f"Neue Kategorie {suffix}"
+            if name.casefold() not in existing:
+                return name
+            suffix += 1
+
+    def _managed_categories_changed(self) -> None:
+        self._refresh_managed_categories()
+        self._categories.refresh(self._document.analysis, selected_category_id=None)
+        self._refresh_projections()
+        self.categoryManagementChanged.emit()
+        self.documentChanged.emit()
+
+    def _refresh_managed_categories(self) -> None:
+        collection = self._managed_collection()
+        self._managed_categories.refresh(collection.categories(), collection.analysis())
+
+    def _managed_collection(self) -> CategoryCollection:
+        return (
+            AnalysisCategories(self._document.analysis)
+            if self._category_management_scope == "analysis"
+            else TemplateCategories(self._template_store)
+        )
 
     @Slot(str)
     def setAnalysisTitle(self, title: str) -> None:

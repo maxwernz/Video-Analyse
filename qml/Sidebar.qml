@@ -21,6 +21,11 @@ Rectangle {
 
     color: Theme.panel
 
+    CategoryManager {
+        anchors.fill: parent
+        z: Theme.menuLayer
+    }
+
     // Segmented control, not underlined web-style tabs.
     Item {
         id: tabs

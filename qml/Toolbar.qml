@@ -25,6 +25,7 @@ Rectangle {
     signal saveAnalysisRequested()
     signal addVideoRequested()
     signal exportRequested()
+    signal categoriesRequested()
     signal sidebarToggleRequested()
     signal fullscreenRequested()
 
@@ -80,6 +81,11 @@ Rectangle {
             iconName: "upload"
             tooltip: "Zusammenschnitt exportieren"
             onClicked: root.exportRequested()
+        }
+        IconButton {
+            iconName: "circle-dot"
+            tooltip: "Kategorien verwalten"
+            onClicked: root.categoriesRequested()
         }
     }
 

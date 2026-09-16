@@ -400,6 +400,27 @@ class Analysis:
         self._revision += 1
         return updated
 
+    def reorder_categories(self, category_ids: Sequence[UUID]) -> None:
+        """Set the order that groups Clips throughout this Analysis.
+
+        A Category's UUID, not its position, is what a Clip stores. Keeping
+        that distinction means analysts can make the list read like their
+        review without silently refiling any existing Clip.
+        """
+
+        ordered_ids = list(category_ids)
+        known_ids = {category.id for category in self._categories}
+        if len(ordered_ids) != len(known_ids) or set(ordered_ids) != known_ids:
+            raise InvalidAnalysisDataError(
+                "Category order must name every Category exactly once"
+            )
+        by_id = {category.id: category for category in self._categories}
+        reordered = [by_id[identity] for identity in ordered_ids]
+        if reordered == self._categories:
+            return
+        self._categories = reordered
+        self._revision += 1
+
     def remove_category(self, category_id: UUID) -> None:
         category = self.category(category_id)
         self._categories.remove(category)

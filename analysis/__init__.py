@@ -16,6 +16,7 @@ from .errors import (
 from .legacy import LegacyAnalysisImporter
 from .model import Analysis, Category, Clip, SourceVideo, normalize_category_name
 from .template import (
+    CategoryTemplateStore,
     DEFAULT_CATEGORY_TEMPLATE,
     apply_category_template,
     new_analysis_document,
@@ -30,6 +31,7 @@ __all__ = [
     "AnalysisFileFormat",
     "apply_category_template",
     "Category",
+    "CategoryTemplateStore",
     "Clip",
     "DEFAULT_CATEGORY_TEMPLATE",
     "EmptyAnalysisError",
