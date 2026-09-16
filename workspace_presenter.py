@@ -22,7 +22,7 @@ import os
 from PySide6.QtCore import QStandardPaths
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
-from analysis import UnsavedChangesChoice
+from analysis import ExternalChangeChoice, UnsavedChangesChoice
 from application_workflow import ANALYSIS_FILE_FILTER, SOURCE_VIDEO_FILE_FILTER
 
 
@@ -34,6 +34,19 @@ UNSAVED_CHANGES_QUESTION = (
 OPEN_ANALYSIS_TITLE = "Analyse öffnen"
 SAVE_ANALYSIS_TITLE = "Analyse speichern"
 ADD_SOURCE_VIDEO_TITLE = "Video hinzufügen"
+
+EXTERNAL_CHANGE_TITLE = "Datei wurde extern geändert"
+EXTERNAL_CHANGE_QUESTION = (
+    "Diese Analyse-Datei wurde außerhalb der Anwendung geändert. Möchten Sie "
+    "die geänderte Datei laden (eigene Änderungen gehen verloren) oder Ihre "
+    "Änderungen unter einem anderen Namen speichern?"
+)
+
+RECOVERY_OFFER_TITLE = "Nicht gespeicherte Änderungen gefunden"
+RECOVERY_OFFER_QUESTION = (
+    "Nach einem unerwarteten Beenden wurden nicht gespeicherte Änderungen "
+    "gefunden. Möchten Sie diese wiederherstellen?"
+)
 
 
 class WorkspacePresenter:
@@ -64,6 +77,56 @@ class WorkspacePresenter:
         if answer == QMessageBox.StandardButton.Discard:
             return UnsavedChangesChoice.DISCARD
         return UnsavedChangesChoice.CANCEL
+
+    def ask_external_change_conflict(self) -> ExternalChangeChoice:
+        """Ask how to resolve a Save whose file changed outside the app.
+
+        There is no "overwrite anyway" button: only Reload and Save As are
+        offered, so this question can never end in either version being
+        silently destroyed. A dismissed question is Cancel, exactly as it is
+        for unsaved changes: the Analysis stays open, stays dirty, and stays
+        unsaved rather than guessing which version the analyst meant to keep.
+        """
+
+        question = QMessageBox()
+        question.setIcon(QMessageBox.Icon.Warning)
+        question.setWindowTitle(EXTERNAL_CHANGE_TITLE)
+        question.setText(EXTERNAL_CHANGE_QUESTION)
+        reload_button = question.addButton(
+            "Neu laden", QMessageBox.ButtonRole.AcceptRole
+        )
+        save_as_button = question.addButton(
+            "Speichern unter…", QMessageBox.ButtonRole.ActionRole
+        )
+        question.addButton(QMessageBox.StandardButton.Cancel)
+        question.setDefaultButton(QMessageBox.StandardButton.Cancel)
+
+        question.exec()
+        clicked = question.clickedButton()
+        if clicked is reload_button:
+            return ExternalChangeChoice.RELOAD
+        if clicked is save_as_button:
+            return ExternalChangeChoice.SAVE_AS
+        return ExternalChangeChoice.CANCEL
+
+    def offer_recovered_analysis(self) -> bool:
+        """Ask whether to restore Recovery data found after abnormal termination.
+
+        A dismissed question is read as declining it, the same reasoning as
+        every other question here: it is the reading that cannot surprise
+        anybody, even though — unlike unsaved changes — declining here
+        discards the offered snapshot rather than keeping something open.
+        """
+
+        question = QMessageBox()
+        question.setIcon(QMessageBox.Icon.Question)
+        question.setWindowTitle(RECOVERY_OFFER_TITLE)
+        question.setText(RECOVERY_OFFER_QUESTION)
+        question.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        question.setDefaultButton(QMessageBox.StandardButton.Yes)
+        return question.exec() == QMessageBox.StandardButton.Yes
 
     def choose_analysis_to_open(self) -> str | None:
         chosen, _ = QFileDialog.getOpenFileName(

@@ -38,5 +38,9 @@ class EmptyAnalysisError(AnalysisFileError):
     """An Analysis without a Source video cannot be saved."""
 
 
+class ExternalModificationError(AnalysisFileError):
+    """The on-disk Analysis file changed since it was last loaded or saved."""
+
+
 class UnknownEntityError(InvalidAnalysisDataError):
     """An operation referred to an entity this Analysis does not contain."""

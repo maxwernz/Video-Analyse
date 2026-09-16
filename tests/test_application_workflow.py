@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,8 @@ import pytest
 from analysis import (
     Analysis,
     AnalysisDocument,
+    ExternalChangeChoice,
+    RecoverySnapshotStore,
     UnsavedChangesChoice,
     new_analysis_document,
 )
@@ -19,16 +22,28 @@ class FakePresenter:
 
     def __init__(self) -> None:
         self.unsaved_choice = UnsavedChangesChoice.DISCARD
+        self.external_change_choice = ExternalChangeChoice.CANCEL
+        self.recovery_offer_accepted = False
         self.analysis_to_open: str | None = None
         self.analysis_destination: str | None = None
         self.source_video: str | None = None
         self.unsaved_prompts = 0
+        self.external_change_prompts = 0
+        self.recovery_offers = 0
         self.suggested_names: list[str] = []
         self.failures: list[tuple[str, str]] = []
 
     def ask_unsaved_changes(self) -> UnsavedChangesChoice:
         self.unsaved_prompts += 1
         return self.unsaved_choice
+
+    def ask_external_change_conflict(self) -> ExternalChangeChoice:
+        self.external_change_prompts += 1
+        return self.external_change_choice
+
+    def offer_recovered_analysis(self) -> bool:
+        self.recovery_offers += 1
+        return self.recovery_offer_accepted
 
     def choose_analysis_to_open(self) -> str | None:
         return self.analysis_to_open
@@ -42,6 +57,29 @@ class FakePresenter:
 
     def report_failure(self, title: str, message: str) -> None:
         self.failures.append((title, message))
+
+
+class FakeRecoveryScheduler:
+    """Records scheduling and cancellation without any real timer."""
+
+    def __init__(self) -> None:
+        self.scheduled_runs: list[Callable[[], None]] = []
+        self.cancel_count = 0
+        self._pending: Callable[[], None] | None = None
+
+    def schedule(self, run: Callable[[], None]) -> None:
+        self.scheduled_runs.append(run)
+        self._pending = run
+
+    def cancel(self) -> None:
+        self.cancel_count += 1
+        self._pending = None
+
+    def fire(self) -> None:
+        """Simulate the debounce settling: run whatever is still pending."""
+        assert self._pending is not None, "nothing was scheduled"
+        pending, self._pending = self._pending, None
+        pending()
 
 
 class RecordedEvents:
@@ -78,7 +116,24 @@ def events() -> RecordedEvents:
 
 
 @pytest.fixture
-def workflow(presenter: FakePresenter, events: RecordedEvents) -> ApplicationWorkflow:
+def recovery_store(tmp_path: Path) -> RecoverySnapshotStore:
+    # Isolated from any real installation location, so a test's `save` or
+    # `discard_recovery` call can never touch a real analyst's Recovery data.
+    return RecoverySnapshotStore(tmp_path / "recovery-store")
+
+
+@pytest.fixture
+def recovery_scheduler() -> FakeRecoveryScheduler:
+    return FakeRecoveryScheduler()
+
+
+@pytest.fixture
+def workflow(
+    presenter: FakePresenter,
+    events: RecordedEvents,
+    recovery_store: RecoverySnapshotStore,
+    recovery_scheduler: FakeRecoveryScheduler,
+) -> ApplicationWorkflow:
     def analysis_replaced() -> None:
         events.replacements += 1
 
@@ -89,6 +144,8 @@ def workflow(presenter: FakePresenter, events: RecordedEvents) -> ApplicationWor
         presenter,
         on_analysis_replaced=analysis_replaced,
         on_document_changed=document_changed,
+        recovery_store=recovery_store,
+        recovery_scheduler=recovery_scheduler,
     )
 
 
@@ -771,3 +828,267 @@ def test_removing_an_unknown_source_video_is_reported_and_changes_nothing(
 
     assert workflow.remove_source_video(uuid4()) is False
     assert len(presenter.failures) == 1
+
+
+# --- External-change conflicts ---------------------------------------------
+
+
+def _saved_workflow_with_external_change(
+    workflow: ApplicationWorkflow, presenter: FakePresenter, tmp_path: Path
+) -> None:
+    """Save, then simulate another process changing the file underneath us."""
+    _analysis_with_work(workflow, tmp_path)
+    presenter.analysis_destination = str(tmp_path / "match.analysis")
+    assert workflow.save() is True
+
+    assert workflow.document.path is not None
+    saved_path = workflow.document.path
+    import os
+
+    os.utime(saved_path, ns=(0, 10**18))
+    saved_path.write_bytes(saved_path.read_bytes() + b"\n")
+
+    workflow.analysis.set_title("Local unsaved edit")
+
+
+def test_saving_over_an_externally_changed_file_asks_instead_of_overwriting(
+    workflow: ApplicationWorkflow,
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    _saved_workflow_with_external_change(workflow, presenter, tmp_path)
+    external_bytes = workflow.document.path.read_bytes()  # type: ignore[union-attr]
+    presenter.external_change_choice = ExternalChangeChoice.CANCEL
+
+    assert workflow.save() is False
+
+    assert presenter.external_change_prompts == 1
+    assert workflow.document.dirty is True
+    assert workflow.document.path.read_bytes() == external_bytes  # type: ignore[union-attr]
+
+
+def test_choosing_reload_on_conflict_discards_local_edits(
+    workflow: ApplicationWorkflow,
+    presenter: FakePresenter,
+    tmp_path: Path,
+    events: RecordedEvents,
+) -> None:
+    _saved_workflow_with_external_change(workflow, presenter, tmp_path)
+    presenter.external_change_choice = ExternalChangeChoice.RELOAD
+
+    assert workflow.save() is True
+
+    assert workflow.analysis.title != "Local unsaved edit"
+    assert workflow.document.dirty is False
+    assert events.replacements >= 1
+
+
+def test_choosing_save_as_on_conflict_keeps_local_edits_under_a_new_name(
+    workflow: ApplicationWorkflow,
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    _saved_workflow_with_external_change(workflow, presenter, tmp_path)
+    external_bytes = workflow.document.path.read_bytes()  # type: ignore[union-attr]
+    presenter.external_change_choice = ExternalChangeChoice.SAVE_AS
+    presenter.analysis_destination = str(tmp_path / "match-mine.analysis")
+
+    assert workflow.save() is True
+
+    assert workflow.analysis.title == "Local unsaved edit"
+    assert workflow.document.dirty is False
+    assert workflow.document.path == tmp_path / "match-mine.analysis"
+    # The externally changed file is never touched.
+    assert (tmp_path / "match.analysis").read_bytes() == external_bytes
+
+
+# --- Debounced Recovery scheduling ------------------------------------------
+
+
+def test_a_durable_change_schedules_a_recovery_snapshot(
+    workflow: ApplicationWorkflow,
+    tmp_path: Path,
+    recovery_store: RecoverySnapshotStore,
+    recovery_scheduler: "FakeRecoveryScheduler",
+) -> None:
+    _analysis_with_work(workflow, tmp_path)
+    workflow.note_recovery_activity()
+
+    assert len(recovery_scheduler.scheduled_runs) == 1
+    assert recovery_store.read() is None  # not written until the debounce fires
+
+    recovery_scheduler.fire()
+
+    snapshot = recovery_store.read()
+    assert snapshot is not None
+    assert len(snapshot.analysis.clips) == 1
+
+
+def test_repeated_activity_before_the_debounce_fires_collapses_to_one_write(
+    workflow: ApplicationWorkflow,
+    tmp_path: Path,
+    recovery_scheduler: "FakeRecoveryScheduler",
+) -> None:
+    source_video = workflow.add_source_video_file(_video(tmp_path))
+    assert source_video is not None
+    workflow.note_recovery_activity()
+    workflow.analysis.add_clip(source_video.id, "First", 1_000, 2_000)
+    workflow.note_recovery_activity()
+    workflow.analysis.add_clip(source_video.id, "Second", 3_000, 4_000)
+    workflow.note_recovery_activity()
+
+    # Three durable changes, but each `note_recovery_activity` call replaces
+    # whatever was scheduled: the fake records every call, mirroring a real
+    # debounce timer restarting rather than queuing.
+    assert len(recovery_scheduler.scheduled_runs) == 3
+    assert recovery_scheduler.cancel_count == 0
+
+
+def test_view_only_activity_never_schedules_a_recovery_snapshot(
+    workflow: ApplicationWorkflow,
+    tmp_path: Path,
+    recovery_scheduler: "FakeRecoveryScheduler",
+) -> None:
+    _analysis_with_work(workflow, tmp_path)
+    workflow.note_recovery_activity()
+    recovery_scheduler.scheduled_runs.clear()
+
+    # Nothing durable happens between these calls: no Analysis mutation, so
+    # no revision change, so no rescheduling — exactly what protects
+    # playback, the Active Source video, selection, and sidebar-tab state.
+    workflow.note_recovery_activity()
+    workflow.note_recovery_activity()
+
+    assert recovery_scheduler.scheduled_runs == []
+
+
+def test_a_successful_save_discards_pending_and_stored_recovery_data(
+    workflow: ApplicationWorkflow,
+    presenter: FakePresenter,
+    tmp_path: Path,
+    recovery_store: RecoverySnapshotStore,
+    recovery_scheduler: "FakeRecoveryScheduler",
+) -> None:
+    _analysis_with_work(workflow, tmp_path)
+    workflow.note_recovery_activity()
+    recovery_scheduler.fire()
+    assert recovery_store.read() is not None
+
+    presenter.analysis_destination = str(tmp_path / "match.analysis")
+    assert workflow.save() is True
+
+    assert recovery_store.read() is None
+    assert recovery_scheduler.cancel_count >= 1
+
+
+def test_a_deliberate_discard_removes_recovery_data(
+    workflow: ApplicationWorkflow,
+    presenter: FakePresenter,
+    tmp_path: Path,
+    recovery_store: RecoverySnapshotStore,
+    recovery_scheduler: "FakeRecoveryScheduler",
+) -> None:
+    _analysis_with_work(workflow, tmp_path)
+    workflow.note_recovery_activity()
+    recovery_scheduler.fire()
+    assert recovery_store.read() is not None
+
+    presenter.unsaved_choice = UnsavedChangesChoice.DISCARD
+    assert workflow.new_analysis() is True
+
+    assert recovery_store.read() is None
+
+
+# --- Abnormal-termination recovery ------------------------------------------
+
+
+def test_no_stored_snapshot_offers_nothing(
+    workflow: ApplicationWorkflow,
+    presenter: FakePresenter,
+) -> None:
+    assert workflow.recover_if_available() is False
+    assert presenter.recovery_offers == 0
+
+
+def test_a_declined_recovery_offer_discards_the_snapshot(
+    workflow: ApplicationWorkflow,
+    presenter: FakePresenter,
+    recovery_store: RecoverySnapshotStore,
+) -> None:
+    unsaved_analysis = Analysis("Unsaved")
+    unsaved_analysis.add_source_video("first-half.mp4", "/videos/first-half.mp4")
+    recovery_store.write(unsaved_analysis, None)
+    presenter.recovery_offer_accepted = False
+
+    assert workflow.recover_if_available() is False
+
+    assert presenter.recovery_offers == 1
+    assert recovery_store.read() is None
+
+
+def test_an_accepted_recovery_offer_replaces_the_analysis_and_stays_dirty(
+    workflow: ApplicationWorkflow,
+    presenter: FakePresenter,
+    events: RecordedEvents,
+    recovery_store: RecoverySnapshotStore,
+) -> None:
+    recovered_analysis = Analysis("Recovered work")
+    recovered_analysis.add_source_video(
+        "first-half.mp4", "/videos/first-half.mp4"
+    )
+    recovery_store.write(recovered_analysis, None)
+    presenter.recovery_offer_accepted = True
+
+    assert workflow.recover_if_available() is True
+
+    assert workflow.analysis.title == "Recovered work"
+    assert workflow.document.dirty is True
+    assert events.replacements >= 1
+    # Re-armed immediately: the just-restored work is still unsaved, and
+    # nothing will edit it again to trigger `note_recovery_activity` itself.
+    restored_snapshot = recovery_store.read()
+    assert restored_snapshot is not None
+    assert restored_snapshot.analysis.title == "Recovered work"
+
+
+def test_an_accepted_recovery_offer_keeps_the_file_it_was_bound_to(
+    workflow: ApplicationWorkflow,
+    presenter: FakePresenter,
+    recovery_store: RecoverySnapshotStore,
+    tmp_path: Path,
+) -> None:
+    """The restored Analysis still knows which file it was being edited as."""
+
+    # The file this Analysis was open as when the process died — still on
+    # disk, unchanged, exactly as an abnormal termination would leave it.
+    original_path = tmp_path / "match.analysis"
+    original_document = AnalysisDocument.new("On disk when it crashed")
+    original_document.analysis.add_source_video(
+        "first-half.mp4", "/videos/first-half.mp4"
+    )
+    original_document.save_as(original_path)
+
+    recovered_analysis = Analysis("Recovered work")
+    recovered_analysis.add_source_video(
+        "first-half.mp4", "/videos/first-half.mp4"
+    )
+    recovery_store.write(recovered_analysis, original_path)
+    presenter.recovery_offer_accepted = True
+
+    assert workflow.recover_if_available() is True
+
+    assert workflow.document.path == original_path
+    # With no recorded revision for this file, a plain Save must not assume
+    # nothing changed since the abnormal termination — it asks instead.
+    presenter.external_change_choice = ExternalChangeChoice.SAVE_AS
+    presenter.analysis_destination = str(tmp_path / "match-restored.analysis")
+
+    original_bytes = original_path.read_bytes()
+
+    assert workflow.save() is True
+
+    assert presenter.external_change_prompts == 1
+    # The original file is left exactly as it was; the restored work is
+    # kept under a name of its own rather than overwriting it.
+    assert original_path.read_bytes() == original_bytes
+    assert (tmp_path / "match-restored.analysis").is_file()

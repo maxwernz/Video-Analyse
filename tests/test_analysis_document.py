@@ -11,8 +11,10 @@ from typing import Any
 import pytest
 
 from analysis import (
+    Analysis,
     AnalysisDocument,
     EmptyAnalysisError,
+    ExternalModificationError,
     InvalidAnalysisDataError,
     LegacySourceOverwriteError,
     MalformedJSONError,
@@ -411,3 +413,238 @@ def test_specific_load_failures_leave_current_analysis_open(
 
     assert document.analysis is original_analysis
     assert document.analysis.title == "Still open"
+
+
+# --- Atomic saves, interrupted and failed writes ---------------------------
+
+
+def _document_with_source(title: str = "Match") -> AnalysisDocument:
+    document = AnalysisDocument.new(title)
+    document.analysis.add_source_video("first-half.mp4", "/videos/first-half.mp4")
+    return document
+
+
+def test_a_successful_save_writes_no_leftover_temporary_files(tmp_path: Path) -> None:
+    document = _document_with_source()
+    saved_path = document.save_as(tmp_path / "match")
+
+    assert saved_path.is_file()
+    assert list(tmp_path.iterdir()) == [saved_path]
+    assert not document.dirty
+
+
+def test_an_interrupted_write_leaves_the_prior_file_intact_and_stays_dirty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document = _document_with_source()
+    saved_path = document.save_as(tmp_path / "match")
+    original_bytes = saved_path.read_bytes()
+    assert not document.dirty
+
+    document.analysis.set_title("Edited after saving")
+    assert document.dirty
+
+    def _failing_replace(*_args: object, **_kwargs: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "replace", _failing_replace)
+
+    with pytest.raises(OSError):
+        document.save()
+
+    assert saved_path.read_bytes() == original_bytes
+    assert document.dirty
+    assert [entry.name for entry in tmp_path.iterdir()] == [saved_path.name]
+
+
+def test_a_failed_flush_leaves_the_prior_file_intact_and_stays_dirty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document = _document_with_source()
+    saved_path = document.save_as(tmp_path / "match")
+    original_bytes = saved_path.read_bytes()
+    document.analysis.set_title("Edited after saving")
+
+    def _failing_fsync(*_args: object, **_kwargs: object) -> None:
+        raise OSError("I/O error")
+
+    monkeypatch.setattr(os, "fsync", _failing_fsync)
+
+    with pytest.raises(OSError):
+        document.save()
+
+    assert saved_path.read_bytes() == original_bytes
+    assert document.dirty
+    assert [entry.name for entry in tmp_path.iterdir()] == [saved_path.name]
+
+
+def test_a_validation_failure_leaves_the_prior_file_intact_and_stays_dirty(
+    tmp_path: Path,
+) -> None:
+    document = _document_with_source()
+    saved_path = document.save_as(tmp_path / "match")
+    original_bytes = saved_path.read_bytes()
+    source_video = document.analysis.source_videos[0]
+
+    document.analysis.remove_source_video(source_video.id)
+    assert document.dirty
+
+    with pytest.raises(EmptyAnalysisError):
+        document.save()
+
+    assert saved_path.read_bytes() == original_bytes
+    assert document.dirty
+    assert [entry.name for entry in tmp_path.iterdir()] == [saved_path.name]
+
+
+def test_a_permission_failure_leaves_the_prior_file_intact_and_stays_dirty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document = _document_with_source()
+    saved_path = document.save_as(tmp_path / "match")
+    original_bytes = saved_path.read_bytes()
+    document.analysis.set_title("Edited after saving")
+
+    def _denied_mkstemp(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("Permission denied")
+
+    monkeypatch.setattr("tempfile.mkstemp", _denied_mkstemp)
+
+    with pytest.raises(PermissionError):
+        document.save()
+
+    assert saved_path.read_bytes() == original_bytes
+    assert document.dirty
+
+
+# --- External-modification detection and reload -----------------------------
+
+
+def test_a_freshly_saved_file_has_no_external_modification(tmp_path: Path) -> None:
+    document = _document_with_source()
+    document.save_as(tmp_path / "match")
+
+    assert not document.has_external_modification()
+
+
+def test_a_freshly_loaded_file_has_no_external_modification(tmp_path: Path) -> None:
+    written = _document_with_source()
+    saved_path = written.save_as(tmp_path / "match")
+
+    reopened = AnalysisDocument.new()
+    reopened.load(saved_path)
+
+    assert not reopened.has_external_modification()
+
+
+def test_saving_over_a_file_changed_outside_the_application_is_refused(
+    tmp_path: Path,
+) -> None:
+    document = _document_with_source()
+    saved_path = document.save_as(tmp_path / "match")
+    document.analysis.set_title("My unsaved edit")
+
+    # A change from outside this process: different bytes, and a distinct
+    # modification time from whatever `save_as` just wrote.
+    os.utime(saved_path, ns=(0, 10**18))
+    saved_path.write_bytes(saved_path.read_bytes() + b"\n")
+    external_bytes = saved_path.read_bytes()
+
+    with pytest.raises(ExternalModificationError):
+        document.save()
+
+    assert saved_path.read_bytes() == external_bytes
+    assert document.dirty
+
+
+def test_reload_replaces_in_memory_content_from_the_file_on_disk(
+    tmp_path: Path,
+) -> None:
+    document = _document_with_source("Original title")
+    saved_path = document.save_as(tmp_path / "match")
+
+    # Simulate another process (or another window) saving over the file.
+    other = AnalysisDocument.new("Title from elsewhere")
+    other.analysis.add_source_video("second-half.mp4", "/videos/second-half.mp4")
+    other.save_as(saved_path)
+
+    document.analysis.set_title("Unsaved local edit")
+    assert document.dirty
+
+    document.reload()
+
+    assert document.analysis.title == "Title from elsewhere"
+    assert not document.dirty
+    assert not document.has_external_modification()
+
+
+def test_a_failed_reload_leaves_the_open_analysis_untouched(tmp_path: Path) -> None:
+    document = _document_with_source("Kept in memory")
+    saved_path = document.save_as(tmp_path / "match")
+    original_analysis = document.analysis
+
+    saved_path.write_bytes(b"not an Analysis")
+
+    with pytest.raises(UnsupportedContentError):
+        document.reload()
+
+    assert document.analysis is original_analysis
+    assert document.analysis.title == "Kept in memory"
+
+
+def test_reload_without_a_file_requires_save_as(tmp_path: Path) -> None:
+    document = _document_with_source()
+
+    with pytest.raises(SaveAsRequiredError):
+        document.reload()
+
+
+# --- Recovered content is never mistaken for a successful save -------------
+
+
+def test_recovered_content_is_dirty_even_though_nothing_has_edited_it() -> None:
+    analysis = Analysis("Recovered analysis")
+    analysis.add_source_video("first-half.mp4", "/videos/first-half.mp4")
+
+    document = AnalysisDocument.recovered(analysis)
+
+    assert document.dirty
+    assert document.path is None
+    assert not document.requires_save_as
+
+
+def test_recovered_content_becomes_clean_once_explicitly_saved(tmp_path: Path) -> None:
+    analysis = Analysis("Recovered analysis")
+    analysis.add_source_video("first-half.mp4", "/videos/first-half.mp4")
+    document = AnalysisDocument.recovered(analysis)
+
+    document.save_as(tmp_path / "restored")
+
+    assert not document.dirty
+
+
+def test_recovered_content_keeps_the_file_it_was_being_edited_as(
+    tmp_path: Path,
+) -> None:
+    original = _document_with_source("Original title")
+    saved_path = original.save_as(tmp_path / "match")
+
+    analysis = Analysis("Recovered work")
+    analysis.add_source_video("first-half.mp4", "/videos/first-half.mp4")
+    document = AnalysisDocument.recovered(analysis, saved_path)
+
+    assert document.path == saved_path
+    assert document.dirty
+    # No revision was ever observed for this file, so a save must not assume
+    # the file is still whatever it was before the abnormal termination.
+    assert document.has_external_modification()
+
+
+def test_recovered_content_with_no_bound_file_has_no_external_modification() -> None:
+    analysis = Analysis("Recovered work")
+    analysis.add_source_video("first-half.mp4", "/videos/first-half.mp4")
+
+    document = AnalysisDocument.recovered(analysis, None)
+
+    assert document.path is None
+    assert not document.has_external_modification()

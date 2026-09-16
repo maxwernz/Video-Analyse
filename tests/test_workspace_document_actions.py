@@ -27,6 +27,8 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from analysis import (  # noqa: E402
     Analysis,
     AnalysisDocument,
+    ExternalChangeChoice,
+    RecoverySnapshotStore,
     UnsavedChangesChoice,
 )
 from application_workflow import (  # noqa: E402
@@ -46,16 +48,26 @@ class RecordingPresenter:
 
     def __init__(self) -> None:
         self.choice = UnsavedChangesChoice.CANCEL
+        self.external_change_choice = ExternalChangeChoice.CANCEL
+        self.recovery_offer_accepted = False
         self.analysis_to_open: str | None = None
         self.destination: str | None = None
         self.source_video: str | None = None
         self.questions = 0
+        self.recovery_offers = 0
         self.suggested_names: list[str] = []
         self.failures: list[tuple[str, str]] = []
 
     def ask_unsaved_changes(self) -> UnsavedChangesChoice:
         self.questions += 1
         return self.choice
+
+    def ask_external_change_conflict(self) -> ExternalChangeChoice:
+        return self.external_change_choice
+
+    def offer_recovered_analysis(self) -> bool:
+        self.recovery_offers += 1
+        return self.recovery_offer_accepted
 
     def choose_analysis_to_open(self) -> str | None:
         return self.analysis_to_open
@@ -69,6 +81,28 @@ class RecordingPresenter:
 
     def report_failure(self, title: str, message: str) -> None:
         self.failures.append((title, message))
+
+
+class FakeRecoveryScheduler:
+    """A debounce scheduler that only ever fires when a test asks it to."""
+
+    def __init__(self) -> None:
+        self.schedule_count = 0
+        self.cancel_count = 0
+        self._pending: object | None = None
+
+    def schedule(self, run: object) -> None:
+        self.schedule_count += 1
+        self._pending = run
+
+    def cancel(self) -> None:
+        self.cancel_count += 1
+        self._pending = None
+
+    def fire(self) -> None:
+        assert self._pending is not None, "nothing was scheduled"
+        pending, self._pending = self._pending, None
+        pending()  # type: ignore[operator]
 
 
 @pytest.fixture(scope="session")
@@ -98,12 +132,33 @@ def _saved_analysis(path: Path, title: str = "Spiel gegen Kiel") -> Path:
     return path
 
 
+def _isolated_recovery_store() -> RecoverySnapshotStore:
+    """A Recovery store under its own throwaway directory.
+
+    Every test in this module goes through this rather than the real
+    installation location, so closing or saving a workspace here can never
+    touch — let alone clear — an actual analyst's Recovery data.
+    """
+    import tempfile
+
+    return RecoverySnapshotStore(Path(tempfile.mkdtemp()) / "recovery")
+
+
 def _workspace(
     document: AnalysisDocument,
     player: FakePlayback,
     presenter: RecordingPresenter,
+    *,
+    recovery_store: RecoverySnapshotStore | None = None,
+    recovery_scheduler: FakeRecoveryScheduler | None = None,
 ) -> WorkspaceViewModel:
-    return WorkspaceViewModel(document, player, presenter=presenter)
+    return WorkspaceViewModel(
+        document,
+        player,
+        presenter=presenter,
+        recovery_store=recovery_store or _isolated_recovery_store(),
+        recovery_scheduler=recovery_scheduler or FakeRecoveryScheduler(),
+    )
 
 
 # --- What the analyst can see ---------------------------------------------
@@ -518,6 +573,83 @@ def test_closing_with_unsaved_work_can_save_it_first(
 
 
 # --- A workspace with nobody to ask ----------------------------------------
+
+
+def test_a_clean_close_discards_pending_and_stored_recovery_data(
+    player: FakePlayback, presenter: RecordingPresenter, tmp_path: Path
+) -> None:
+    document = _document_with_a_video()
+    store = _isolated_recovery_store()
+    scheduler = FakeRecoveryScheduler()
+    workspace = _workspace(
+        document, player, presenter, recovery_store=store, recovery_scheduler=scheduler
+    )
+    document.analysis.set_title("Spiel gegen Flensburg")
+    workspace.documentChanged.emit()
+    scheduler.fire()
+    assert store.read() is not None
+
+    presenter.destination = str(tmp_path / "spiel.analysis")
+    presenter.choice = UnsavedChangesChoice.SAVE
+
+    assert workspace.requestClose() is True
+    assert store.read() is None
+
+
+def test_the_workspace_offers_recovery_data_found_at_startup(
+    player: FakePlayback, presenter: RecordingPresenter
+) -> None:
+    store = _isolated_recovery_store()
+    recovered_analysis = Analysis("Wiederhergestellt")
+    recovered_analysis.add_source_video("Halbzeit 1", VIDEO)
+    store.write(recovered_analysis, None)
+    presenter.recovery_offer_accepted = True
+
+    workspace = _workspace(
+        AnalysisDocument.new(), player, presenter, recovery_store=store
+    )
+
+    assert workspace.offerRecoveryIfAvailable() is True
+    assert presenter.recovery_offers == 1
+    assert workspace.analysisTitle == "Wiederhergestellt"
+    assert workspace.dirty is True
+
+
+def test_switching_the_active_source_video_never_arms_a_recovery_snapshot(
+    player: FakePlayback, presenter: RecordingPresenter, tmp_path: Path
+) -> None:
+    """The Active Source video is transient presentation state, not content."""
+
+    document = _document_with_a_video()
+    second = tmp_path / "zweite-halbzeit.mp4"
+    second.write_bytes(b"not real media")
+    document.analysis.add_source_video("Halbzeit 2", str(second))
+    scheduler = FakeRecoveryScheduler()
+    workspace = _workspace(
+        document, player, presenter, recovery_scheduler=scheduler
+    )
+    second_id = document.analysis.source_videos[1].id
+
+    workspace.selectSourceVideo(str(second_id))
+
+    assert scheduler.schedule_count == 0
+
+
+def test_a_durable_clip_change_arms_a_recovery_snapshot(
+    player: FakePlayback, presenter: RecordingPresenter
+) -> None:
+    document = _document_with_a_video()
+    scheduler = FakeRecoveryScheduler()
+    workspace = _workspace(
+        document, player, presenter, recovery_scheduler=scheduler
+    )
+
+    document.analysis.add_clip(
+        document.analysis.source_videos[0].id, "Fast break", 1_000, 2_000
+    )
+    workspace.refresh()
+
+    assert scheduler.schedule_count == 1
 
 
 def test_a_workspace_built_without_a_person_to_ask_refuses_to_lose_work(
