@@ -22,6 +22,8 @@ from analysis import (
     Analysis,
     AnalysisDocument,
     AnalysisError,
+    ExternalChangeChoice,
+    RecoverySnapshotStore,
     SourceVideo,
     UnsavedChangesChoice,
     CategoryTemplateStore,
@@ -29,6 +31,7 @@ from analysis import (
 )
 from category_template_settings import installation_category_template_store
 from media_probe import FileMediaProbe, MediaProbe
+from recovery_settings import installation_recovery_store
 
 APPLICATION_TITLE = "Video Analyse"
 UNTITLED_ANALYSIS_TITLE = "Unbenannte Analyse"
@@ -56,6 +59,17 @@ class WorkflowPresenter(Protocol):
     def ask_unsaved_changes(self) -> UnsavedChangesChoice:
         """Ask what should happen to unsaved Analysis changes."""
 
+    def ask_external_change_conflict(self) -> ExternalChangeChoice:
+        """Ask how to resolve an Analysis file changed outside the application."""
+
+    def offer_recovered_analysis(self) -> bool:
+        """Ask whether to restore Recovery data found after abnormal termination.
+
+        Returning ``False`` — including a dismissed prompt — is read as
+        declining it, which discards the offered snapshot rather than
+        leaving it to be offered again unexplained next time.
+        """
+
     def choose_analysis_to_open(self) -> str | None:
         """Ask which Analysis file to open."""
 
@@ -67,6 +81,33 @@ class WorkflowPresenter(Protocol):
 
     def report_failure(self, title: str, message: str) -> None:
         """Report that a command could not be carried out."""
+
+
+class RecoveryScheduler(Protocol):
+    """Runs Recovery work once change activity has settled.
+
+    Calling :meth:`schedule` again before it has run replaces whatever was
+    pending, which is what makes this a debounce rather than a delay: rapid
+    edits collapse into the one snapshot due after the last of them. The
+    real implementation is a restartable Qt timer, built where the rest of
+    this workflow's Qt timing lives; the default here does nothing, so a
+    bare `ApplicationWorkflow` built without one — as most of this module's
+    own tests do — never schedules Recovery work nobody asked it to.
+    """
+
+    def schedule(self, run: Callable[[], None]) -> None: ...
+
+    def cancel(self) -> None: ...
+
+
+class _NoRecoveryScheduling:
+    """The scheduler a workflow gets when none is supplied: it never fires."""
+
+    def schedule(self, run: Callable[[], None]) -> None:
+        return None
+
+    def cancel(self) -> None:
+        return None
 
 
 class ApplicationWorkflow:
@@ -83,6 +124,8 @@ class ApplicationWorkflow:
         on_source_video_removed: Callable[[UUID], None] | None = None,
         media_probe: MediaProbe | None = None,
         template_store: CategoryTemplateStore | None = None,
+        recovery_store: RecoverySnapshotStore | None = None,
+        recovery_scheduler: RecoveryScheduler | None = None,
     ) -> None:
         self._presenter = presenter
         self._template_store = template_store or installation_category_template_store()
@@ -96,6 +139,11 @@ class ApplicationWorkflow:
         self._source_video_added = on_source_video_added or _ignore_source_video
         self._source_video_removed = on_source_video_removed or _ignore_source_video_id
         self._media_probe: MediaProbe = media_probe or FileMediaProbe()
+        self._recovery_store = recovery_store or installation_recovery_store()
+        self._recovery_scheduler: RecoveryScheduler = (
+            recovery_scheduler or _NoRecoveryScheduling()
+        )
+        self._last_observed_revision = self.analysis.revision
 
     @property
     def document(self) -> AnalysisDocument:
@@ -178,9 +226,16 @@ class ApplicationWorkflow:
     # --- Saving ------------------------------------------------------------
 
     def save(self) -> bool:
-        """Write the Analysis, asking for a destination when it has none."""
+        """Write the Analysis, asking for a destination when it has none.
+
+        The external-change check runs before anything is written, so a
+        conflict is caught as a question rather than as a failed or
+        overwriting write.
+        """
         if self._document.path is None or self._document.requires_save_as:
             return self.save_as()
+        if self._document.has_external_modification():
+            return self._resolve_external_change()
         return self._write(self._document.save)
 
     def save_as(self) -> bool:
@@ -192,6 +247,41 @@ class ApplicationWorkflow:
             return False
         return self._write(lambda: self._document.save_as(destination))
 
+    def _resolve_external_change(self) -> bool:
+        """Ask how to reconcile a Save with a file changed outside this app.
+
+        Every branch either catches this document up with the other version
+        or keeps this one under a new name; none of them writes over either
+        file, which is the one outcome an external-change conflict must
+        never produce.
+        """
+        choice = self._presenter.ask_external_change_conflict()
+        if choice is ExternalChangeChoice.SAVE_AS:
+            return self.save_as()
+        if choice is ExternalChangeChoice.RELOAD:
+            return self._reload_document()
+        return False
+
+    def _reload_document(self) -> bool:
+        """Catch this document up with its file, discarding in-memory edits.
+
+        Only reached once a person has chosen Reload in the external-change
+        conflict, so the unsaved work it discards was always going to be the
+        one thing that choice explicitly accepted losing.
+        """
+        try:
+            self._document.reload()
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Analysis could not be reloaded", str(error)
+            )
+            return False
+        self._last_observed_revision = self.analysis.revision
+        self.discard_recovery()
+        self._analysis_replaced()
+        self._document_changed()
+        return True
+
     def _write(self, write: Callable[[], Path]) -> bool:
         try:
             write()
@@ -200,6 +290,7 @@ class ApplicationWorkflow:
                 "Analysis could not be saved", str(error)
             )
             return False
+        self.discard_recovery()
         self._document_changed()
         return True
 
@@ -337,10 +428,74 @@ class ApplicationWorkflow:
         different Analysis reports the same two notifications in the same
         order. It does not ask about unsaved changes: the caller has either
         passed :meth:`may_replace_analysis` or is starting the application.
+        Whatever Recovery data belonged to the Analysis being replaced is
+        discarded with it — a discarded document that is not re-armed by
+        :meth:`recover_if_available` right after has nothing left to recover.
         """
         self._document = document
+        self._last_observed_revision = self.analysis.revision
+        self.discard_recovery()
         self._analysis_replaced()
         self._document_changed()
+
+    # --- Recovery ------------------------------------------------------------
+
+    def note_recovery_activity(self) -> None:
+        """Reschedule the debounced Recovery snapshot when content actually changed.
+
+        Compared against the last-seen `Analysis.revision` rather than
+        against whatever interface signal prompted the call, so that a
+        redraw with nothing durable behind it — playback, the Active Source
+        video, a selection, which sidebar tab is open — can call this freely
+        without ever arming a snapshot: none of those bump the revision a
+        durable content change does.
+        """
+        revision = self.analysis.revision
+        if revision == self._last_observed_revision:
+            return
+        self._last_observed_revision = revision
+        self._recovery_scheduler.schedule(self._write_recovery_snapshot)
+
+    def discard_recovery(self) -> None:
+        """Drop pending and stored Recovery data; it is no longer needed.
+
+        Called after a successful save, a clean close, and a deliberate
+        discard or replacement of the open Analysis — everywhere the
+        in-memory Analysis is no longer at risk of being lost unrecovered.
+        """
+        self._recovery_scheduler.cancel()
+        self._recovery_store.clear()
+
+    def _write_recovery_snapshot(self) -> None:
+        try:
+            self._recovery_store.write(self.analysis, self._document.path)
+        except OSError:
+            # A failed Recovery write must never interrupt editing; the next
+            # durable change reschedules it, and a save removes the need for
+            # one entirely.
+            pass
+
+    def recover_if_available(self) -> bool:
+        """Offer valid Recovery data explicitly; never adopt it silently.
+
+        A decline discards the snapshot rather than leaving it to resurface
+        unexplained next time. An acceptance replaces the Analysis this
+        workflow opened with, as dirty as the work it is restoring actually
+        was, and immediately re-arms Recovery for it — the just-restored
+        Analysis is still unsaved, and nothing will edit it again to trigger
+        `note_recovery_activity` on its own.
+        """
+        snapshot = self._recovery_store.read()
+        if snapshot is None:
+            return False
+        if not self._presenter.offer_recovered_analysis():
+            self.discard_recovery()
+            return False
+        self.adopt_document(
+            AnalysisDocument.recovered(snapshot.analysis, snapshot.source_path)
+        )
+        self._write_recovery_snapshot()
+        return True
 
 
 def _do_nothing() -> None:

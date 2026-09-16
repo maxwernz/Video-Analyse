@@ -55,7 +55,20 @@ class AnalysisFileCodec:
         )
 
     def encode(self, analysis: Analysis) -> bytes:
-        payload = {
+        return (
+            json.dumps(self.to_payload(analysis), ensure_ascii=False, indent=2, sort_keys=True)
+            + "\n"
+        ).encode("utf-8")
+
+    def to_payload(self, analysis: Analysis) -> dict[str, Any]:
+        """The JSON-ready structure `encode` writes, before it is serialized.
+
+        Exposed on its own for :class:`~analysis.recovery.RecoverySnapshotStore`,
+        which adds a few envelope fields of its own and serializes once —
+        sharing this rather than parsing `encode`'s own output back out
+        avoids encoding the whole Analysis twice on every Recovery write.
+        """
+        return {
             "schema_version": CURRENT_SCHEMA_VERSION,
             "analysis": {
                 "id": str(analysis.id),
@@ -70,9 +83,6 @@ class AnalysisFileCodec:
                 "clips": [self._clip_to_data(clip) for clip in analysis.clips],
             },
         }
-        return (
-            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-        ).encode("utf-8")
 
     def _decode_json(self, data: bytes) -> Analysis:
         try:

@@ -139,6 +139,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
 
         context = build_workspace_context()
+        # Asked before the window is shown: a restored Analysis should be
+        # what the window first draws, not something that replaces an
+        # already-visible empty one a moment later.
+        context["workspace"].offerRecoveryIfAvailable()
         scene = show_quick_scene_with_fallback(context_objects=context)
         # On macOS the menu bar is a real QMenuBar with no parent — the system
         # menu bar — so nothing else is holding it, and Close goes through the

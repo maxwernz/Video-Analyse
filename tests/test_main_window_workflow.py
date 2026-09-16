@@ -95,6 +95,7 @@ import workspace_view_model as workspace_module  # noqa: E402
 from analysis import (  # noqa: E402
     Analysis,
     AnalysisDocument,
+    RecoverySnapshotStore,
     UnsavedChangesChoice,
     new_analysis_document,
 )
@@ -139,6 +140,14 @@ class RecordingPresenter:
     def ask_unsaved_changes(self) -> UnsavedChangesChoice:
         self.questions += 1
         return self.choice
+
+    def ask_external_change_conflict(self):  # type: ignore[no-untyped-def]
+        from analysis import ExternalChangeChoice
+
+        return ExternalChangeChoice.CANCEL
+
+    def offer_recovered_analysis(self) -> bool:
+        return False
 
     def choose_analysis_to_open(self) -> str | None:
         return self.analysis_to_open
@@ -232,6 +241,7 @@ def workspace(
     player: FakePlayback,
     presenter: RecordingPresenter,
     loop: Loop,
+    tmp_path: Path,
 ) -> WorkspaceViewModel:
     return WorkspaceViewModel(
         document,
@@ -240,6 +250,9 @@ def workspace(
         schedule=loop.schedule,
         clock=loop.clock,
         ticker=loop,
+        # Isolated from any real installation location: this suite's saves
+        # and closes must never touch an actual analyst's Recovery data.
+        recovery_store=RecoverySnapshotStore(tmp_path / "recovery"),
     )
 
 
@@ -1880,3 +1893,75 @@ def test_the_sidebar_tab_and_the_active_source_video_are_never_stored(
     assert active is not None
     assert active["name"] == first_video.name
     assert player.location() == str(first_video)
+
+
+# --- Protecting unsaved work (#19) -------------------------------------------
+
+
+class RecordingRecoveryScheduler:
+    """A debounce scheduler a case fires by hand instead of waiting on it."""
+
+    def __init__(self) -> None:
+        self.schedule_count = 0
+        self.cancel_count = 0
+        self._pending = None
+
+    def schedule(self, run) -> None:  # type: ignore[no-untyped-def]
+        self.schedule_count += 1
+        self._pending = run
+
+    def cancel(self) -> None:
+        self.cancel_count += 1
+        self._pending = None
+
+    def fire(self) -> None:
+        assert self._pending is not None, "nothing was scheduled"
+        pending, self._pending = self._pending, None
+        pending()
+
+
+def test_marking_a_clip_arms_recovery_but_switching_video_and_saving_do_not_linger(
+    application: QApplication,
+    presenter: RecordingPresenter,
+    loop: Loop,
+    tmp_path: Path,
+) -> None:
+    """The Recovery contract this ticket adds, driven the same way as the rest
+    of this suite: no window, no QML engine, no media.
+
+    A durable Clip change arms a debounced Recovery snapshot; switching the
+    Active Source video does not; and a successful save removes it, so a
+    clean close never leaves stale Recovery data an analyst was never told
+    about behind.
+    """
+
+    document = new_analysis_document()
+    recovery_store = RecoverySnapshotStore(tmp_path / "recovery")
+    scheduler = RecordingRecoveryScheduler()
+    workspace = WorkspaceViewModel(
+        document,
+        FakePlayback(),
+        presenter=presenter,
+        schedule=loop.schedule,
+        clock=loop.clock,
+        ticker=loop,
+        recovery_store=recovery_store,
+        recovery_scheduler=scheduler,
+    )
+    add_video(workspace, presenter, loop, tmp_path)
+    add_video(workspace, presenter, loop, tmp_path, "second-half.mp4")
+    scheduler.schedule_count = 0  # ignore whatever adding the Source videos armed
+
+    mark_clip(workspace, name="Fast break")
+    assert scheduler.schedule_count == 1
+    scheduler.fire()
+    assert recovery_store.read() is not None
+
+    scheduler.schedule_count = 0
+    workspace.selectSourceVideo(str(document.analysis.source_videos[1].id))
+    loop.advance(PRIMING_MS * 2)
+    assert scheduler.schedule_count == 0, "the Active Source video is not content"
+
+    save_to(workspace, presenter, tmp_path / "match.analysis")
+    assert workspace.dirty is False
+    assert recovery_store.read() is None

@@ -32,6 +32,8 @@ from analysis import (
     AnalysisDocument,
     AnalysisError,
     CategoryTemplateStore,
+    ExternalChangeChoice,
+    RecoverySnapshotStore,
     SourceVideo,
     UnsavedChangesChoice,
 )
@@ -39,6 +41,7 @@ from analysis.category_palette import CATEGORY_PALETTE
 from application_workflow import (
     UNTITLED_ANALYSIS_TITLE,
     ApplicationWorkflow,
+    RecoveryScheduler,
     WorkflowPresenter,
 )
 from clip_editor import (
@@ -111,6 +114,14 @@ SCRUB_SEEKS_PER_SECOND = 20
 #: The shortest gap between two scrub seeks, from the rate above.
 SCRUB_INTERVAL_MS = 1_000 // SCRUB_SEEKS_PER_SECOND
 
+#: How long a durable Analysis change waits, quiet, before it is snapshotted.
+#:
+#: Long enough that a burst of edits — typing a Clip name, dragging a
+#: boundary — collapses into one Recovery write instead of one per
+#: keystroke; short enough that an abnormal exit soon after the last edit
+#: still has something recent to recover.
+RECOVERY_DEBOUNCE_MS = 2_000
+
 #: Schedules work for later. Injectable so that priming is testable as
 #: behaviour rather than as a wait.
 Schedule = Callable[[int, Callable[[], None]], None]
@@ -158,6 +169,42 @@ class _NobodyToAsk:
 
     def report_failure(self, title: str, message: str) -> None:
         return None
+
+    def ask_external_change_conflict(self) -> ExternalChangeChoice:
+        return ExternalChangeChoice.CANCEL
+
+    def offer_recovered_analysis(self) -> bool:
+        return False
+
+
+class _TimerRecoveryScheduler:
+    """Debounces Recovery snapshots on a single restartable `QTimer`.
+
+    `QTimer.start()` restarts an already-running timer with the same
+    interval rather than queuing a second firing, which is exactly what
+    turns repeated `schedule` calls into a debounce instead of a flood of
+    writes.
+    """
+
+    def __init__(self, parent: QObject, delay_ms: int = RECOVERY_DEBOUNCE_MS) -> None:
+        self._timer = QTimer(parent)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(delay_ms)
+        self._run: Callable[[], None] | None = None
+        self._timer.timeout.connect(self._fire)
+
+    def schedule(self, run: Callable[[], None]) -> None:
+        self._run = run
+        self._timer.start()
+
+    def cancel(self) -> None:
+        self._timer.stop()
+        self._run = None
+
+    def _fire(self) -> None:
+        run, self._run = self._run, None
+        if run is not None:
+            run()
 
 
 class _TimerTicker:
@@ -230,6 +277,8 @@ class WorkspaceViewModel(QObject):
         clock: Clock = time.monotonic,
         ticker: Ticker | None = None,
         template_store: CategoryTemplateStore | None = None,
+        recovery_store: RecoverySnapshotStore | None = None,
+        recovery_scheduler: RecoveryScheduler | None = None,
     ) -> None:
         super().__init__(parent)
         self._menu_shortcut_filter: _MenuShortcutFilter | None = None
@@ -241,7 +290,15 @@ class WorkspaceViewModel(QObject):
             on_source_video_added=self._source_video_added,
             on_source_video_removed=self._source_video_removed,
             template_store=template_store or installation_category_template_store(),
+            recovery_store=recovery_store,
+            recovery_scheduler=recovery_scheduler or _TimerRecoveryScheduler(self),
         )
+        # Every `documentChanged` emission, from wherever it comes, is
+        # offered to the workflow; only one that actually moved
+        # `Analysis.revision` ends up arming a Recovery snapshot. This is
+        # what lets a redraw-only emitter — the Active Source video,
+        # cancelling a Clip edit — stay ignorant of Recovery entirely.
+        self.documentChanged.connect(self._workflow.note_recovery_activity)
         self._document = document
         self._template_store = self._workflow.template_store
         self._playback = playback
@@ -1400,10 +1457,26 @@ class WorkspaceViewModel(QObject):
         """Whether the window may close, asking about unsaved work first.
 
         Every way out of the application arrives here, so the question is
-        asked once and answered in one place.
+        asked once and answered in one place. A close this returns True for
+        is a clean close, so any Recovery data left over from getting here
+        — already-saved edits, or work the analyst chose to discard — is
+        removed rather than offered back next launch.
         """
 
-        return self._workflow.may_replace_analysis()
+        may_close = self._workflow.may_replace_analysis()
+        if may_close:
+            self._workflow.discard_recovery()
+        return may_close
+
+    @Slot(result=bool)
+    def offerRecoveryIfAvailable(self) -> bool:
+        """Offer Recovery data found from a previous, abnormal termination.
+
+        Meant to be called once, at startup, before anything else has had a
+        chance to touch the Analysis this session opened with.
+        """
+
+        return self._workflow.recover_if_available()
 
     def _source_video_added(self, source_video: SourceVideo) -> None:
         """Show the first Source video; leave an existing review uninterrupted."""
