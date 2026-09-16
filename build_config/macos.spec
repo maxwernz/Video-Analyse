@@ -21,7 +21,7 @@ from shared import (  # noqa: E402
 MINIMUM_SYSTEM_VERSION = "14.0"
 
 version = application_version()
-icon = str(PROJECT_ROOT / "icons" / "app_icon.icns")
+icon = str(PROJECT_ROOT / "assets" / "app_icon.icns")
 
 analysis = Analysis(
     [ENTRY_SCRIPT],

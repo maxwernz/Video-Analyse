@@ -745,32 +745,13 @@ def test_no_component_announces_the_products_name() -> None:
 # --- Starting into the workspace -------------------------------------------
 
 
-def _options(*arguments: str) -> object:
-    from main import build_argument_parser
+def test_startup_exposes_no_interface_switch() -> None:
+    """The QML cutover is complete; the old migration flag is gone."""
 
-    parsed, _ = build_argument_parser().parse_known_args(list(arguments))
-    return parsed
+    from main import main
 
-
-def test_the_existing_interface_is_still_what_starting_the_application_gives() -> None:
-    from main import WIDGETS_INTERFACE, selected_interface
-
-    assert selected_interface(_options(), {}) == WIDGETS_INTERFACE
-
-
-def test_the_qml_workspace_can_be_asked_for_on_the_command_line() -> None:
-    from main import QML_INTERFACE, selected_interface
-
-    assert selected_interface(_options("--qml"), {}) == QML_INTERFACE
-
-
-def test_the_qml_workspace_can_be_asked_for_without_a_command_line() -> None:
-    """A packaged application is double-clicked; there is nowhere to type."""
-
-    from main import QML_INTERFACE, QML_WORKSPACE_VARIABLE, selected_interface
-
-    assert selected_interface(_options(), {QML_WORKSPACE_VARIABLE: "1"}) == QML_INTERFACE
-    assert selected_interface(_options(), {QML_WORKSPACE_VARIABLE: ""}) == "widgets"
+    with pytest.raises(SystemExit):
+        main(["--qml"])
 
 
 def _smoke_report(
@@ -779,7 +760,6 @@ def _smoke_report(
     environment = os.environ.copy()
     environment["QT_QPA_PLATFORM"] = "offscreen"
     environment["VIDEO_ANALYSE_LOG_DIR"] = str(tmp_path / "logs")
-    environment.pop("VIDEO_ANALYSE_QML_WORKSPACE", None)
     environment.update(overrides)
 
     result = subprocess.run(
@@ -797,15 +777,13 @@ def _smoke_report(
 def test_a_started_application_reports_which_interface_it_would_show(
     tmp_path: Path,
 ) -> None:
-    assert _smoke_report(tmp_path)["interface"] == "widgets"
-    assert _smoke_report(tmp_path, "--qml")["interface"] == "qml"
-    assert _smoke_report(tmp_path, VIDEO_ANALYSE_QML_WORKSPACE="1")["interface"] == "qml"
+    assert _smoke_report(tmp_path)["interface"] == "qml"
 
 
 def test_the_workspace_shell_renders_a_frame_with_no_warning(tmp_path: Path) -> None:
     """The whole path: the engine, the components, the icons, the backend."""
 
-    report = _smoke_report(tmp_path, "--qml")
+    report = _smoke_report(tmp_path)
 
     assert report["sceneRendered"] is True
     assert report["qmlWarnings"] == []
@@ -813,3 +791,27 @@ def test_the_workspace_shell_renders_a_frame_with_no_warning(tmp_path: Path) -> 
     # The typography is registered before the window is built, so the families
     # `Theme.qml` names are the ones the window actually draws with.
     assert report["fonts"] == [UI_FONT_FAMILY, TIMECODE_FONT_FAMILY]
+
+
+def test_the_retired_widgets_presentation_files_are_not_shipped() -> None:
+    """The QML workspace owns every production presentation surface now."""
+
+    retired = {
+        "Ui_clip_handler.py",
+        "clip_handler.py",
+        "clip_handler.ui",
+        "duration_edit.py",
+        "mainwindow.py",
+        "resources.qrc",
+        "resources_rc.py",
+        "source_video_list.py",
+        "timeline.py",
+        "treewidget.py",
+        "treewidget_item.py",
+        "videowidget.py",
+        "visual_system.py",
+        "workspace.py",
+        "icons",
+    }
+
+    assert {path.name for path in PROJECT_ROOT.iterdir() if path.name in retired} == set()

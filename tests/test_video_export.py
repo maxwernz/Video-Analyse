@@ -1,9 +1,23 @@
+from dataclasses import dataclass
 from pathlib import Path
 
 from moviepy.editor import ColorClip, VideoFileClip
 
-from treewidget_item import ClipItem
 from video_creator import VideoCreator
+
+
+@dataclass(frozen=True)
+class ExportListItem:
+    """The narrow Combined-export value the video creator needs."""
+
+    name: str
+    start_position: int
+    end_position: int
+    notes: str
+    category: str | None = None
+
+    def clip_times_s(self) -> tuple[float, float]:
+        return self.start_position / 1000, self.end_position / 1000
 
 
 def test_export_creates_playable_video_with_bundled_font_overlay(
@@ -24,7 +38,7 @@ def test_export_creates_playable_video_with_bundled_font_overlay(
     finally:
         source.close()
 
-    clip = ClipItem(
+    clip = ExportListItem(
         name="Fast break",
         start_position=100,
         end_position=500,

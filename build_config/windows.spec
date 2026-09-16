@@ -18,7 +18,7 @@ from build_config.shared import (  # noqa: E402
 )
 from build_config.windows_version_resource import write_version_resource  # noqa: E402
 
-icon = str(PROJECT_ROOT / "icons" / "app_icon.ico")
+icon = str(PROJECT_ROOT / "assets" / "app_icon.ico")
 version_resource = str(write_version_resource(Path(workpath)))
 
 analysis = Analysis(

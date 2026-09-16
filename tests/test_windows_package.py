@@ -149,7 +149,7 @@ def build_upgrade_installer(destination: Path) -> Path:
             f"/DOutputBaseFilename={output_base_name}",
             f"/DSourceDirectory={packaged_application}",
             f"/DOutputDirectory={destination}",
-            f"/DIconFile={PROJECT_ROOT / 'icons' / 'app_icon.ico'}",
+            f"/DIconFile={PROJECT_ROOT / 'assets' / 'app_icon.ico'}",
             str(PROJECT_ROOT / "build_config" / "windows_installer.iss"),
         ],
         check=True,
