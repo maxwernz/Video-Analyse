@@ -21,6 +21,25 @@ from workspace_view_model import WorkspaceViewModel  # noqa: E402
 QML_ROOT = Path(__file__).parents[1] / "qml"
 
 
+class _InertRecoveryScheduler:
+    """A Recovery scheduler that never arms a real `QTimer`.
+
+    Every QML test builds a `WorkspaceViewModel` and tears its window down
+    well before a real debounce (`RECOVERY_DEBOUNCE_MS`) would fire — but the
+    Qt event loop is shared for the whole test session, so a real
+    `_TimerRecoveryScheduler`'s `QTimer` left ticking past that teardown is
+    still live enough to fire into whatever the view and view model happen
+    to have become by the time it does. Injecting this instead removes the
+    only real Qt timer this test would otherwise leave behind.
+    """
+
+    def schedule(self, run: object) -> None:
+        return None
+
+    def cancel(self) -> None:
+        return None
+
+
 def _visual_child(item: QQuickItem, name: str) -> QQuickItem | None:
     """Delegates are visual children, not QObject children, in a ListView."""
 
@@ -41,7 +60,11 @@ def test_category_removal_is_armed_in_the_row_and_states_its_clip_effect() -> No
     clip = analysis.add_clip(
         source.id, "Fast break", 1_000, 2_000, category_id=category.id
     )
-    workspace = WorkspaceViewModel(AnalysisDocument(analysis), FakePlayback())
+    workspace = WorkspaceViewModel(
+        AnalysisDocument(analysis),
+        FakePlayback(),
+        recovery_scheduler=_InertRecoveryScheduler(),
+    )
     workspace.showCategoryManagement()
     assert len(workspace.managedCategoryModel.rows()) == 1
 
@@ -82,4 +105,12 @@ def test_category_removal_is_armed_in_the_row_and_states_its_clip_effect() -> No
     application.processEvents()
 
     assert analysis.clip(clip.id).category_id is None
+
+    # Taken down rather than only closed and left to Python's garbage
+    # collector: a window's C++ object left to a deferred, GC-timed
+    # collection can stay alive — with everything parented to it, including
+    # any real Qt timer — for an indeterminate stretch of later tests.
     view.close()
+    view.setSource(QUrl())
+    view.deleteLater()
+    application.processEvents()

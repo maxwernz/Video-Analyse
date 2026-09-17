@@ -74,6 +74,24 @@ class Scheduler:
             run()  # type: ignore[operator]
 
 
+class _InertRecoveryScheduler:
+    """A Recovery scheduler that never arms a real `QTimer`.
+
+    This form is torn down at the end of every test, but the Qt event loop
+    is shared for the whole session, so a real `_TimerRecoveryScheduler`
+    left ticking past that teardown would still be live enough to fire into
+    whatever the view and view model happen to have become by the time it
+    does. Injecting this removes the only real Qt timer this fixture would
+    otherwise leave behind.
+    """
+
+    def schedule(self, run: object) -> None:
+        return None
+
+    def cancel(self) -> None:
+        return None
+
+
 @pytest.fixture
 def analysis() -> Analysis:
     analysis = Analysis("SG Beispiel - TV Muster")
@@ -208,7 +226,10 @@ def form(application: QApplication, analysis: Analysis):
     player = FakePlayback()
     scheduler = Scheduler()
     workspace = WorkspaceViewModel(
-        AnalysisDocument(analysis), player, schedule=scheduler
+        AnalysisDocument(analysis),
+        player,
+        schedule=scheduler,
+        recovery_scheduler=_InertRecoveryScheduler(),
     )
     scheduler.elapse()
     # The media announcing its length, without which the player refuses every
