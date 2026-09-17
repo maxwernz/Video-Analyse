@@ -167,6 +167,12 @@ class _NobodyToAsk:
     def choose_source_video(self) -> str | None:
         return None
 
+    def choose_replacement_media(self, display_name: str) -> str | None:
+        return None
+
+    def confirm_source_video_replacement(self, display_name: str) -> bool:
+        return False
+
     def report_failure(self, title: str, message: str) -> None:
         return None
 
@@ -1426,6 +1432,30 @@ class WorkspaceViewModel(QObject):
             return False
         return self._workflow.remove_source_video(identity)
 
+    @Slot(str, result=bool)
+    def relinkSourceVideo(self, source_id: str) -> bool:
+        """Ask for replacement media and relink it to an unavailable Source video.
+
+        A verified match relinks immediately; a mismatch asks the analyst to
+        confirm through the native dialog `WorkspacePresenter` shows for it.
+        Either way, once this returns, the Active Source video is
+        re-activated so a newly available video starts loading right away.
+        """
+
+        identity = _as_uuid(source_id)
+        if identity is None:
+            return False
+        relinked = self._workflow.relink_source_video(identity)
+        if relinked:
+            if identity == self._active_source_id:
+                # Emits its own `documentChanged` and `playbackChanged`;
+                # nothing left to report beyond what it already does.
+                self._activate_source(identity)
+            else:
+                self._refresh_projections()
+                self.documentChanged.emit()
+        return relinked
+
     @Property(list, constant=True)
     def menus(self) -> list:
         """The menu bar, as data, for the platforms that draw it in the window.
@@ -1619,7 +1649,18 @@ class WorkspaceViewModel(QObject):
         # one's would draw these Clips against the wrong ruler and read the
         # wrong total time back to the analyst.
         self._forget_duration()
-        self._playback.load(video.location)
+        # Unavailability is a display state, not a load failure, so the rest
+        # of the Analysis — Clips, Categories, every other Source video —
+        # stays fully usable either way. When resolution (recorded location,
+        # then relative to the Analysis file) finds real media somewhere
+        # other than the recorded location — the "moved together" case —
+        # playback follows it there. When resolution finds nothing, the
+        # player is still asked for the recorded location exactly as
+        # before: a real player simply reports it cannot open that path,
+        # which is existing player-error handling rather than new state
+        # this view model needs to invent.
+        resolved_path = self._document.resolve_source_video(source_id)
+        self._playback.load(str(resolved_path) if resolved_path else video.location)
         self._refresh_projections()
         if video.duration_ms is not None:
             self._duration_reported(video.duration_ms)
@@ -1650,7 +1691,11 @@ class WorkspaceViewModel(QObject):
             selected_clip_id=self._selected_clip_id,
         )
         self._clips.refresh(analysis, selected_clip_id=self._selected_clip_id)
-        self._sources.refresh(analysis, active_source_id=self._active_source_id)
+        self._sources.refresh(
+            analysis,
+            active_source_id=self._active_source_id,
+            is_available=self._workflow.is_source_video_available,
+        )
 
     def _prime_video_surface(self) -> None:
         """Make a newly loaded Source video show a frame instead of black.

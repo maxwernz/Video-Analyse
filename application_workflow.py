@@ -79,6 +79,19 @@ class WorkflowPresenter(Protocol):
     def choose_source_video(self) -> str | None:
         """Ask which video file to add as a Source video."""
 
+    def choose_replacement_media(self, display_name: str) -> str | None:
+        """Ask which media file should relink an unavailable Source video."""
+
+    def confirm_source_video_replacement(self, display_name: str) -> bool:
+        """Ask whether to adopt media whose identity does not verify.
+
+        Only reached when the chosen file's size, duration, and sampled
+        fingerprint do not all match what is on record for this Source
+        video — a verified match relinks without asking. Declining, like a
+        dismissed dialog, is read as no: the Source video stays exactly as
+        unavailable as it was.
+        """
+
     def report_failure(self, title: str, message: str) -> None:
         """Report that a command could not be carried out."""
 
@@ -326,6 +339,7 @@ class ApplicationWorkflow:
                 "Source video could not be added", str(error)
             )
             return None
+        relative_path = self._document.relative_source_video_path(video_path)
         analysis = self.analysis
         try:
             with analysis.transaction():
@@ -336,6 +350,7 @@ class ApplicationWorkflow:
                 source_video = analysis.add_or_relink_source_video(
                     video_path.name,
                     str(video_path),
+                    relative_path=relative_path,
                     duration_ms=probed.duration_ms,
                     byte_size=probed.byte_size,
                     fingerprint=probed.fingerprint,
@@ -397,6 +412,92 @@ class ApplicationWorkflow:
             return False
         self._document_changed()
         self._source_video_removed(source_video_id)
+        return True
+
+    def is_source_video_available(self, source_video_id: UUID) -> bool:
+        """Whether this Source video currently resolves to real media.
+
+        Backed entirely by :meth:`AnalysisDocument.resolve_source_video`, so
+        it tries only the recorded location and the location relative to the
+        Analysis file — never an arbitrary search — and mutates nothing.
+        """
+        return self._document.is_source_video_available(source_video_id)
+
+    def relink_source_video(self, source_video_id: UUID) -> bool:
+        """Ask for replacement media and relink it to an unavailable Source video."""
+        try:
+            source_video = self.analysis.source_video(source_video_id)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Source video could not be relinked", str(error)
+            )
+            return False
+        chosen = self._presenter.choose_replacement_media(source_video.display_name)
+        if not chosen:
+            return False
+        return self.relink_source_video_file(source_video_id, chosen)
+
+    def relink_source_video_file(self, source_video_id: UUID, path: str | Path) -> bool:
+        """Point a Source video at replacement media, verifying its identity first.
+
+        Size, duration, and sampled fingerprint all matching what is already
+        on record relinks immediately and keeps every existing Clip exactly
+        as it was — the same silent continuity `add_or_relink_source_video`
+        gives a moved video found again by normal adding. Anything else,
+        including a Source video that was never probed to begin with, is a
+        real replacement question and needs the analyst's explicit
+        confirmation, which warns that existing Clip timestamps may no
+        longer describe this new media. A probe failure, an unknown Source
+        video, a declined confirmation, or a rejected domain change all
+        leave the Source video exactly as unavailable as it was — nothing
+        here writes to the Analysis until identity is settled one way or
+        the other.
+        """
+        if not path:
+            return False
+        video_path = Path(path)
+        try:
+            probed = self._media_probe.probe(video_path)
+        except OSError as error:
+            self._presenter.report_failure(
+                "Replacement media could not be read", str(error)
+            )
+            return False
+        try:
+            existing = self.analysis.source_video(source_video_id)
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Source video could not be relinked", str(error)
+            )
+            return False
+        verified = (
+            existing.byte_size is not None
+            and existing.duration_ms is not None
+            and existing.fingerprint is not None
+            and existing.byte_size == probed.byte_size
+            and existing.duration_ms == probed.duration_ms
+            and existing.fingerprint == probed.fingerprint
+        )
+        if not verified and not self._presenter.confirm_source_video_replacement(
+            existing.display_name
+        ):
+            return False
+        relative_path = self._document.relative_source_video_path(video_path)
+        try:
+            self.analysis.relink_source_video(
+                source_video_id,
+                str(video_path),
+                relative_path=relative_path,
+                duration_ms=probed.duration_ms,
+                byte_size=probed.byte_size,
+                fingerprint=probed.fingerprint,
+            )
+        except AnalysisError as error:
+            self._presenter.report_failure(
+                "Source video could not be relinked", str(error)
+            )
+            return False
+        self._document_changed()
         return True
 
     def add_dropped_source_video(self, path: str | Path) -> bool:

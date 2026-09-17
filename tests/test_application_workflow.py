@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -27,9 +28,13 @@ class FakePresenter:
         self.analysis_to_open: str | None = None
         self.analysis_destination: str | None = None
         self.source_video: str | None = None
+        self.replacement_media: str | None = None
+        self.replacement_confirmed = False
         self.unsaved_prompts = 0
         self.external_change_prompts = 0
         self.recovery_offers = 0
+        self.replacement_confirmation_prompts = 0
+        self.replacement_confirmation_names: list[str] = []
         self.suggested_names: list[str] = []
         self.failures: list[tuple[str, str]] = []
 
@@ -54,6 +59,14 @@ class FakePresenter:
 
     def choose_source_video(self) -> str | None:
         return self.source_video
+
+    def choose_replacement_media(self, display_name: str) -> str | None:
+        return self.replacement_media
+
+    def confirm_source_video_replacement(self, display_name: str) -> bool:
+        self.replacement_confirmation_prompts += 1
+        self.replacement_confirmation_names.append(display_name)
+        return self.replacement_confirmed
 
     def report_failure(self, title: str, message: str) -> None:
         self.failures.append((title, message))
@@ -99,9 +112,12 @@ class FakeMediaProbe:
 
     def __init__(self) -> None:
         self.by_path: dict[Path, ProbedMedia] = {}
+        self.unreadable: set[Path] = set()
         self.default = ProbedMedia(byte_size=1, fingerprint="fake", duration_ms=None)
 
     def probe(self, path: Path) -> ProbedMedia:
+        if path in self.unreadable:
+            raise OSError(f"cannot read {path}")
         return self.by_path.get(path, self.default)
 
 
@@ -720,6 +736,209 @@ def test_a_moved_source_video_relinks_instead_of_duplicating(
     assert len(workflow.analysis.source_videos) == 1
     assert workflow.analysis.clip(clip.id).source_video_id == original.id
     assert presenter.failures == []
+
+
+# --- Relinking an unavailable Source video ----------------------------------
+
+
+def test_a_source_video_with_no_file_at_its_location_is_unavailable(
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    probe = FakeMediaProbe()
+    video_path = _video(tmp_path)
+    workflow = ApplicationWorkflow(presenter, media_probe=probe)
+    source_video = workflow.add_source_video_file(video_path)
+    assert source_video is not None
+
+    video_path.unlink()
+
+    assert workflow.is_source_video_available(source_video.id) is False
+
+
+def test_a_verified_match_relinks_without_asking_for_confirmation(
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    probe = FakeMediaProbe()
+    original_path = tmp_path / "match.mp4"
+    original_path.write_bytes(b"original")
+    identity = ProbedMedia(
+        byte_size=999, fingerprint="sampled-sha256:abc", duration_ms=2_700_000
+    )
+    probe.by_path[original_path] = identity
+    workflow = ApplicationWorkflow(presenter, media_probe=probe)
+    source_video = workflow.add_source_video_file(original_path)
+    assert source_video is not None
+    clip = workflow.analysis.add_clip(source_video.id, "Fast break", 1_000, 2_000)
+    original_path.unlink()
+
+    replacement_path = tmp_path / "recovered.mp4"
+    replacement_path.write_bytes(b"recovered copy")
+    probe.by_path[replacement_path] = identity
+
+    relinked = workflow.relink_source_video_file(source_video.id, replacement_path)
+
+    assert relinked is True
+    assert presenter.replacement_confirmation_prompts == 0
+    assert workflow.is_source_video_available(source_video.id) is True
+    assert workflow.analysis.source_video(source_video.id).location == str(
+        replacement_path
+    )
+    assert workflow.analysis.clip(clip.id).source_video_id == source_video.id
+    assert presenter.failures == []
+
+
+def test_a_mismatched_replacement_requires_explicit_confirmation(
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    probe = FakeMediaProbe()
+    original_path = tmp_path / "match.mp4"
+    original_path.write_bytes(b"original")
+    probe.by_path[original_path] = ProbedMedia(
+        byte_size=999, fingerprint="sampled-sha256:abc", duration_ms=2_700_000
+    )
+    workflow = ApplicationWorkflow(presenter, media_probe=probe)
+    source_video = workflow.add_source_video_file(original_path)
+    assert source_video is not None
+    original_path.unlink()
+
+    unrelated_path = tmp_path / "unrelated.mp4"
+    unrelated_path.write_bytes(b"something else entirely")
+    probe.by_path[unrelated_path] = ProbedMedia(
+        byte_size=12, fingerprint="sampled-sha256:different", duration_ms=500
+    )
+    presenter.replacement_confirmed = True
+
+    relinked = workflow.relink_source_video_file(source_video.id, unrelated_path)
+
+    assert relinked is True
+    assert presenter.replacement_confirmation_prompts == 1
+    assert presenter.replacement_confirmation_names == [source_video.display_name]
+    assert workflow.analysis.source_video(source_video.id).fingerprint == (
+        "sampled-sha256:different"
+    )
+
+
+def test_declining_the_mismatch_confirmation_leaves_the_source_video_unavailable(
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    probe = FakeMediaProbe()
+    original_path = tmp_path / "match.mp4"
+    original_path.write_bytes(b"original")
+    probe.by_path[original_path] = ProbedMedia(
+        byte_size=999, fingerprint="sampled-sha256:abc", duration_ms=2_700_000
+    )
+    workflow = ApplicationWorkflow(presenter, media_probe=probe)
+    source_video = workflow.add_source_video_file(original_path)
+    assert source_video is not None
+    clip = workflow.analysis.add_clip(source_video.id, "Fast break", 1_000, 2_000)
+    original_path.unlink()
+    revision = workflow.analysis.revision
+
+    unrelated_path = tmp_path / "unrelated.mp4"
+    unrelated_path.write_bytes(b"something else entirely")
+    probe.by_path[unrelated_path] = ProbedMedia(
+        byte_size=12, fingerprint="sampled-sha256:different", duration_ms=500
+    )
+    presenter.replacement_confirmed = False
+
+    relinked = workflow.relink_source_video_file(source_video.id, unrelated_path)
+
+    assert relinked is False
+    assert workflow.analysis.revision == revision
+    assert workflow.analysis.source_video(source_video.id).location == str(
+        original_path
+    )
+    assert workflow.analysis.clip(clip.id).source_video_id == source_video.id
+    assert workflow.is_source_video_available(source_video.id) is False
+
+
+def test_relinking_an_unknown_source_video_is_reported_rather_than_raised(
+    workflow: ApplicationWorkflow,
+    presenter: FakePresenter,
+) -> None:
+    """A stale Source-video id must be reported, not raised past the Slot.
+
+    `relink_source_video` looks the Source video up first, to name it in the
+    replacement-media dialog; that lookup can fail exactly like every other
+    domain call in this module, and must fail the same way — reported to the
+    presenter — rather than letting `UnknownEntityError` escape uncaught.
+    """
+    assert workflow.relink_source_video(uuid4()) is False
+    assert len(presenter.failures) == 1
+
+
+def test_a_cancelled_relink_dialog_leaves_the_source_video_unavailable(
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    probe = FakeMediaProbe()
+    video_path = _video(tmp_path)
+    workflow = ApplicationWorkflow(presenter, media_probe=probe)
+    source_video = workflow.add_source_video_file(video_path)
+    assert source_video is not None
+    video_path.unlink()
+    presenter.replacement_media = None
+
+    relinked = workflow.relink_source_video(source_video.id)
+
+    assert relinked is False
+    assert presenter.replacement_confirmation_prompts == 0
+    assert workflow.is_source_video_available(source_video.id) is False
+
+
+def test_a_failed_probe_during_relink_leaves_the_source_video_unavailable(
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    probe = FakeMediaProbe()
+    video_path = _video(tmp_path)
+    workflow = ApplicationWorkflow(presenter, media_probe=probe)
+    source_video = workflow.add_source_video_file(video_path)
+    assert source_video is not None
+    video_path.unlink()
+    unreadable_path = tmp_path / "corrupt.mp4"
+    probe.unreadable.add(unreadable_path)
+
+    relinked = workflow.relink_source_video_file(source_video.id, unreadable_path)
+
+    assert relinked is False
+    assert len(presenter.failures) == 1
+    assert workflow.is_source_video_available(source_video.id) is False
+
+
+def test_relinking_records_a_relative_path_for_a_future_moved_together_open(
+    presenter: FakePresenter,
+    tmp_path: Path,
+) -> None:
+    probe = FakeMediaProbe()
+    videos_directory = tmp_path / "videos"
+    videos_directory.mkdir()
+    original_path = videos_directory / "match.mp4"
+    original_path.write_bytes(b"original")
+    identity = ProbedMedia(
+        byte_size=999, fingerprint="sampled-sha256:abc", duration_ms=2_700_000
+    )
+    probe.by_path[original_path] = identity
+    workflow = ApplicationWorkflow(presenter, media_probe=probe)
+    source_video = workflow.add_source_video_file(original_path)
+    assert source_video is not None
+    workflow.document.save_as(tmp_path / "match.analysis")
+    original_path.unlink()
+
+    replacement_path = videos_directory / "recovered.mp4"
+    replacement_path.write_bytes(b"recovered copy")
+    probe.by_path[replacement_path] = identity
+
+    relinked = workflow.relink_source_video_file(source_video.id, replacement_path)
+
+    assert relinked is True
+    assert workflow.analysis.source_video(source_video.id).relative_path == (
+        "videos/recovered.mp4"
+    )
 
 
 def test_renaming_a_source_video_keeps_its_clips(

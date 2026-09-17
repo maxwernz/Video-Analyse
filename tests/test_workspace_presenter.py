@@ -186,17 +186,81 @@ def test_a_source_video_is_chosen_with_the_video_filter(
     assert SOURCE_VIDEO_FILE_FILTER in dialog.everything_passed
 
 
+def test_replacement_media_is_chosen_with_the_video_filter(
+    presenter: WorkspacePresenter, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    video = tmp_path / "halbzeit-1-ersatz.mp4"
+    dialog = _stand_in_for(
+        monkeypatch, "getOpenFileName", (str(video), SOURCE_VIDEO_FILE_FILTER)
+    )
+
+    assert presenter.choose_replacement_media("Halbzeit 1") == str(video)
+    assert SOURCE_VIDEO_FILE_FILTER in dialog.everything_passed
+
+
+def test_a_dismissed_replacement_media_dialog_means_no_file(
+    presenter: WorkspacePresenter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stand_in_for(monkeypatch, "getOpenFileName", ("", ""))
+
+    assert presenter.choose_replacement_media("Halbzeit 1") is None
+
+
+# --- Confirming a mismatched replacement -----------------------------------
+
+
+def test_confirming_the_replacement_reads_yes_as_confirmed(
+    presenter: WorkspacePresenter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        QMessageBox, "exec", lambda _self: int(QMessageBox.StandardButton.Yes)
+    )
+
+    assert presenter.confirm_source_video_replacement("Halbzeit 1") is True
+
+
+@pytest.mark.parametrize(
+    "button",
+    [QMessageBox.StandardButton.No, QMessageBox.StandardButton.NoButton],
+    ids=["declined", "dismissed"],
+)
+def test_declining_or_dismissing_the_replacement_confirmation_reads_as_no(
+    presenter: WorkspacePresenter,
+    monkeypatch: pytest.MonkeyPatch,
+    button: QMessageBox.StandardButton,
+) -> None:
+    monkeypatch.setattr(QMessageBox, "exec", lambda _self: int(button))
+
+    assert presenter.confirm_source_video_replacement("Halbzeit 1") is False
+
+
+def test_the_replacement_confirmation_names_the_source_video(
+    presenter: WorkspacePresenter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    offered: list[QMessageBox] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "exec",
+        lambda self: offered.append(self) or int(QMessageBox.StandardButton.No),
+    )
+
+    presenter.confirm_source_video_replacement("Halbzeit 1")
+
+    assert "Halbzeit 1" in offered[0].text()
+
+
 @pytest.mark.parametrize(
     ("chooser", "request_file"),
     [
         ("getOpenFileName", lambda p: p.choose_analysis_to_open()),
         ("getOpenFileName", lambda p: p.choose_source_video()),
+        ("getOpenFileName", lambda p: p.choose_replacement_media("Halbzeit 1")),
         (
             "getSaveFileName",
             lambda p: p.choose_analysis_destination("Analyse.analysis"),
         ),
     ],
-    ids=["open-analysis", "add-video", "save-analysis"],
+    ids=["open-analysis", "add-video", "relink-video", "save-analysis"],
 )
 def test_no_file_dialog_asks_qt_to_draw_its_own(
     presenter: WorkspacePresenter,

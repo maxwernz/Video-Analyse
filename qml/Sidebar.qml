@@ -312,8 +312,25 @@ Rectangle {
                 sourceSize.width: Theme.iconSize * 2
                 sourceSize.height: Theme.iconSize * 2
                 smooth: true
+                visible: videoItem.model.available
                 source: Theme.icon("film", videoItem.model.active ? Theme.text
                                                                   : Theme.textMuted)
+            }
+
+            // Unavailability is a display state, not an error: the row still
+            // reads and still offers Relink, it just cannot show a frame for
+            // a Source video nothing currently backs.
+            Image {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                anchors.leftMargin: Theme.gutter
+                width: Theme.iconSize
+                height: Theme.iconSize
+                sourceSize.width: Theme.iconSize * 2
+                sourceSize.height: Theme.iconSize * 2
+                smooth: true
+                visible: !videoItem.model.available
+                source: Theme.icon("triangle-alert", Theme.warning)
             }
 
             // The full-row hit target for selecting this Source video.
@@ -462,6 +479,15 @@ Rectangle {
                     font.pixelSize: Theme.sizeBody
                     font.weight: Theme.regular
                 }
+
+                Text {
+                    visible: !videoItem.model.available
+                    text: "·  Nicht verfügbar"
+                    color: Theme.warning
+                    font.family: Theme.uiFamily
+                    font.pixelSize: Theme.sizeBody
+                    font.weight: Theme.medium
+                }
             }
 
             // Reorder and remove: shown on hover so the resting row reads as
@@ -475,6 +501,17 @@ Rectangle {
                 anchors { right: parent.right; rightMargin: Theme.gutter; verticalCenter: parent.verticalCenter }
                 spacing: 0
                 visible: videoArea.containsMouse || videoItem.removeArmed
+                         || !videoItem.model.available
+
+                // Always offered while unavailable, not just on hover: an
+                // analyst scanning the Videos tab for what needs attention
+                // should not have to hover every row to find the control.
+                IconButton {
+                    iconName: "rotate-cw"
+                    tooltip: "Ersatzmedia auswählen"
+                    visible: !videoItem.model.available
+                    onClicked: workspace.relinkSourceVideo(videoItem.sourceId)
+                }
 
                 IconButton {
                     // No "chevron-up" is vendored in assets/icons/lucide/ —
