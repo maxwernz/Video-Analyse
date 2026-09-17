@@ -579,8 +579,23 @@ class ApplicationWorkflow:
         Analysis it was protecting no longer needs Recovery data. Deciding
         that remains `discard_recovery`'s job, reached only through an
         actual save or an accepted close.
+
+        `RecoveryScheduler.cancel` is all the Protocol promises, and it is
+        all a bare test double needs to give it: `.cancel()` alone is enough
+        to stop a fake, non-Qt scheduler from ever running its pending call.
+        `_TimerRecoveryScheduler` additionally offers `shutdown`, which
+        latches itself permanently inert — closing the one gap `cancel`
+        alone cannot, a real `QTimer.timeout` already queued on the event
+        loop the instant before this runs. This is the one place that
+        distinction is allowed to matter: it is checked here, next to the
+        scheduler it belongs to, rather than by `WorkspaceViewModel`
+        reaching past this class to decide how to tear one down.
         """
-        self._recovery_scheduler.cancel()
+        shutdown = getattr(self._recovery_scheduler, "shutdown", None)
+        if shutdown is not None:
+            shutdown()
+        else:
+            self._recovery_scheduler.cancel()
 
     def _write_recovery_snapshot(self) -> None:
         try:
