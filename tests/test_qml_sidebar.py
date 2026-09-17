@@ -33,6 +33,24 @@ QML_ROOT = Path(__file__).parents[1] / "qml"
 FIRST_HALF = "/videos/halbzeit-1.mp4"
 SECOND_HALF = "/videos/halbzeit-2.mp4"
 
+
+class _InertRecoveryScheduler:
+    """A Recovery scheduler that never arms a real `QTimer`.
+
+    This surface is torn down at the end of every test, but the Qt event
+    loop is shared for the whole session, so a real `_TimerRecoveryScheduler`
+    left ticking past that teardown would still be live enough to fire into
+    whatever the view and view model happen to have become by the time it
+    does. Injecting this instead removes the only real Qt timer this fixture
+    would otherwise leave behind.
+    """
+
+    def schedule(self, run: object) -> None:
+        return None
+
+    def cancel(self) -> None:
+        return None
+
 #: The sidebar at its default width, and tall enough for every row.
 SIDEBAR_WIDTH = 300
 SIDEBAR_HEIGHT = 600
@@ -91,7 +109,11 @@ class Sidebar:
 
 @pytest.fixture
 def sidebar(application: QApplication, analysis: Analysis):
-    workspace = WorkspaceViewModel(AnalysisDocument(analysis), FakePlayback())
+    workspace = WorkspaceViewModel(
+        AnalysisDocument(analysis),
+        FakePlayback(),
+        recovery_scheduler=_InertRecoveryScheduler(),
+    )
     workspace.refresh()
 
     view = QQuickView()
@@ -118,8 +140,14 @@ def sidebar(application: QApplication, analysis: Analysis):
 
     yield surface
 
+    # Taken down rather than only closed and left to Python's garbage
+    # collector: a window's C++ object left to a deferred, GC-timed
+    # collection can stay alive — with everything parented to it, including
+    # any real Qt timer — for an indeterminate stretch of later tests.
     view.close()
     view.setSource(QUrl())
+    view.deleteLater()
+    application.processEvents()
 
 
 #: The rows the fixture's Analysis produces, top to bottom.

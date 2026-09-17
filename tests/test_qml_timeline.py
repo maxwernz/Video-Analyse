@@ -45,6 +45,24 @@ SHORT_CLIP_END_MS = 106_800
 TRACK_Y = 40
 
 
+class _InertRecoveryScheduler:
+    """A Recovery scheduler that never arms a real `QTimer`.
+
+    This surface is torn down at the end of every test, but the Qt event
+    loop is shared for the whole session, so a real `_TimerRecoveryScheduler`
+    left ticking past that teardown would still be live enough to fire into
+    whatever the view and view model happen to have become by the time it
+    does. Injecting this instead removes the only real Qt timer this fixture
+    would otherwise leave behind.
+    """
+
+    def schedule(self, run: object) -> None:
+        return None
+
+    def cancel(self) -> None:
+        return None
+
+
 @pytest.fixture(scope="session")
 def application() -> QApplication:
     return QApplication.instance() or QApplication([])
@@ -107,7 +125,11 @@ def short_clip(analysis: Analysis) -> Clip:
 
 @pytest.fixture
 def surface(application: QApplication, analysis: Analysis, short_clip: Clip):
-    workspace = WorkspaceViewModel(AnalysisDocument(analysis), FakePlayback())
+    workspace = WorkspaceViewModel(
+        AnalysisDocument(analysis),
+        FakePlayback(),
+        recovery_scheduler=_InertRecoveryScheduler(),
+    )
     workspace.refresh()
 
     view = QQuickView()
@@ -126,7 +148,14 @@ def surface(application: QApplication, analysis: Analysis, short_clip: Clip):
 
     yield Surface(view, workspace)
 
+    # Taken down rather than only closed and left to Python's garbage
+    # collector: a window's C++ object left to a deferred, GC-timed
+    # collection can stay alive — with everything parented to it, including
+    # any real Qt timer — for an indeterminate stretch of later tests.
     view.close()
+    view.setSource(QUrl())
+    view.deleteLater()
+    QGuiApplication.processEvents()
 
 
 # --- The grammar (ADR 0006) --------------------------------------------------

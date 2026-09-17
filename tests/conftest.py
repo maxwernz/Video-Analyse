@@ -19,10 +19,25 @@ of an opt-in every test author has to remember.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QStandardPaths
+
+# Every QML test tears one `QQuickView`/`QQuickWindow` down and, a few tests
+# later, brings another one up in the same process — this suite builds and
+# destroys dozens of them across `test_qml_*.py`. Qt Quick's default render
+# loop hands that lifecycle to a dedicated render thread whose shutdown is
+# itself asynchronous (it posts back to the GUI thread once its GPU context
+# is torn down), so a next window's construction can race a previous one's
+# still-finishing render-thread teardown. `offscreen` gives every platform
+# the same software rasteriser regardless, so there is no GPU throughput to
+# lose by asking Qt to render on the GUI thread instead — `basic` — which
+# removes that thread handoff, and with it the race, entirely. Set once here,
+# before any test module (and therefore any `QQuickView`) exists, so it is
+# not a property of which `test_qml_*.py` file happens to run first.
+os.environ.setdefault("QSG_RENDER_LOOP", "basic")
 
 
 @pytest.fixture(autouse=True)
