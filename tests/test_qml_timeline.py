@@ -25,6 +25,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 import timecode  # noqa: E402
 from analysis import Analysis, AnalysisDocument, Clip  # noqa: E402
+from app_runtime import register_bundled_fonts  # noqa: E402
 from playback import FakePlayback  # noqa: E402
 from workspace_view_model import WorkspaceViewModel  # noqa: E402
 
@@ -65,7 +66,18 @@ class _InertRecoveryScheduler:
 
 @pytest.fixture(scope="session")
 def application() -> QApplication:
-    return QApplication.instance() or QApplication([])
+    instance = QApplication.instance() or QApplication([])
+    # The bundled monospace has to be registered before anything measures
+    # a timecode: `Theme.monoFamily` names a family Qt only knows after
+    # this call, and an unregistered name silently falls back to whatever
+    # the platform substitutes — a different width on every platform, so a
+    # field sized correctly for the real face reads as overflowing. The
+    # application registers these fonts before it shows a window; a test
+    # that builds its own `QApplication` has to do the same or it measures
+    # a face the analyst never sees.
+    register_bundled_fonts()
+    assert isinstance(instance, QApplication)
+    return instance
 
 
 def x_of(position_ms: int) -> int:

@@ -13,6 +13,7 @@ from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from analysis import Analysis, AnalysisDocument  # noqa: E402
+from app_runtime import register_bundled_fonts  # noqa: E402
 from playback import FakePlayback  # noqa: E402
 from qml_icons import install_icon_provider  # noqa: E402
 from workspace_view_model import WorkspaceViewModel  # noqa: E402
@@ -54,6 +55,15 @@ def _visual_child(item: QQuickItem, name: str) -> QQuickItem | None:
 
 def test_category_removal_is_armed_in_the_row_and_states_its_clip_effect() -> None:
     application = QApplication.instance() or QApplication([])
+    # The bundled monospace has to be registered before anything measures
+    # a timecode: `Theme.monoFamily` names a family Qt only knows after
+    # this call, and an unregistered name silently falls back to whatever
+    # the platform substitutes — a different width on every platform, so a
+    # field sized correctly for the real face reads as overflowing. The
+    # application registers these fonts before it shows a window; a test
+    # that builds its own `QApplication` has to do the same or it measures
+    # a face the analyst never sees.
+    register_bundled_fonts()
     analysis = Analysis("Match")
     source = analysis.add_source_video("half.mp4", "/videos/half.mp4")
     category = analysis.add_category("Angriff", "#EF4444")

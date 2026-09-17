@@ -45,7 +45,15 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Property, QObject, QStandardPaths, QUrl, Signal, Slot
+from PySide6.QtCore import (
+    Property,
+    QDir,
+    QObject,
+    QStandardPaths,
+    QUrl,
+    Signal,
+    Slot,
+)
 
 from analysis import ExternalChangeChoice, UnsavedChangesChoice
 from application_workflow import ANALYSIS_FILE_FILTER, SOURCE_VIDEO_FILE_FILTER
@@ -196,11 +204,24 @@ class WorkspacePresenter(QObject):
         Not a plain string: a `FileDialog.selectedFile` is a `url`, and only
         a `QUrl` can be asked whether it is actually a local file before
         anything treats it as a path.
+
+        The path is handed on in the platform's own notation, because
+        `QUrl.toLocalFile` answers in forward slashes on every platform. What
+        leaves here becomes a Source video's `location` in a saved Analysis
+        and is read back to the analyst, so a Windows Analysis would
+        otherwise record `C:/…` where the rest of that system writes `C:\…`.
+        Only the *relative* path an Analysis stores is deliberately POSIX
+        text, and `analysis.location` owns that conversion — a native
+        `location` is the shape it already expects.
         """
 
         callback, self._file_dialog_callback = self._file_dialog_callback, None
         if callback is not None:
-            callback(url.toLocalFile() if url.isLocalFile() else None)
+            callback(
+                QDir.toNativeSeparators(url.toLocalFile())
+                if url.isLocalFile()
+                else None
+            )
 
     @Slot()
     def fileDialogCancelled(self) -> None:
