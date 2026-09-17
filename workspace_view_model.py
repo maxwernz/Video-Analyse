@@ -303,9 +303,6 @@ class WorkspaceViewModel(QObject):
     ) -> None:
         super().__init__(parent)
         self._menu_shortcut_filter: _MenuShortcutFilter | None = None
-        self._recovery_scheduler: RecoveryScheduler = (
-            recovery_scheduler or _TimerRecoveryScheduler(self)
-        )
         self._workflow = ApplicationWorkflow(
             presenter if presenter is not None else _NobodyToAsk(),
             document=document,
@@ -315,7 +312,7 @@ class WorkspaceViewModel(QObject):
             on_source_video_removed=self._source_video_removed,
             template_store=template_store or installation_category_template_store(),
             recovery_store=recovery_store,
-            recovery_scheduler=self._recovery_scheduler,
+            recovery_scheduler=recovery_scheduler or _TimerRecoveryScheduler(self),
         )
         # Every `documentChanged` emission, from wherever it comes, is
         # offered to the workflow; only one that actually moved
@@ -328,10 +325,10 @@ class WorkspaceViewModel(QObject):
         # `QTimer` — are torn down, so this is the last safe moment to
         # silence a pending debounce from inside the object it belongs to,
         # rather than trusting every caller to close the workspace properly
-        # first. `_shutdown_recovery` touches no Qt state of its own — the
-        # scheduler and the workflow underneath it are plain Python objects
-        # — so it is safe to run here even mid-teardown.
-        self.destroyed.connect(self._shutdown_recovery)
+        # first. `cancel_pending_recovery` touches no Qt state of its own —
+        # the scheduler and the workflow underneath it are plain Python
+        # objects — so it is safe to run here even mid-teardown.
+        self.destroyed.connect(self._workflow.cancel_pending_recovery)
         self._document = document
         self._template_store = self._workflow.template_store
         self._playback = playback
@@ -1584,26 +1581,6 @@ class WorkspaceViewModel(QObject):
         """The Analysis or its saved state changed; redraw what says so."""
 
         self.documentChanged.emit()
-
-    def _shutdown_recovery(self) -> None:
-        """Silence a pending Recovery debounce as this object is destroyed.
-
-        Reached from `destroyed`, so this is not a substitute for
-        `requestClose` discarding Recovery on a clean exit — that still
-        decides whether the *stored* snapshot is kept. This only makes sure
-        nothing tries to write another one into a workspace that is gone.
-        `_TimerRecoveryScheduler.shutdown` latches itself inert rather than
-        merely stopping the timer, which is what protects against a
-        `timeout` already queued the instant before this ran; a bare
-        `RecoveryScheduler` — the Protocol every test double satisfies — is
-        given `cancel()` instead, which is all its contract promises.
-        """
-
-        shutdown = getattr(self._recovery_scheduler, "shutdown", None)
-        if shutdown is not None:
-            shutdown()
-        else:
-            self._recovery_scheduler.cancel()
 
     # --- The Active Source video ------------------------------------------
 
