@@ -37,6 +37,7 @@ from app_runtime import register_bundled_fonts  # noqa: E402
 from application_workflow import UNTITLED_ANALYSIS_TITLE  # noqa: E402
 from playback import FakePlayback  # noqa: E402
 from qml_runtime import build_engine  # noqa: E402
+from workspace_presenter import WorkspacePresenter  # noqa: E402
 from workspace_view_model import WorkspaceViewModel  # noqa: E402
 
 
@@ -220,17 +221,29 @@ class _AnswersEverything:
         self.destination = destination
         self.source_video = source_video
 
-    def ask_unsaved_changes(self) -> UnsavedChangesChoice:
-        return UnsavedChangesChoice.DISCARD
+    def ask_unsaved_changes(self, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(UnsavedChangesChoice.DISCARD)
 
-    def choose_analysis_to_open(self) -> str | None:
-        return self.to_open
+    def choose_analysis_to_open(self, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(self.to_open)
 
-    def choose_analysis_destination(self, suggested_name: str) -> str | None:
-        return self.destination
+    def choose_analysis_destination(self, suggested_name: str, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(self.destination)
 
-    def choose_source_video(self) -> str | None:
-        return self.source_video
+    def choose_source_video(self, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(self.source_video)
+
+    def choose_replacement_media(self, display_name: str, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(None)
+
+    def confirm_source_video_replacement(self, display_name: str, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(False)
+
+    def ask_external_change_conflict(self, on_result) -> None:  # type: ignore[no-untyped-def]
+        raise AssertionError("unexpected external-change question")
+
+    def offer_recovered_analysis(self, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(False)
 
     def report_failure(self, title: str, message: str) -> None:
         raise AssertionError(f"{title}: {message}")
@@ -298,7 +311,16 @@ def _shell(
 ) -> tuple[QQmlApplicationEngine, QQmlComponent, QObject]:
     """The real window, over a workspace a test can look at afterwards."""
 
-    engine = build_engine(QML_ROOT, context_objects={"workspace": view_model})
+    # `Dialogs.qml`, part of the shell, binds straight to a `presenter`
+    # context object (issue #69) whether or not this test's own dialogs
+    # ever fire through it. Note it is a *different* object from whatever
+    # `WorkflowPresenter` `view_model` was built with above: this one only
+    # has to satisfy the QML engine's bindings, never actually answer for
+    # the workflow.
+    engine = build_engine(
+        QML_ROOT,
+        context_objects={"workspace": view_model, "presenter": WorkspacePresenter()},
+    )
     component = QQmlComponent(engine, QUrl.fromLocalFile(str(MAIN_QML)))
     assert component.status() == QQmlComponent.Status.Ready, [
         error.toString() for error in component.errors()
