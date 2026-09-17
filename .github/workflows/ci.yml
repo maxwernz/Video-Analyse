@@ -1,10 +1,17 @@
 name: Cross-platform source checks
 
+# Runs on every pull request and push to main, and is also called as a
+# reusable workflow by release.yml so that a tag build exercises exactly the
+# same tests, packaging, and smoke checks as a pull request -- never a
+# parallel, divergent copy of them. This workflow never creates or publishes
+# a GitHub Release; that only happens in release.yml, after this workflow's
+# jobs all succeed.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_call:
 
 jobs:
   test:
@@ -69,6 +76,17 @@ jobs:
           path: dist/*.dmg
           if-no-files-found: error
 
+      - name: Preserve build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-arm64-build-diagnostics
+          path: |
+            build/
+            dist/
+          if-no-files-found: ignore
+          retention-days: 14
+
   package-windows:
     name: Windows x64 package
     # The installer requires Windows 11 (build 22000), which rules out the
@@ -106,3 +124,14 @@ jobs:
           name: windows-x64-installer
           path: dist/*-x64-setup.exe
           if-no-files-found: error
+
+      - name: Preserve build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-x64-build-diagnostics
+          path: |
+            build/
+            dist/
+          if-no-files-found: ignore
+          retention-days: 14
