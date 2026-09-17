@@ -567,21 +567,6 @@ class ApplicationWorkflow:
         self._recovery_scheduler.cancel()
         self._recovery_store.clear()
 
-    def cancel_pending_recovery(self) -> None:
-        """Stop a debounced Recovery write without discarding stored data.
-
-        Unlike :meth:`discard_recovery`, this leaves whatever Recovery
-        snapshot is already on disk untouched — it only stops a pending
-        *write* from happening. It exists for one reason: a
-        `WorkspaceViewModel` being torn down (the window closing, the object
-        going out of scope in a test) must be able to silence its own
-        debounce timer immediately, on its own, without deciding that the
-        Analysis it was protecting no longer needs Recovery data. Deciding
-        that remains `discard_recovery`'s job, reached only through an
-        actual save or an accepted close.
-        """
-        self._recovery_scheduler.cancel()
-
     def _write_recovery_snapshot(self) -> None:
         try:
             self._recovery_store.write(self.analysis, self._document.path)
