@@ -146,7 +146,11 @@ Item {
 
         // These are the `default` and `cancel` semantics the previous
         // QMessageBox carried. A custom QML question does not get either
-        // behaviour for free, so route both Return spellings explicitly.
+        // behaviour for free, so route both Return spellings explicitly,
+        // and route Escape (and any other dismissal) through whichever
+        // button in `buttonModel` is marked `cancel`, exactly the way
+        // `answerDefault` below routes Return through whichever is marked
+        // `default`.
         Shortcut {
             sequence: "Return"
             enabled: question.visible
@@ -175,6 +179,12 @@ Item {
         }
 
         function dismiss() {
+            for (let index = 0; index < question.buttonModel.length; index += 1) {
+                if (question.buttonModel[index].cancel) {
+                    question.answer(question.buttonModel[index].id)
+                    return
+                }
+            }
             question.answer("")
         }
     }

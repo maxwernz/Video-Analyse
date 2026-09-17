@@ -226,6 +226,35 @@ class ApplicationWorkflow:
     def document(self) -> AnalysisDocument:
         return self._document
 
+    def _still_current(self, document: AnalysisDocument) -> bool:
+        """Whether ``document`` is still the Analysis a command started against.
+
+        A continuation captured before an asynchronous dialog round-trips
+        can only see the document that is open *now* — attribute lookup on
+        `self._document` happens when the dialog answers, not when the
+        command began. Between the dialog opening and its answer arriving,
+        `may_replace_analysis` can swap `self._document` with **no dialog of
+        its own**: a New command against a not-dirty document decides
+        instantly, so it slips through the one guard
+        (`WorkspacePresenter`'s pending-callback check) that would otherwise
+        serialise commands, because that guard only serialises *new dialog
+        requests*, not swaps that need no dialog at all. That is exactly the
+        gap issue #69's own diagnosis found the parentless macOS menu bar
+        reaches through while a sheet is open.
+
+        Every command that resumes after an awaited dialog and is about to
+        act on the document it started with — write to it, mutate it, read
+        it to build a write — calls this first and settles as not-done
+        rather than acting on whichever document happens to be open when
+        the answer arrives. Identity (``is``), not equality: a swapped-in
+        document that happens to describe the same Analysis, or even carry
+        the same Source-video id (a Recovery restore of the same file, for
+        instance), is still the wrong target once the one this command
+        started against has been let go.
+        """
+
+        return document is self._document
+
     @property
     def analysis(self) -> Analysis:
         return self._document.analysis
@@ -366,13 +395,25 @@ class ApplicationWorkflow:
         self._write(self._document.save, on_done)
 
     def save_as(self, on_done: Callable[[bool], None] = _ignore_bool) -> None:
-        """Write the Analysis to a destination chosen now."""
+        """Write the Analysis to a destination chosen now.
+
+        The document is captured before the destination dialog opens, and
+        checked with :meth:`_still_current` once it answers: see that
+        method for why a plain `self._document` read in `after_destination`
+        would be reading whatever document is open when the dialog closes,
+        not the one Save As was actually invoked for.
+        """
+
+        document = self._document
 
         def after_destination(destination: str | None) -> None:
             if not destination:
                 on_done(False)
                 return
-            self._write(lambda: self._document.save_as(destination), on_done)
+            if not self._still_current(document):
+                on_done(False)
+                return
+            self._write(lambda: document.save_as(destination), on_done)
 
         _present(
             self._presenter.choose_analysis_destination,
@@ -387,9 +428,22 @@ class ApplicationWorkflow:
         or keeps this one under a new name; none of them writes over either
         file, which is the one outcome an external-change conflict must
         never produce.
+
+        The document is captured before the question opens: both the
+        Save As and the Reload branch below would otherwise act on whatever
+        is open when the question is answered rather than the document
+        this Save actually started against (see :meth:`_still_current`).
+        Save As is guarded again, independently, inside :meth:`save_as`
+        itself — it has its own dialog and its own gap — so this check
+        only has to cover Reload and the moment the choice arrives.
         """
 
+        document = self._document
+
         def after_choice(choice: ExternalChangeChoice) -> None:
+            if not self._still_current(document):
+                on_done(False)
+                return
             if choice is ExternalChangeChoice.SAVE_AS:
                 self.save_as(on_done)
             elif choice is ExternalChangeChoice.RELOAD:
@@ -445,8 +499,18 @@ class ApplicationWorkflow:
         self,
         on_done: Callable[[SourceVideo | None], None] = _ignore_source_video,
     ) -> None:
+        """Ask for a video file and add it to the Analysis open right now.
+
+        The document is captured before the file dialog opens, so a New or
+        Open that swaps `self._document` while the dialog is pending (see
+        :meth:`_still_current`) is not silently absorbed into whatever
+        Analysis happens to be open when a file is finally chosen.
+        """
+
+        document = self._document
+
         def after_choice(chosen: str | None) -> None:
-            if not chosen:
+            if not chosen or not self._still_current(document):
                 on_done(None)
                 return
             on_done(self.add_source_video_file(chosen))
@@ -564,7 +628,15 @@ class ApplicationWorkflow:
         source_video_id: UUID,
         on_done: Callable[[bool], None] = _ignore_bool,
     ) -> None:
-        """Ask for replacement media and relink it to an unavailable Source video."""
+        """Ask for replacement media and relink it to an unavailable Source video.
+
+        The document is captured before the file dialog opens (see
+        :meth:`_still_current`): a document swapped in while the analyst is
+        still choosing a file could coincidentally hold a Source video with
+        the same id — a Recovery restore of the same file, say — so a
+        UUID-only re-lookup inside `relink_source_video_file` cannot be
+        trusted alone to catch a mid-flight swap.
+        """
 
         try:
             source_video = self.analysis.source_video(source_video_id)
@@ -575,8 +647,10 @@ class ApplicationWorkflow:
             on_done(False)
             return
 
+        document = self._document
+
         def after_choice(chosen: str | None) -> None:
-            if not chosen:
+            if not chosen or not self._still_current(document):
                 on_done(False)
                 return
             self.relink_source_video_file(source_video_id, chosen, on_done)
@@ -607,10 +681,18 @@ class ApplicationWorkflow:
         leave the Source video exactly as unavailable as it was — nothing
         here writes to the Analysis until identity is settled one way or
         the other.
+
+        The document open when this method was entered is captured and
+        checked again, inside `proceed`, right before either path writes:
+        the unverified branch has its own dialog gap (the confirmation
+        question), and a document swap while that is pending must stop the
+        write exactly as one would if it happened before the file dialog in
+        `relink_source_video` (see :meth:`_still_current`).
         """
         if not path:
             on_done(False)
             return
+        document = self._document
         video_path = Path(path)
         try:
             probed = self._media_probe.probe(video_path)
@@ -621,7 +703,7 @@ class ApplicationWorkflow:
             on_done(False)
             return
         try:
-            existing = self.analysis.source_video(source_video_id)
+            existing = document.analysis.source_video(source_video_id)
         except AnalysisError as error:
             self._presenter.report_failure(
                 "Source video could not be relinked", str(error)
@@ -638,9 +720,12 @@ class ApplicationWorkflow:
         )
 
         def proceed() -> None:
-            relative_path = self._document.relative_source_video_path(video_path)
+            if not self._still_current(document):
+                on_done(False)
+                return
+            relative_path = document.relative_source_video_path(video_path)
             try:
-                self.analysis.relink_source_video(
+                document.analysis.relink_source_video(
                     source_video_id,
                     str(video_path),
                     relative_path=relative_path,

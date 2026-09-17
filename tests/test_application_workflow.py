@@ -451,6 +451,54 @@ def test_replacing_after_an_async_save_waits_for_save_as_to_settle(
     assert workflow.document.dirty is False
 
 
+def test_save_as_does_not_write_a_document_swapped_in_while_its_dialog_was_open(
+    recovery_store: RecoverySnapshotStore, tmp_path: Path
+) -> None:
+    """The stale-read bug found by review, at the workflow seam.
+
+    On macOS the system menu bar is a separate, parentless top-level object
+    that the `FileDialog` sheet does not block. Save As on an already-saved
+    document is a normal thing to do — "save a copy" — so it starts with
+    `dirty == False`; if File > New arrives from that menu while the
+    destination dialog is still open, `may_replace_analysis` decides
+    instantly with no dialog of its own and swaps `self._document` out from
+    under Save As's still-pending continuation. `after_destination` used to
+    read `self._document` by attribute lookup at that point — whatever
+    document was open when the dialog closed, not document A that Save As
+    was invoked for — and would have written empty document B's content to
+    the path the analyst chose to save A under, reporting success. This
+    reproduces that race with `DeferredSavePresenter`, whose destination
+    answer genuinely arrives on a separate turn rather than on the same call
+    stack Save As was invoked from, and asserts the command now settles as
+    not-done and touches neither file.
+    """
+
+    presenter = DeferredSavePresenter()
+    workflow = ApplicationWorkflow(presenter, recovery_store=recovery_store)
+    workflow.analysis.add_source_video("Halbzeit 1", "/videos/halbzeit-1.mp4")
+    workflow.analysis.set_title("Dokument A")
+    outcomes: list[bool] = []
+
+    workflow.save_as(outcomes.append)
+    assert presenter.suggested_names == ["Dokument A.analysis"]
+    assert outcomes == []
+
+    # File > New, reached through the parentless macOS menu bar while the
+    # Save As sheet is still open: no dialog of its own is needed, since
+    # document A is not dirty yet, so the swap happens silently mid-flight.
+    workflow.adopt_document(new_analysis_document())
+    assert workflow.analysis.title == ""
+
+    destination = tmp_path / "dokument-a.analysis"
+    presenter.answer_destination(str(destination))
+
+    assert outcomes == [False]
+    assert not destination.exists()
+    # Document B — the one actually open now — was not written to either.
+    assert workflow.document.path is None
+    assert workflow.analysis.title == ""
+
+
 # --- Open -----------------------------------------------------------------
 
 
