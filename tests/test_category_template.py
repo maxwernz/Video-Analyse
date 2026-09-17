@@ -117,8 +117,10 @@ def test_workflow_uses_its_installation_template_for_new_analyses(tmp_path) -> N
     store.add_category("Konter", "#F59E0B")
     workflow = ApplicationWorkflow(_Presenter(), template_store=store)
 
-    assert workflow.new_analysis() is True
+    results: list[bool] = []
+    workflow.new_analysis(results.append)
 
+    assert results == [True]
     assert [category.name for category in workflow.analysis.categories] == [
         "Abwehr",
         "Angriff",
@@ -128,17 +130,29 @@ def test_workflow_uses_its_installation_template_for_new_analyses(tmp_path) -> N
 
 
 class _Presenter:
-    def ask_unsaved_changes(self):  # type: ignore[no-untyped-def]
+    def ask_unsaved_changes(self, on_result):  # type: ignore[no-untyped-def]
         raise AssertionError("a clean Analysis must not ask")
 
-    def choose_analysis_to_open(self):  # type: ignore[no-untyped-def]
-        return None
+    def choose_analysis_to_open(self, on_result):  # type: ignore[no-untyped-def]
+        on_result(None)
 
-    def choose_analysis_destination(self, suggested_name):  # type: ignore[no-untyped-def]
-        return None
+    def choose_analysis_destination(self, suggested_name, on_result):  # type: ignore[no-untyped-def]
+        on_result(None)
 
-    def choose_source_video(self):  # type: ignore[no-untyped-def]
-        return None
+    def choose_source_video(self, on_result):  # type: ignore[no-untyped-def]
+        on_result(None)
+
+    def choose_replacement_media(self, display_name, on_result):  # type: ignore[no-untyped-def]
+        on_result(None)
+
+    def confirm_source_video_replacement(self, display_name, on_result):  # type: ignore[no-untyped-def]
+        on_result(False)
+
+    def ask_external_change_conflict(self, on_result):  # type: ignore[no-untyped-def]
+        raise AssertionError("unexpected external-change question")
+
+    def offer_recovered_analysis(self, on_result):  # type: ignore[no-untyped-def]
+        on_result(False)
 
     def report_failure(self, title, message):  # type: ignore[no-untyped-def]
         raise AssertionError(f"unexpected failure: {title}: {message}")

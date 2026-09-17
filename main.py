@@ -7,8 +7,10 @@ import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from PIL import ImageFont
+from PySide6.QtCore import QObject
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
 
@@ -43,7 +45,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def build_workspace_context() -> dict[str, WorkspaceViewModel]:
+def build_workspace_context() -> dict[str, QObject]:
     """What the QML window is given, and the whole vocabulary it has.
 
     One view model over one Analysis document and one player. QML never sees
@@ -52,18 +54,26 @@ def build_workspace_context() -> dict[str, WorkspaceViewModel]:
     the same construction `ApplicationWorkflow.new_analysis` uses for File >
     New, so the Analysis an analyst starts from and the one File > New hands
     them cannot diverge. Every document command after that runs through the
-    same workflow — the presenter is the only part of that which knows what a
-    dialog is.
+    same workflow.
+
+    `presenter` is published to QML in its own right, alongside `workspace`,
+    rather than staying a Python-only collaborator behind it. It is the one
+    part of the presentation layer that knows what a dialog is, and since
+    issue #69 that dialog is a QML item `qml/Main.qml` drives straight from
+    `WorkspacePresenter`'s properties and signals — see that module's
+    docstring for why an `exec()`'d `QFileDialog`/`QMessageBox` could not
+    stay the answer.
     """
 
     template_store = installation_category_template_store()
+    presenter = WorkspacePresenter()
     view_model = WorkspaceViewModel(
         new_analysis_document(template_store=template_store),
         MediaPlayerPlayback(),
-        presenter=WorkspacePresenter(),
+        presenter=presenter,
         template_store=template_store,
     )
-    return {"workspace": view_model}
+    return {"workspace": view_model, "presenter": presenter}
 
 
 def _run_smoke_check(app: QApplication, log_path: str) -> dict[str, object]:
@@ -139,18 +149,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
 
         context = build_workspace_context()
-        # Asked before the window is shown: a restored Analysis should be
-        # what the window first draws, not something that replaces an
-        # already-visible empty one a moment later.
-        context["workspace"].offerRecoveryIfAvailable()
+        workspace = cast(WorkspaceViewModel, context["workspace"])
         scene = show_quick_scene_with_fallback(context_objects=context)
+        # The recovery offer is asked only now, after the scene exists — it
+        # is a QML dialog since issue #69, and a QML dialog has nowhere to
+        # draw itself before its window does. `WorkspaceViewModel.
+        # contentReady` is what still keeps an analyst from ever seeing the
+        # empty Analysis this could replace: `qml/Main.qml` holds the
+        # workspace itself back until it settles, so the only thing drawn
+        # before then is the recovery dialog, if there is one to show.
+        workspace.offerRecoveryIfAvailable()
         # On macOS the menu bar is a real QMenuBar with no parent — the system
         # menu bar — so nothing else is holding it, and Close goes through the
         # window, which is where the unsaved-changes question is asked.
         # Everywhere else the menu bar lives inside the QML window, drawn from
         # the same `menu_bar.MENUS`, and nothing is built here.
         menu_bar = (
-            build_menu_bar(context["workspace"], close_window=scene.window.close)
+            build_menu_bar(workspace, close_window=scene.window.close)
             if native_menu_bar_available()
             else None
         )

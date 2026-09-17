@@ -125,6 +125,21 @@ def videos(workspace: WorkspaceViewModel) -> tuple:
     return workspace.sourceModel.rows()
 
 
+def _result(call):  # type: ignore[no-untyped-def]
+    """Run a continuation-based `WorkspaceViewModel` command and read its outcome.
+
+    Every document command became fire-and-forget from QML's side with
+    issue #69; a workspace built with no presenter (`_NobodyToAsk`) or a
+    fake that answers in-line still settles its completion before this
+    returns.
+    """
+
+    results: list[object] = []
+    call(results.append)
+    assert results, "the command's completion was never called"
+    return results[0]
+
+
 # --- The Clip list, grouped by Category -------------------------------------
 
 
@@ -523,18 +538,22 @@ def test_relinking_an_unavailable_source_video_marks_it_available_and_reloads_it
 
     replacement_path = tmp_path / "recovered.mp4"
     replacement_path.write_bytes(b"video")
-    workspace._workflow.relink_source_video = (  # type: ignore[method-assign]
-        lambda source_video_id: document.analysis.relink_source_video(
+
+    def _fake_relink(source_video_id, on_done) -> None:  # type: ignore[no-untyped-def]
+        relinked = document.analysis.relink_source_video(
             source_video_id,
             str(replacement_path),
             duration_ms=1_000,
             byte_size=1,
             fingerprint="fake",
         )
-        is not None
-    )
+        on_done(relinked is not None)
 
-    relinked = workspace.relinkSourceVideo(str(missing_video.id))
+    workspace._workflow.relink_source_video = _fake_relink  # type: ignore[method-assign]
+
+    relinked = _result(
+        lambda on_done: workspace.relinkSourceVideo(str(missing_video.id), on_done)
+    )
     scheduler.elapse()
 
     assert relinked is True
@@ -546,16 +565,22 @@ def test_a_failed_relink_leaves_the_source_video_unavailable(
     workspace: WorkspaceViewModel,
 ) -> None:
     missing = videos(workspace)[0]["sourceId"]
-    workspace._workflow.relink_source_video = lambda source_video_id: False  # type: ignore[method-assign]
+    workspace._workflow.relink_source_video = (  # type: ignore[method-assign]
+        lambda source_video_id, on_done: on_done(False)
+    )
 
-    assert workspace.relinkSourceVideo(missing) is False
+    result = _result(lambda on_done: workspace.relinkSourceVideo(missing, on_done))
+    assert result is False
     assert videos(workspace)[0]["available"] is False
 
 
 def test_relinking_an_unknown_source_video_id_does_nothing(
     workspace: WorkspaceViewModel,
 ) -> None:
-    assert workspace.relinkSourceVideo("not-a-uuid") is False
+    result = _result(
+        lambda on_done: workspace.relinkSourceVideo("not-a-uuid", on_done)
+    )
+    assert result is False
 
 
 def test_choosing_a_source_video_makes_it_the_one_the_player_shows(
@@ -813,7 +838,7 @@ def test_opening_another_analysis_empties_the_lists_of_the_old_one(
     workspace.refresh()
     document.save_as(tmp_path / "spiel.analysis")
 
-    assert workspace.newAnalysis() is True
+    assert _result(workspace.newAnalysis) is True
     scheduler.elapse()
 
     assert clip_rows(workspace) == []

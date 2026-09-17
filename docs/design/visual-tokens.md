@@ -207,6 +207,17 @@ The accent has three permitted uses and a control nobody can press is none of
 them. A disabled primary gives the accent back: `text-faint` on
 `control-disabled`, with the 1px `control-border`.
 
+### Dialogs
+
+The native file panel remains above the window. In-window questions and failure
+notices need the same visual authority over the branded workspace without
+becoming a fourth application surface.
+
+| Metric | Value | Why |
+| --- | --- | --- |
+| Dialog width | 360 | Keeps a consequential question readable without competing with the Clip editor |
+| Dialog layer | 80 | Sits above the window drop layer (60) and every workspace interaction target |
+
 ### Volume
 
 The transport design asks for "volume and mute", and `playback/player.py` now

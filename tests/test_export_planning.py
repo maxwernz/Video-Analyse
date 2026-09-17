@@ -176,32 +176,32 @@ def test_building_and_rearranging_an_export_list_never_arms_recovery(
     from application_workflow import ApplicationWorkflow
 
     class _RefusingPresenter:
-        def ask_unsaved_changes(self):  # pragma: no cover - not exercised
+        def ask_unsaved_changes(self, on_result):  # pragma: no cover - not exercised
             raise AssertionError
 
-        def choose_analysis_to_open(self):
-            return None
+        def choose_analysis_to_open(self, on_result):
+            on_result(None)
 
-        def choose_analysis_destination(self, suggested_name: str):
-            return None
+        def choose_analysis_destination(self, suggested_name: str, on_result):
+            on_result(None)
 
-        def choose_source_video(self):
-            return None
+        def choose_source_video(self, on_result):
+            on_result(None)
 
-        def choose_replacement_media(self, display_name: str):
-            return None
+        def choose_replacement_media(self, display_name: str, on_result):
+            on_result(None)
 
-        def confirm_source_video_replacement(self, display_name: str) -> bool:
-            return False
+        def confirm_source_video_replacement(self, display_name: str, on_result) -> None:
+            on_result(False)
 
         def report_failure(self, title: str, message: str) -> None:
             return None
 
-        def ask_external_change_conflict(self):
+        def ask_external_change_conflict(self, on_result):
             raise AssertionError  # pragma: no cover - not exercised
 
-        def offer_recovered_analysis(self) -> bool:
-            return False
+        def offer_recovered_analysis(self, on_result) -> None:
+            on_result(False)
 
     class _RecordingScheduler:
         def __init__(self) -> None:

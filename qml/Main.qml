@@ -20,6 +20,16 @@ import "."
   are drawn by `MenuBar.qml` from the same definition. `nativeMenuBar` is the
   one place that decides which, and the window's document shortcuts read it
   too, so the sequences are listened for once rather than ambiguously twice.
+
+  Every dialog is `Dialogs.qml`, drawn once here rather than by whichever
+  surface happens to trigger one. See its own header and
+  `workspace_presenter.py`'s for why (issue #69): the platform's `exec()`'d
+  dialogs self-cancel under an ordinary condition this window is in
+  constantly, so the survivor is a QML item instead, and every document
+  command downstream of a dialog is asynchronous now. `contentReady` is the
+  one visible trace of that at this level: it stays false for the moment
+  between this window existing and the startup Recovery offer settling, so
+  that dialog never has an empty Analysis to be asked in front of.
 */
 Window {
     id: window
@@ -59,8 +69,29 @@ Window {
 
     // Every way out of the window — the menu entry, the red button, the
     // platform's own quit — arrives here, so the unsaved-changes question is
-    // asked once and in one place.
-    onClosing: function (close) { close.accepted = workspace.requestClose() }
+    // asked once and in one place. It cannot be answered on this call stack
+    // any more (issue #69: the question may now be a QML dialog, and QML
+    // dialogs are asynchronous), so a close is always provisionally
+    // rejected here and, if `closeDecided` later says yes, replayed through
+    // `closeConfirmed` below rather than accepted on the spot.
+    property bool closeConfirmed: false
+    onClosing: function (close) {
+        if (window.closeConfirmed) {
+            close.accepted = true
+            return
+        }
+        close.accepted = false
+        workspace.requestClose()
+    }
+
+    Connections {
+        target: workspace
+        function onCloseDecided(mayClose) {
+            if (!mayClose) return
+            window.closeConfirmed = true
+            window.close()
+        }
+    }
 
     // The in-window menu bar, and nothing at all where the system has one.
     MenuBar {
@@ -85,6 +116,10 @@ Window {
         id: toolbar
         objectName: "toolbar"
         anchors { top: menuBar.bottom; left: parent.left; right: parent.right }
+        // See `contentReady`'s docstring in `workspace_view_model.py`: an
+        // analyst never sees the empty startup Analysis this could be
+        // replaced by the Recovery offer for.
+        visible: workspace.contentReady
 
         analysisTitle: workspace.analysisTitle
         dirty: workspace.dirty
@@ -104,7 +139,7 @@ Window {
         objectName: "sidebar"
         anchors { top: toolbar.bottom; left: parent.left; bottom: parent.bottom }
         width: window.sidebarVisible ? sidebarWidth : 0
-        visible: width > 0
+        visible: width > 0 && workspace.contentReady
 
         property int sidebarWidth: Theme.sidebarWidth
 
@@ -116,7 +151,7 @@ Window {
 
     MouseArea {
         id: splitter
-        visible: window.sidebarVisible
+        visible: window.sidebarVisible && workspace.contentReady
         anchors { top: toolbar.bottom; bottom: parent.bottom }
         x: sidebar.width - Math.floor(Theme.splitterWidth / 2)
         width: Theme.splitterWidth
@@ -143,6 +178,7 @@ Window {
             right: editor.visible ? editor.left : parent.right
             bottom: parent.bottom
         }
+        visible: workspace.contentReady
 
         Stage {
             id: stage
@@ -188,6 +224,7 @@ Window {
         objectName: "windowDropArea"
         anchors.fill: parent
         z: Theme.dropLayer
+        enabled: workspace.contentReady
         onDropped: function (drop) {
             workspace.addDroppedSourceVideos(drop.urls)
             drop.acceptProposedAction()
@@ -200,28 +237,38 @@ Window {
         id: editor
         anchors { top: toolbar.bottom; right: parent.right; bottom: parent.bottom }
         width: Theme.editorWidth
-        visible: window.editing
+        visible: window.editing && workspace.contentReady
+    }
+
+    // Every dialog `WorkspacePresenter` can ask for. Declared last, and
+    // ungated by `contentReady`, so the startup Recovery offer can draw
+    // itself in front of the still-hidden content above rather than behind
+    // it — its own `z: Theme.dialogLayer` already guarantees this against
+    // every other surface; declaration order is belt and braces.
+    Dialogs {
+        id: dialogs
+        anchors.fill: parent
     }
 
     // --- Shortcuts: platform behaviour, kept ------------------------------
     //
     // The transport's own keys.
 
-    Shortcut { sequence: "Space";       onActivated: workspace.playPause() }
-    Shortcut { sequence: "Left";        onActivated: workspace.stepBackward() }
-    Shortcut { sequence: "Right";       onActivated: workspace.stepForward() }
-    Shortcut { sequence: "Shift+Left";  onActivated: workspace.jumpBackward() }
-    Shortcut { sequence: "Shift+Right"; onActivated: workspace.jumpForward() }
+    Shortcut { sequence: "Space";       enabled: !dialogs.questionVisible; onActivated: workspace.playPause() }
+    Shortcut { sequence: "Left";        enabled: !dialogs.questionVisible; onActivated: workspace.stepBackward() }
+    Shortcut { sequence: "Right";       enabled: !dialogs.questionVisible; onActivated: workspace.stepForward() }
+    Shortcut { sequence: "Shift+Left";  enabled: !dialogs.questionVisible; onActivated: workspace.jumpBackward() }
+    Shortcut { sequence: "Shift+Right"; enabled: !dialogs.questionVisible; onActivated: workspace.jumpForward() }
 
     // Marking a Clip, and the two ways out of the state it opens. Escape
     // leaves whichever of them the window is in, because an analyst pressing
     // it means "not this" rather than "cancel the draft specifically".
-    Shortcut { sequence: "M"; onActivated: workspace.markBoundary() }
+    Shortcut { sequence: "M"; enabled: !dialogs.questionVisible; onActivated: workspace.markBoundary() }
     Shortcut {
         sequence: "Escape"
         // An open menu takes Escape first, and says so itself, so the sequence
         // is never declared twice at once.
-        enabled: !menuBar.opened
+        enabled: !menuBar.opened && !dialogs.questionVisible
         onActivated: {
             if (window.editing) workspace.cancelDraft()
             else workspace.cancelPending()
@@ -229,12 +276,13 @@ Window {
     }
     Shortcut {
         sequence: "Return"
-        enabled: window.editing
+        enabled: window.editing && !dialogs.questionVisible
         onActivated: workspace.commitDraft()
     }
 
     Shortcut {
         sequence: Qt.platform.os === "osx" ? "Meta+Shift+V" : "Ctrl+Shift+V"
+        enabled: !dialogs.questionVisible
         onActivated: workspace.addSourceVideo()
     }
 }
