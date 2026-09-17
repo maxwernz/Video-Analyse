@@ -1627,6 +1627,15 @@ class WorkspaceViewModel(QObject):
         `timeout` already queued the instant before this ran; a bare
         `RecoveryScheduler` — the Protocol every test double satisfies — is
         given `cancel()` instead, which is all its contract promises.
+
+        This deliberately reaches the scheduler through this view model's
+        own attribute rather than through `ApplicationWorkflow`, and is
+        bound as a method of this object rather than of the workflow.
+        `destroyed` is emitted *during* this QObject's destruction, and
+        routing the same teardown through the workflow instead reproduced
+        the exact Windows access violation this shutdown exists to prevent
+        (PR #78). The indirection reads better and does not survive the
+        platform, so the layering is bent here on purpose.
         """
 
         shutdown = getattr(self._recovery_scheduler, "shutdown", None)
