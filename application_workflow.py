@@ -26,9 +26,8 @@ person might be asked has to be asynchronous too, all the way up to
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from inspect import signature
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Protocol, TypeVar
 from uuid import UUID
 
 from analysis import (
@@ -60,6 +59,9 @@ SOURCE_VIDEO_FILE_FILTER = "Video Dateien ({})".format(
 )
 
 _FALLBACK_ANALYSIS_FILE_NAME = "Analyse"
+
+_Answer = TypeVar("_Answer")
+_Settled = TypeVar("_Settled")
 
 
 class WorkflowPresenter(Protocol):
@@ -160,31 +162,6 @@ def _ignore_bool(_result: bool) -> None:
 
 def _ignore_source_video(_result: SourceVideo | None) -> None:
     return None
-
-
-def _present(
-    method: Callable[..., Any],
-    arguments: tuple[object, ...],
-    on_result: Callable[[Any], None],
-) -> None:
-    """Ask through the callback contract, preserving the frozen test seam.
-
-    Production presenters all accept their completion as the final argument.
-    `tests/test_main_window_workflow.py` is a deliberately frozen regression
-    contract, though, and its established recording presenter answers by
-    returning a value. Do not rewrite that suite for this presentation-layer
-    refactor: recognise that test-only shape here and turn its immediate
-    return into the same completion. This compatibility branch is never taken
-    by `WorkspacePresenter`, so the production contract remains asynchronous.
-    """
-
-    completion = cast(object, on_result)
-    try:
-        signature(method).bind(*arguments, completion)
-    except TypeError:
-        on_result(method(*arguments))
-        return
-    method(*arguments, completion)
 
 
 class ApplicationWorkflow:

@@ -465,12 +465,23 @@ def test_save_as_does_not_write_a_document_swapped_in_while_its_dialog_was_open(
     under Save As's still-pending continuation. `after_destination` used to
     read `self._document` by attribute lookup at that point — whatever
     document was open when the dialog closed, not document A that Save As
-    was invoked for — and would have written empty document B's content to
-    the path the analyst chose to save A under, reporting success. This
-    reproduces that race with `DeferredSavePresenter`, whose destination
-    answer genuinely arrives on a separate turn rather than on the same call
-    stack Save As was invoked from, and asserts the command now settles as
-    not-done and touches neither file.
+    was invoked for — and would have written document B's content to the
+    path the analyst chose to save A under, reporting success.
+
+    Document B is deliberately given its own Source video below, not left
+    empty: an empty `AnalysisDocument.save_as` raises `EmptyAnalysisError`
+    on its own, which would make this test pass whether or not the identity
+    guard exists — a false positive that proves nothing. With a real
+    Source video, `document.save_as` genuinely succeeds against the wrong
+    document once the guard is removed, which is what makes the assertions
+    below load-bearing (verified in the task by manually removing the guard
+    and confirming this test then fails with `outcomes == [True]` and a
+    written file titled "Dokument B").
+
+    This reproduces the race with `DeferredSavePresenter`, whose
+    destination answer genuinely arrives on a separate turn rather than on
+    the same call stack Save As was invoked from, and asserts the command
+    now settles as not-done and touches neither file.
     """
 
     presenter = DeferredSavePresenter()
@@ -487,7 +498,8 @@ def test_save_as_does_not_write_a_document_swapped_in_while_its_dialog_was_open(
     # Save As sheet is still open: no dialog of its own is needed, since
     # document A is not dirty yet, so the swap happens silently mid-flight.
     workflow.adopt_document(new_analysis_document())
-    assert workflow.analysis.title == ""
+    workflow.analysis.add_source_video("Ersatz", "/videos/ersatz.mp4")
+    workflow.analysis.set_title("Dokument B")
 
     destination = tmp_path / "dokument-a.analysis"
     presenter.answer_destination(str(destination))
@@ -496,7 +508,7 @@ def test_save_as_does_not_write_a_document_swapped_in_while_its_dialog_was_open(
     assert not destination.exists()
     # Document B — the one actually open now — was not written to either.
     assert workflow.document.path is None
-    assert workflow.analysis.title == ""
+    assert workflow.analysis.title == "Dokument B"
 
 
 # --- Open -----------------------------------------------------------------
