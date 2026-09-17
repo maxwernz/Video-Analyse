@@ -46,6 +46,21 @@ uv run python -m pytest
 Diagnostic logs stay on the device in Qt's operating-system application-data
 location. Video Analyse contains no telemetry or automatic log upload.
 
+## Opening legacy Analysis files
+
+The app can import Analysis files written by the original application and asks
+you to save the restored Analysis under a new current-format file. Those legacy
+files use Python pickle, which can execute code while it is being read. Open a
+pickle-based legacy Analysis only when you created it or received it from a
+trusted internal source. An unknown pickle cannot be safely inspected or
+approved before deserialization, even when it is malformed or appears to be an
+Analysis file.
+
+Source videos stay external to every Analysis file. If a restored Analysis
+cannot find its Source video, use its relink action to select the moved media;
+the Analysis continues with the same Clips and notes rather than embedding or
+copying the video.
+
 The interface is set in the bundled Inter and JetBrains Mono; generated video
 overlays use the bundled Noto Sans. Their SIL Open Font Licenses are included at
 `assets/fonts/OFL-Inter.txt`, `assets/fonts/OFL-JetBrainsMono.txt` and
