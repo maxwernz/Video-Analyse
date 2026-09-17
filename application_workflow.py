@@ -26,9 +26,8 @@ person might be asked has to be asynchronous too, all the way up to
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from inspect import signature
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Protocol, TypeVar
 from uuid import UUID
 
 from analysis import (
@@ -60,6 +59,8 @@ SOURCE_VIDEO_FILE_FILTER = "Video Dateien ({})".format(
 )
 
 _FALLBACK_ANALYSIS_FILE_NAME = "Analyse"
+
+_Answer = TypeVar("_Answer")
 
 
 class WorkflowPresenter(Protocol):
@@ -162,31 +163,6 @@ def _ignore_source_video(_result: SourceVideo | None) -> None:
     return None
 
 
-def _present(
-    method: Callable[..., Any],
-    arguments: tuple[object, ...],
-    on_result: Callable[[Any], None],
-) -> None:
-    """Ask through the callback contract, preserving the frozen test seam.
-
-    Production presenters all accept their completion as the final argument.
-    `tests/test_main_window_workflow.py` is a deliberately frozen regression
-    contract, though, and its established recording presenter answers by
-    returning a value. Do not rewrite that suite for this presentation-layer
-    refactor: recognise that test-only shape here and turn its immediate
-    return into the same completion. This compatibility branch is never taken
-    by `WorkspacePresenter`, so the production contract remains asynchronous.
-    """
-
-    completion = cast(object, on_result)
-    try:
-        signature(method).bind(*arguments, completion)
-    except TypeError:
-        on_result(method(*arguments))
-        return
-    method(*arguments, completion)
-
-
 class ApplicationWorkflow:
     """Drives the lifecycle of exactly one open Analysis document."""
 
@@ -255,6 +231,56 @@ class ApplicationWorkflow:
 
         return document is self._document
 
+    def _guard(
+        self,
+        document: AnalysisDocument,
+        after: Callable[[_Answer], None],
+        on_stale: Callable[[], None],
+    ) -> Callable[[_Answer], None]:
+        """Wrap a dialog completion so it only runs if ``document`` is still open.
+
+        Every dialog-backed command hands this to the presenter instead of
+        its raw continuation, at the one place it hands control to
+        something that can await a person. That is the one place the
+        capture-and-check in :meth:`_still_current` has to happen — folding
+        it in here means a new command cannot add a dialog and forget the
+        check, the way the bug this guards against was written the first
+        time. ``on_stale`` decides what "not done" means for that
+        particular command: a write settles quietly as not-done, while a
+        command that would otherwise discard the document now open —
+        Open, and an accepted Recovery offer — reports why nothing
+        happened, because the analyst asked for something explicit and
+        silence would look like nothing had gone wrong.
+        """
+
+        def guarded(value: _Answer) -> None:
+            if not self._still_current(document):
+                on_stale()
+                return
+            after(value)
+
+        return guarded
+
+    def _abandon_open(self, on_done: Callable[[bool], None]) -> None:
+        """Refuse an Open whose document changed while its dialog was pending.
+
+        Reached only when the Analysis this Open started against was
+        replaced — by another New, another Open, or an accepted Recovery
+        offer, none of which need a dialog of their own to do it — while
+        this command was still waiting on `may_replace_analysis` or on the
+        file chooser. Discarding whatever is open now to honour a stale
+        Open would be exactly the bug this module's guard exists to
+        prevent; reporting instead of settling silently is because the
+        analyst explicitly asked to open something, and deserves to know
+        it did not happen rather than see nothing.
+        """
+
+        self._presenter.report_failure(
+            "Analysis could not be opened",
+            "The open Analysis changed while this question was pending.",
+        )
+        on_done(False)
+
     @property
     def analysis(self) -> Analysis:
         return self._document.analysis
@@ -306,10 +332,24 @@ class ApplicationWorkflow:
             else:
                 on_done(False)
 
-        _present(self._presenter.ask_unsaved_changes, (), after_choice)
+        self._presenter.ask_unsaved_changes(after_choice)
 
     def new_analysis(self, on_done: Callable[[bool], None] = _ignore_bool) -> None:
-        """Start an empty Analysis, seeded with the default Category template."""
+        """Start an empty Analysis, seeded with the default Category template.
+
+        The document is captured before `may_replace_analysis` asks
+        anything: its own unsaved-changes question, or a Save it chains
+        into, can take long enough for a different command — another New,
+        another Open, an accepted Recovery offer — to replace
+        `self._document` first, with no dialog of its own (see
+        :meth:`_still_current`). Acting on `may_replace_analysis`'s answer
+        against a document it was never asked about would repeat the same
+        mistake this module's guard exists to prevent, so a stale answer
+        here simply settles as not-done: nothing was explicitly chosen, so
+        unlike Open there is nothing to report failing.
+        """
+
+        document = self._document
 
         def after_replace(may_replace: bool) -> None:
             if not may_replace:
@@ -320,14 +360,26 @@ class ApplicationWorkflow:
             )
             on_done(True)
 
-        self.may_replace_analysis(after_replace)
+        self.may_replace_analysis(
+            self._guard(document, after_replace, lambda: on_done(False))
+        )
 
     def open_analysis(self, on_done: Callable[[bool], None] = _ignore_bool) -> None:
         """Open an Analysis file chosen from a dialog.
 
         The unsaved-changes decision comes first, so nobody picks a file only
-        to be asked whether they meant to let their work go.
+        to be asked whether they meant to let their work go. The document is
+        captured once, before that first question, and the same snapshot
+        guards both it and the file chooser after it: by the time the first
+        guard has let `after_replace` run, `document` is confirmed current,
+        so the second guard is checking against the same, still-valid
+        reference rather than needing a fresh one (see :meth:`_still_current`).
+        A stale answer at either gap reports through :meth:`_abandon_open`,
+        since here — unlike New — the analyst did explicitly ask to open
+        something.
         """
+
+        document = self._document
 
         def after_replace(may_replace: bool) -> None:
             if not may_replace:
@@ -340,14 +392,26 @@ class ApplicationWorkflow:
                     return
                 self._open_decided(chosen, on_done)
 
-            _present(self._presenter.choose_analysis_to_open, (), after_choice)
+            self._presenter.choose_analysis_to_open(
+                self._guard(document, after_choice, lambda: self._abandon_open(on_done))
+            )
 
-        self.may_replace_analysis(after_replace)
+        self.may_replace_analysis(
+            self._guard(document, after_replace, lambda: self._abandon_open(on_done))
+        )
 
     def open_analysis_file(
         self, path: str | Path, on_done: Callable[[bool], None] = _ignore_bool
     ) -> None:
-        """Open a named Analysis file, asking about unsaved changes first."""
+        """Open a named Analysis file, asking about unsaved changes first.
+
+        A specific file was already named, so a document swapped in while
+        `may_replace_analysis` was pending is guarded the same way
+        `open_analysis` guards its own first gap — reported through
+        :meth:`_abandon_open` rather than settled silently.
+        """
+
+        document = self._document
 
         def after_replace(may_replace: bool) -> None:
             if not may_replace:
@@ -355,7 +419,9 @@ class ApplicationWorkflow:
                 return
             self._open_decided(path, on_done)
 
-        self.may_replace_analysis(after_replace)
+        self.may_replace_analysis(
+            self._guard(document, after_replace, lambda: self._abandon_open(on_done))
+        )
 
     def _open_decided(
         self, path: str | Path, on_done: Callable[[bool], None]
@@ -397,11 +463,12 @@ class ApplicationWorkflow:
     def save_as(self, on_done: Callable[[bool], None] = _ignore_bool) -> None:
         """Write the Analysis to a destination chosen now.
 
-        The document is captured before the destination dialog opens, and
-        checked with :meth:`_still_current` once it answers: see that
-        method for why a plain `self._document` read in `after_destination`
-        would be reading whatever document is open when the dialog closes,
-        not the one Save As was actually invoked for.
+        The document is captured before the destination dialog opens and
+        guarded through :meth:`_guard`: see that method, and
+        :meth:`_still_current`, for why a plain `self._document` read in
+        `after_destination` would be reading whatever document is open
+        when the dialog closes, not the one Save As was actually invoked
+        for.
         """
 
         document = self._document
@@ -410,15 +477,11 @@ class ApplicationWorkflow:
             if not destination:
                 on_done(False)
                 return
-            if not self._still_current(document):
-                on_done(False)
-                return
             self._write(lambda: document.save_as(destination), on_done)
 
-        _present(
-            self._presenter.choose_analysis_destination,
-            (self._suggested_file_name(),),
-            after_destination,
+        self._presenter.choose_analysis_destination(
+            self._suggested_file_name(),
+            self._guard(document, after_destination, lambda: on_done(False)),
         )
 
     def _resolve_external_change(self, on_done: Callable[[bool], None]) -> None:
@@ -434,16 +497,13 @@ class ApplicationWorkflow:
         is open when the question is answered rather than the document
         this Save actually started against (see :meth:`_still_current`).
         Save As is guarded again, independently, inside :meth:`save_as`
-        itself — it has its own dialog and its own gap — so this check
+        itself — it has its own dialog and its own gap — so this guard
         only has to cover Reload and the moment the choice arrives.
         """
 
         document = self._document
 
         def after_choice(choice: ExternalChangeChoice) -> None:
-            if not self._still_current(document):
-                on_done(False)
-                return
             if choice is ExternalChangeChoice.SAVE_AS:
                 self.save_as(on_done)
             elif choice is ExternalChangeChoice.RELOAD:
@@ -451,7 +511,9 @@ class ApplicationWorkflow:
             else:
                 on_done(False)
 
-        _present(self._presenter.ask_external_change_conflict, (), after_choice)
+        self._presenter.ask_external_change_conflict(
+            self._guard(document, after_choice, lambda: on_done(False))
+        )
 
     def _reload_document(self) -> bool:
         """Catch this document up with its file, discarding in-memory edits.
@@ -499,7 +561,7 @@ class ApplicationWorkflow:
         self,
         on_done: Callable[[SourceVideo | None], None] = _ignore_source_video,
     ) -> None:
-        """Ask for a video file and add it to the Analysis open right now.
+        """Ask which Source video to add to the Analysis open right now.
 
         The document is captured before the file dialog opens, so a New or
         Open that swaps `self._document` while the dialog is pending (see
@@ -510,12 +572,14 @@ class ApplicationWorkflow:
         document = self._document
 
         def after_choice(chosen: str | None) -> None:
-            if not chosen or not self._still_current(document):
+            if not chosen:
                 on_done(None)
                 return
             on_done(self.add_source_video_file(chosen))
 
-        _present(self._presenter.choose_source_video, (), after_choice)
+        self._presenter.choose_source_video(
+            self._guard(document, after_choice, lambda: on_done(None))
+        )
 
     def add_source_video_file(self, path: str | Path) -> SourceVideo | None:
         """Add a Source video to the current Analysis without replacing it.
@@ -650,15 +714,14 @@ class ApplicationWorkflow:
         document = self._document
 
         def after_choice(chosen: str | None) -> None:
-            if not chosen or not self._still_current(document):
+            if not chosen:
                 on_done(False)
                 return
             self.relink_source_video_file(source_video_id, chosen, on_done)
 
-        _present(
-            self._presenter.choose_replacement_media,
-            (source_video.display_name,),
-            after_choice,
+        self._presenter.choose_replacement_media(
+            source_video.display_name,
+            self._guard(document, after_choice, lambda: on_done(False)),
         )
 
     def relink_source_video_file(
@@ -682,12 +745,12 @@ class ApplicationWorkflow:
         here writes to the Analysis until identity is settled one way or
         the other.
 
-        The document open when this method was entered is captured and
-        checked again, inside `proceed`, right before either path writes:
-        the unverified branch has its own dialog gap (the confirmation
-        question), and a document swap while that is pending must stop the
-        write exactly as one would if it happened before the file dialog in
-        `relink_source_video` (see :meth:`_still_current`).
+        The document open when this method was entered is captured once and
+        used throughout, and the confirmation question — the unverified
+        branch's own dialog gap — is guarded through :meth:`_guard` exactly
+        as the file dialog in `relink_source_video` is, so a document swap
+        while that confirmation is pending cannot reach `proceed`'s write
+        (see :meth:`_still_current`).
         """
         if not path:
             on_done(False)
@@ -720,9 +783,6 @@ class ApplicationWorkflow:
         )
 
         def proceed() -> None:
-            if not self._still_current(document):
-                on_done(False)
-                return
             relative_path = document.relative_source_video_path(video_path)
             try:
                 document.analysis.relink_source_video(
@@ -752,10 +812,9 @@ class ApplicationWorkflow:
                 return
             proceed()
 
-        _present(
-            self._presenter.confirm_source_video_replacement,
-            (existing.display_name,),
-            after_confirm,
+        self._presenter.confirm_source_video_replacement(
+            existing.display_name,
+            self._guard(document, after_confirm, lambda: on_done(False)),
         )
 
     def add_dropped_source_video(self, path: str | Path) -> bool:
@@ -857,11 +916,26 @@ class ApplicationWorkflow:
         was, and immediately re-arms Recovery for it — the just-restored
         Analysis is still unsaved, and nothing will edit it again to trigger
         `note_recovery_activity` on its own.
+
+        `main.py` shows this offer and builds the native menu bar in the
+        same breath, so the Analysis this offer was raised against can be
+        replaced — by a menu New, another Open, anything that reaches
+        `adopt_document` — before the analyst has answered. Accepting a
+        stale offer would discard whatever is open now exactly as
+        `_open_decided` almost did; the document is captured and guarded
+        the same way (see :meth:`_still_current`). This guard's own stale
+        branch never discards the snapshot on a late accept — only a real
+        decline does — though whatever replaced the document in the
+        meantime will typically have discarded it anyway, every present
+        route there being `adopt_document` itself; the distinction still
+        matters if a future replacement route ever is not.
         """
         snapshot = self._recovery_store.read()
         if snapshot is None:
             on_done(False)
             return
+
+        document = self._document
 
         def after_offer(accepted: bool) -> None:
             if not accepted:
@@ -874,7 +948,16 @@ class ApplicationWorkflow:
             self._write_recovery_snapshot()
             on_done(True)
 
-        _present(self._presenter.offer_recovered_analysis, (), after_offer)
+        def on_stale() -> None:
+            self._presenter.report_failure(
+                "Recovered Analysis could not be restored",
+                "The open Analysis changed while this question was pending.",
+            )
+            on_done(False)
+
+        self._presenter.offer_recovered_analysis(
+            self._guard(document, after_offer, on_stale)
+        )
 
 
 def _do_nothing() -> None:

@@ -161,6 +161,15 @@ def _command_result(
     presenter, though, so its established direct calls still settle before
     this returns. Reporting that immediate outcome keeps the contract intact
     without pretending an asynchronous QML caller has an answer yet.
+
+    This is a different bridge from the one `application_workflow` used to
+    need and no longer does: that one (since removed) reconciled two
+    *presenter* shapes — a test double that returned a value against a
+    production contract that calls a completion. This one reconciles a
+    `@Slot(result=bool)`'s obligation to return something on the same call
+    stack with a command that may or may not have settled by the time it
+    does. The two are independent; removing the other did not remove the
+    need for this one.
     """
 
     result = False

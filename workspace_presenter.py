@@ -26,10 +26,13 @@ This class is the seam between that QML and `ApplicationWorkflow`. It is a
 alongside `workspace`: QML drives the dialog items from the properties and
 signals below, and reports an answer back through a slot, which is the only
 part of any of this the Python side of the workflow ever sees. Only one
-question is ever outstanding at a time — every caller in `ApplicationWorkflow`
-waits for the previous one to settle before asking the next — so one pending
-completion per dialog *kind* (a file dialog, a question, a report) is
-enough; nothing here needs to track which specific request is in flight.
+file dialog or question is ever outstanding at a time — every caller in
+`ApplicationWorkflow` waits for the previous one to settle before asking the
+next — so one pending completion per *answered* dialog kind is enough;
+nothing here needs to track which specific request is in flight. A failure
+notice is different: nothing waits for it to be dismissed, so more than one
+can be reported before the first is read, and it is queued rather than
+tracked as a single pending slot — see `report_failure`.
 
 QML never sees an `Analysis`, a `Clip` or a `SourceVideo` (ADR 0008): every
 piece of text a dialog shows is a plain string or a small list of button
@@ -107,7 +110,6 @@ _SAVE_AS_BUTTON = {
     "default": False,
     "cancel": False,
 }
-_YES_BUTTON = {"id": "yes", "text": "Ja", "default": True, "cancel": False}
 _YES_BUTTON_NOT_DEFAULT = {"id": "yes", "text": "Ja", "default": False, "cancel": False}
 _NO_BUTTON_DEFAULT = {"id": "no", "text": "Nein", "default": True, "cancel": True}
 _NO_BUTTON = {"id": "no", "text": "Nein", "default": False, "cancel": True}
@@ -133,8 +135,12 @@ class WorkspacePresenter(QObject):
     #: `questionText` and `questionButtons` to draw its own dialog.
     questionRequested = Signal()
 
-    #: A non-blocking failure notice is wanted, read from `failureTitle` and
-    #: `failureMessage`. Nothing waits for it to be dismissed.
+    #: A failure notice's queue changed — a new one arrived, or the one
+    #: showing was dismissed and a queued one (or nothing) took its place.
+    #: QML reads `failurePending`, `failureTitle` and `failureMessage`;
+    #: nothing waits for a notice to be dismissed the way a question's
+    #: answer is waited for, but no notice is dropped either — see
+    #: `report_failure`.
     failureRequested = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -151,8 +157,11 @@ class WorkspacePresenter(QObject):
         self._question_buttons: list[dict[str, Any]] = []
         self._question_callback: Callable[[str | None], None] | None = None
 
-        self._failure_title = ""
-        self._failure_message = ""
+        #: Every failure not yet shown and dismissed, oldest first. A
+        #: `QMessageBox.critical` blocked until dismissed, so two failures
+        #: could never race for the same fields; this queue is what gives
+        #: this replacement the same guarantee — see `report_failure`.
+        self._failure_queue: list[tuple[str, str]] = []
 
     # --- What QML reads to draw a file dialog -------------------------------
 
@@ -271,13 +280,41 @@ class WorkspacePresenter(QObject):
 
     # --- What QML reads to draw a failure notice ----------------------------
 
+    @Property(bool, notify=failureRequested)
+    def failurePending(self) -> bool:
+        """Whether a failure notice should be showing right now.
+
+        `Dialogs.qml` binds the notice's `visible` to this directly rather
+        than latching a local boolean on `failureRequested` the way it used
+        to: a queued second failure re-emits the same signal with the queue
+        still non-empty, and a dismissal that empties the queue needs this
+        to go back to `False` on its own, which a one-shot "show it" signal
+        cannot express.
+        """
+
+        return bool(self._failure_queue)
+
     @Property(str, notify=failureRequested)
     def failureTitle(self) -> str:
-        return self._failure_title
+        return self._failure_queue[0][0] if self._failure_queue else ""
 
     @Property(str, notify=failureRequested)
     def failureMessage(self) -> str:
-        return self._failure_message
+        return self._failure_queue[0][1] if self._failure_queue else ""
+
+    @Slot()
+    def failureDismissed(self) -> None:
+        """QML reports that the analyst has dismissed the notice showing.
+
+        Drops the one at the head of the queue and, if another is waiting,
+        immediately becomes the next `failurePending` notice — the same
+        one-at-a-time reading a blocking `QMessageBox.critical` gave for
+        free, restated as a queue now that nothing here blocks.
+        """
+
+        if self._failure_queue:
+            self._failure_queue.pop(0)
+        self.failureRequested.emit()
 
     # --- The `WorkflowPresenter` contract -----------------------------------
 
@@ -345,10 +382,15 @@ class WorkspacePresenter(QObject):
         def after(button_id: str | None) -> None:
             on_result(button_id == "yes")
 
+        # Nein is the one `default` button here, not Ja: exactly one button
+        # in a question may carry `default` — `Dialogs.qml`'s Repeater binds
+        # `primary: !!modelData.default`, so a second one paints two accent
+        # buttons at once — and declining is the answer that cannot lose
+        # anybody's work, so it is the one Return, like Escape, should reach.
         self._ask_question(
             title=RECOVERY_OFFER_TITLE,
             text=RECOVERY_OFFER_QUESTION,
-            buttons=[_YES_BUTTON, _NO_BUTTON_DEFAULT],
+            buttons=[_YES_BUTTON_NOT_DEFAULT, _NO_BUTTON_DEFAULT],
             on_answer=after,
         )
 
@@ -417,8 +459,21 @@ class WorkspacePresenter(QObject):
         )
 
     def report_failure(self, title: str, message: str) -> None:
-        self._failure_title = title
-        self._failure_message = message
+        """Report that a command could not be carried out.
+
+        A blocking `QMessageBox.critical` used to make it impossible for a
+        second failure to overwrite a first the analyst had not read yet.
+        The `_request_file_dialog`/`_ask_question` guards above protect a
+        pending *answer* the same way, but a report was fire-and-forget
+        with no guard of its own — a Save failing over a full disk, then a
+        relink failing because its file vanished before the first notice
+        was dismissed, used to leave only the second title and message
+        behind, with the first silently gone. Queueing instead of
+        overwriting or refusing is what keeps every failure reaching the
+        analyst: see `failurePending` and `failureDismissed`.
+        """
+
+        self._failure_queue.append((title, message))
         self.failureRequested.emit()
 
 

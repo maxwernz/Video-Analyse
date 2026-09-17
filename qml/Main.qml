@@ -89,7 +89,15 @@ Window {
         function onCloseDecided(mayClose) {
             if (!mayClose) return
             window.closeConfirmed = true
-            window.close()
+            // `requestClose` can settle synchronously — nothing dirty needs
+            // no dialog — in which case `closeDecided` fires on the same
+            // call stack `onClosing` is still executing on; calling
+            // `window.close()` here directly would dispatch a second,
+            // nested `Window.close()` from inside the first's own handler.
+            // Deferring to the next event-loop turn is harmless for the
+            // asynchronous case too, since that answer has already left
+            // `onClosing`'s call stack by the time it arrives.
+            Qt.callLater(window.close)
         }
     }
 
@@ -252,18 +260,42 @@ Window {
 
     // --- Shortcuts: platform behaviour, kept ------------------------------
     //
-    // The transport's own keys.
+    // Every one of these must stay disabled while a question dialog is open
+    // — a document command firing underneath an open modal question would
+    // bypass the scrim that blocks pointer input for exactly that dialog.
+    // The ones below with no condition of their own besides that are listed
+    // in one table and instantiated from it, so a shortcut added to the list
+    // cannot forget the gate the way a ninth copy-pasted `Shortcut` could.
+    // Escape and Return keep their own `Shortcut` declarations further down:
+    // each ANDs an extra condition — an open menu, `window.editing` — that
+    // this table would otherwise have to special-case per entry anyway.
 
-    Shortcut { sequence: "Space";       enabled: !dialogs.questionVisible; onActivated: workspace.playPause() }
-    Shortcut { sequence: "Left";        enabled: !dialogs.questionVisible; onActivated: workspace.stepBackward() }
-    Shortcut { sequence: "Right";       enabled: !dialogs.questionVisible; onActivated: workspace.stepForward() }
-    Shortcut { sequence: "Shift+Left";  enabled: !dialogs.questionVisible; onActivated: workspace.jumpBackward() }
-    Shortcut { sequence: "Shift+Right"; enabled: !dialogs.questionVisible; onActivated: workspace.jumpForward() }
+    readonly property var _gatedShortcuts: [
+        { sequence: "Space", run: function () { workspace.playPause() } },
+        { sequence: "Left", run: function () { workspace.stepBackward() } },
+        { sequence: "Right", run: function () { workspace.stepForward() } },
+        { sequence: "Shift+Left", run: function () { workspace.jumpBackward() } },
+        { sequence: "Shift+Right", run: function () { workspace.jumpForward() } },
+        // Marking a Clip, and the two ways out of the state it opens; Escape
+        // below leaves whichever of them the window is in, because an
+        // analyst pressing it means "not this" rather than "cancel the
+        // draft specifically".
+        { sequence: "M", run: function () { workspace.markBoundary() } },
+        {
+            sequence: Qt.platform.os === "osx" ? "Meta+Shift+V" : "Ctrl+Shift+V",
+            run: function () { workspace.addSourceVideo() }
+        },
+    ]
 
-    // Marking a Clip, and the two ways out of the state it opens. Escape
-    // leaves whichever of them the window is in, because an analyst pressing
-    // it means "not this" rather than "cancel the draft specifically".
-    Shortcut { sequence: "M"; enabled: !dialogs.questionVisible; onActivated: workspace.markBoundary() }
+    Instantiator {
+        model: window._gatedShortcuts
+        delegate: Shortcut {
+            sequence: modelData.sequence
+            enabled: !dialogs.questionVisible
+            onActivated: modelData.run()
+        }
+    }
+
     Shortcut {
         sequence: "Escape"
         // An open menu takes Escape first, and says so itself, so the sequence
@@ -278,11 +310,5 @@ Window {
         sequence: "Return"
         enabled: window.editing && !dialogs.questionVisible
         onActivated: workspace.commitDraft()
-    }
-
-    Shortcut {
-        sequence: Qt.platform.os === "osx" ? "Meta+Shift+V" : "Ctrl+Shift+V"
-        enabled: !dialogs.questionVisible
-        onActivated: workspace.addSourceVideo()
     }
 }

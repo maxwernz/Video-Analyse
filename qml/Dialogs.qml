@@ -32,6 +32,7 @@ Item {
 
     FileDialog {
         id: fileDialog
+        objectName: "fileDialog"
         title: presenter.fileDialogTitle
         nameFilters: [presenter.fileDialogFilter]
         fileMode: presenter.fileDialogMode === "save" ? FileDialog.SaveFile
@@ -48,8 +49,16 @@ Item {
             else
                 fileDialog.currentFolder = ""
             if (presenter.fileDialogSuggestedName !== "")
+                // No folder is not a reason to drop the suggested name too:
+                // `_existing_start_directory` returns "" for a real,
+                // unmounted location (an iCloud Documents folder, say),
+                // exactly when a suggested name still matters. The bare
+                // name, with no folder prefixed, is what the previous
+                // `QFileDialog` accepted the same way — `os.path.join("",
+                // name) == name` — and lets the platform pick where to
+                // start instead of guessing wrong.
                 fileDialog.selectedFile = presenter.fileDialogFolder === ""
-                    ? ""
+                    ? presenter.fileDialogSuggestedName
                     : "file://" + presenter.fileDialogFolder
                         + "/" + presenter.fileDialogSuggestedName
             else
@@ -209,7 +218,13 @@ Item {
         border.width: Theme.border
         border.color: Theme.rule
         z: Theme.dialogLayer + 1
-        visible: false
+        // Bound straight to the presenter's queue rather than latched by a
+        // local boolean on `failureRequested`: a second failure reported
+        // while this one is still showing re-emits that signal with the
+        // queue still non-empty (nothing to change here), and dismissing
+        // the last one needs this to go back to false on its own once the
+        // queue empties — a one-shot "show it" signal cannot express that.
+        visible: presenter.failurePending
         height: failureBody.implicitHeight + Theme.gutter * 2
 
         Column {
@@ -244,14 +259,9 @@ Item {
                     objectName: "failureDismiss"
                     label: "OK"
                     primary: true
-                    onClicked: failure.visible = false
+                    onClicked: presenter.failureDismissed()
                 }
             }
         }
-    }
-
-    Connections {
-        target: presenter
-        function onFailureRequested() { failure.visible = true }
     }
 }

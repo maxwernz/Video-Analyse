@@ -93,12 +93,13 @@ class FakePresenter:
 
 
 class DeferredSavePresenter(FakePresenter):
-    """A QML-like presenter whose two answers arrive on later turns."""
+    """A QML-like presenter whose answers arrive on later turns."""
 
     def __init__(self) -> None:
         super().__init__()
         self._unsaved_answer: Callable[[UnsavedChangesChoice], None] | None = None
         self._destination_answer: Callable[[str | None], None] | None = None
+        self._recovery_answer: Callable[[bool], None] | None = None
 
     def ask_unsaved_changes(
         self, on_result: Callable[[UnsavedChangesChoice], None]
@@ -112,6 +113,10 @@ class DeferredSavePresenter(FakePresenter):
         self.suggested_names.append(suggested_name)
         self._destination_answer = on_result
 
+    def offer_recovered_analysis(self, on_result: Callable[[bool], None]) -> None:
+        self.recovery_offers += 1
+        self._recovery_answer = on_result
+
     def answer_unsaved_changes(self, choice: UnsavedChangesChoice) -> None:
         assert self._unsaved_answer is not None, "the workflow asked no question"
         answer, self._unsaved_answer = self._unsaved_answer, None
@@ -121,6 +126,11 @@ class DeferredSavePresenter(FakePresenter):
         assert self._destination_answer is not None, "the workflow asked no Save As"
         answer, self._destination_answer = self._destination_answer, None
         answer(destination)
+
+    def answer_recovery_offer(self, accepted: bool) -> None:
+        assert self._recovery_answer is not None, "the workflow offered no Recovery"
+        answer, self._recovery_answer = self._recovery_answer, None
+        answer(accepted)
 
 
 class FakeRecoveryScheduler:
@@ -465,12 +475,23 @@ def test_save_as_does_not_write_a_document_swapped_in_while_its_dialog_was_open(
     under Save As's still-pending continuation. `after_destination` used to
     read `self._document` by attribute lookup at that point — whatever
     document was open when the dialog closed, not document A that Save As
-    was invoked for — and would have written empty document B's content to
-    the path the analyst chose to save A under, reporting success. This
-    reproduces that race with `DeferredSavePresenter`, whose destination
-    answer genuinely arrives on a separate turn rather than on the same call
-    stack Save As was invoked from, and asserts the command now settles as
-    not-done and touches neither file.
+    was invoked for — and would have written document B's content to the
+    path the analyst chose to save A under, reporting success.
+
+    Document B is deliberately given its own Source video below, not left
+    empty: an empty `AnalysisDocument.save_as` raises `EmptyAnalysisError`
+    on its own, which would make this test pass whether or not the identity
+    guard exists — a false positive that proves nothing. With a real
+    Source video, `document.save_as` genuinely succeeds against the wrong
+    document once the guard is removed, which is what makes the assertions
+    below load-bearing (verified in the task by manually removing the guard
+    and confirming this test then fails with `outcomes == [True]` and a
+    written file titled "Dokument B").
+
+    This reproduces the race with `DeferredSavePresenter`, whose
+    destination answer genuinely arrives on a separate turn rather than on
+    the same call stack Save As was invoked from, and asserts the command
+    now settles as not-done and touches neither file.
     """
 
     presenter = DeferredSavePresenter()
@@ -487,7 +508,8 @@ def test_save_as_does_not_write_a_document_swapped_in_while_its_dialog_was_open(
     # Save As sheet is still open: no dialog of its own is needed, since
     # document A is not dirty yet, so the swap happens silently mid-flight.
     workflow.adopt_document(new_analysis_document())
-    assert workflow.analysis.title == ""
+    workflow.analysis.add_source_video("Ersatz", "/videos/ersatz.mp4")
+    workflow.analysis.set_title("Dokument B")
 
     destination = tmp_path / "dokument-a.analysis"
     presenter.answer_destination(str(destination))
@@ -496,7 +518,56 @@ def test_save_as_does_not_write_a_document_swapped_in_while_its_dialog_was_open(
     assert not destination.exists()
     # Document B — the one actually open now — was not written to either.
     assert workflow.document.path is None
-    assert workflow.analysis.title == ""
+    assert workflow.analysis.title == "Dokument B"
+
+
+def test_open_analysis_file_does_not_discard_a_document_swapped_in_while_its_dialog_was_open(
+    recovery_store: RecoverySnapshotStore, tmp_path: Path
+) -> None:
+    """The same stale-document shape, but for a command that *replaces* the
+    document rather than writing to it (findings 8/9 in the review).
+
+    `_open_decided` used to call `adopt_document(opened)` unconditionally
+    once `may_replace_analysis` said yes — never reading `self._document`,
+    so the earlier audit read it as immune to the stale-read pattern. That
+    reasoning was wrong: a command that discards the open document without
+    checking whether it is still the one this command was asked about can
+    destroy unsaved work just as surely as a stale write can, and the
+    unsaved-changes question here is exactly the asynchronous gap in which
+    another command — File > New from the macOS menu, reaching
+    `adopt_document` with no dialog of its own since nothing was dirty yet
+    — can swap the document out and then make it dirty before this
+    question is ever answered.
+    """
+
+    presenter = DeferredSavePresenter()
+    workflow = ApplicationWorkflow(presenter, recovery_store=recovery_store)
+    workflow.analysis.add_source_video("Halbzeit 1", "/videos/halbzeit-1.mp4")
+    assert workflow.document.dirty is True
+    outcomes: list[bool] = []
+
+    workflow.open_analysis_file("/analyses/somewhere.analysis", outcomes.append)
+    assert presenter.unsaved_prompts == 1
+    assert outcomes == []
+
+    # File > New lands mid-flight, through the same no-dialog-needed path
+    # `save_as`'s own regression test exploits, and the analyst starts
+    # marking Clips in the new Analysis before answering the still-open
+    # unsaved-changes question above.
+    workflow.adopt_document(new_analysis_document())
+    source_video = workflow.analysis.add_source_video("Ersatz", "/videos/ersatz.mp4")
+    workflow.analysis.add_clip(source_video.id, "Ecke", 1_000, 2_000)
+    assert workflow.document.dirty is True
+
+    presenter.answer_unsaved_changes(UnsavedChangesChoice.DISCARD)
+
+    assert outcomes == [False]
+    assert presenter.failures, "a stale Open must say why nothing happened"
+    # The document actually open now — with the Clip just marked in it —
+    # was not discarded in favour of a file the analyst asked to open
+    # before that Clip existed.
+    assert len(workflow.analysis.clips) == 1
+    assert workflow.document.dirty is True
 
 
 # --- Open -----------------------------------------------------------------
@@ -1416,6 +1487,47 @@ def test_an_accepted_recovery_offer_replaces_the_analysis_and_stays_dirty(
     restored_snapshot = recovery_store.read()
     assert restored_snapshot is not None
     assert restored_snapshot.analysis.title == "Recovered work"
+
+
+def test_accepting_a_stale_recovery_offer_does_not_discard_the_document_open_now(
+    recovery_store: RecoverySnapshotStore,
+) -> None:
+    """Finding 9: reachable at startup, since `main.py` offers Recovery and
+    builds the native menu bar in the same breath, before the offer is
+    answered.
+
+    The Analysis the offer was raised against can be replaced — by a menu
+    New, reaching `adopt_document` with no dialog of its own — before the
+    analyst answers "restore my work?". Accepting late must not discard
+    whatever is open now.
+    """
+
+    recovered_analysis = Analysis("Recovered work")
+    recovered_analysis.add_source_video("first-half.mp4", "/videos/first-half.mp4")
+    recovery_store.write(recovered_analysis, None)
+
+    presenter = DeferredSavePresenter()
+    workflow = ApplicationWorkflow(presenter, recovery_store=recovery_store)
+    outcomes: list[bool] = []
+
+    workflow.recover_if_available(outcomes.append)
+    assert presenter.recovery_offers == 1
+    assert outcomes == []
+
+    # File > New lands while the offer is still pending, and the analyst
+    # starts marking Clips in the fresh Analysis it opened.
+    workflow.adopt_document(new_analysis_document())
+    source_video = workflow.analysis.add_source_video("Ersatz", "/videos/ersatz.mp4")
+    workflow.analysis.add_clip(source_video.id, "Ecke", 1_000, 2_000)
+
+    presenter.answer_recovery_offer(True)
+
+    assert outcomes == [False]
+    assert presenter.failures, "a stale accept must say why nothing happened"
+    # The Clip just marked was not discarded in favour of the recovered
+    # Analysis, which was offered against a document that is gone now.
+    assert len(workflow.analysis.clips) == 1
+    assert workflow.analysis.title != "Recovered work"
 
 
 def test_an_accepted_recovery_offer_keeps_the_file_it_was_bound_to(

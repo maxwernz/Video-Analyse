@@ -339,6 +339,43 @@ def test_reporting_a_failure_needs_nobody_to_dismiss_it_first() -> None:
     assert list(signature.parameters) == ["self", "title", "message"]
 
 
+def test_a_second_failure_is_queued_rather_than_overwriting_the_first(
+    presenter: WorkspacePresenter,
+) -> None:
+    """Neither of two failures reported before either is dismissed is lost.
+
+    `QMessageBox.critical` used to block until dismissed, so a Save
+    failing over a full disk and an unrelated relink failing right after
+    could never race for the same title and message. `report_failure`
+    replaced that with fields set and a signal emitted, unguarded, so a
+    second call used to overwrite the first outright before the analyst
+    had read it. Report two, and check that both are still readable, one
+    at a time, rather than the second silently replacing the first.
+    """
+
+    presenter.report_failure("Analysis could not be saved", "the disk is full")
+    presenter.report_failure(
+        "Source video could not be relinked", "the file no longer exists"
+    )
+
+    # The first failure is still what is showing — not overwritten by the
+    # second, and not dropped in favour of it either.
+    assert presenter.failurePending is True
+    assert presenter.failureTitle == "Analysis could not be saved"
+    assert presenter.failureMessage == "the disk is full"
+
+    presenter.failureDismissed()
+
+    # The second failure now shows in its turn, not lost.
+    assert presenter.failurePending is True
+    assert presenter.failureTitle == "Source video could not be relinked"
+    assert presenter.failureMessage == "the file no longer exists"
+
+    presenter.failureDismissed()
+
+    assert presenter.failurePending is False
+
+
 # --- Every question the workflow can ask has an answer ----------------------
 
 

@@ -532,6 +532,66 @@ def test_a_question_consumes_workspace_pointer_input_and_enter_chooses_its_defau
     del engine, component
 
 
+def test_the_destination_dialog_still_offers_the_suggested_name_with_no_start_folder(
+    application: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing start folder must not also blank the suggested name.
+
+    `_existing_start_directory` deliberately returns "" for a real but
+    unmounted location — an iCloud Documents folder is exactly the case it
+    exists to guard — which is exactly when a suggested name matters most.
+    `fileDialog.selectedFile` used to collapse to "" whenever the folder
+    did too (found by review), dropping a prefill the old `QFileDialog`
+    kept for free (`os.path.join("", name) == name`). The bare suggested
+    name, with no folder prefixed, should still reach the dialog.
+
+    This loads `Dialogs.qml`'s real source, with only its one call to
+    `fileDialog.open()` neutralised, rather than the file unmodified: a
+    genuine, if offscreen, `QtQuick.Dialogs.FileDialog.open()` call was
+    found by experiment to corrupt a *later* `QQmlApplicationEngine`'s
+    compilation of unrelated files (`Main.qml` failed to resolve
+    `MenuBar`'s own `onCommandRequested` afterwards) for the rest of the
+    process — a pre-existing hazard of this Qt version's native file-panel
+    backend under `offscreen`, not something this branch introduced or can
+    fix. Testing the real assignment logic without triggering that call is
+    the least-risk way to cover this branch at all.
+    """
+
+    import workspace_presenter as workspace_presenter_module
+
+    monkeypatch.setattr(workspace_presenter_module, "_documents_directory", lambda: "")
+
+    source = (QML_ROOT / "Dialogs.qml").read_text(encoding="utf-8")
+    assert "fileDialog.open()" in source, "Dialogs.qml's own open() call moved"
+    neutralised = source.replace("fileDialog.open()", "/* open() suppressed for test */")
+
+    presenter = WorkspacePresenter()
+    engine = build_engine(QML_ROOT, context_objects={"presenter": presenter})
+    component = QQmlComponent(engine)
+    component.setData(
+        neutralised.encode("utf-8"),
+        QUrl.fromLocalFile(str(QML_ROOT / "Dialogs.qml")),
+    )
+    assert component.status() == QQmlComponent.Status.Ready, [
+        error.toString() for error in component.errors()
+    ]
+    dialogs = component.create()
+    assert dialogs is not None, [error.toString() for error in component.errors()]
+    application.processEvents()
+
+    presenter.choose_analysis_destination("Spiel gegen Kiel.analysis", lambda _: None)
+    application.processEvents()
+
+    file_dialog = dialogs.findChild(QObject, "fileDialog")  # type: ignore[arg-type]
+    assert file_dialog is not None
+    selected = file_dialog.property("selectedFile")
+    assert selected.toString() == "Spiel gegen Kiel.analysis"
+
+    dialogs.deleteLater()
+    application.processEvents()
+    del engine, component
+
+
 class _AnswersEverything:
     """A person who always answers, so a toolbar press reaches the Analysis."""
 
