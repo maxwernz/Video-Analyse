@@ -1,0 +1,184 @@
+name: Release
+
+# Publishes an immutable, cross-platform GitHub Release from a semantic-version
+# tag (vMAJOR.MINOR.PATCH). A tag push never publishes directly: it re-runs the
+# exact same jobs a pull request runs (by calling ci.yml as a reusable
+# workflow), assembles a draft release only if every one of those jobs
+# succeeds, and flips the draft to published only after the draft itself is
+# verified. Any failure anywhere in that chain leaves no public release at
+# all -- either nothing is created, or a draft is left sitting unpublished for
+# a maintainer to inspect. See docs/adr/0001-cross-platform-internal-releases.md.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  validate-tag:
+    name: Validate the release tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Determine and validate the release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+
+          # Video Analyse's packaging accepts only a plain MAJOR.MINOR.PATCH
+          # version: build_config/windows_version_resource.py requires exactly
+          # three numeric components for the Windows version resource, so a
+          # tag with a pre-release or build-metadata suffix cannot be built
+          # for Windows and is rejected here rather than failing later.
+          if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::'$tag' is not a valid semantic-version tag of the form vMAJOR.MINOR.PATCH." >&2
+            exit 1
+          fi
+
+          version="${tag#v}"
+          declared="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [[ "$version" != "$declared" ]]; then
+            echo "::error::Tag $tag does not match the version declared in pyproject.toml ($declared). Update pyproject.toml and retag, or tag the commit that declares $version." >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  # Runs the identical test, packaging, and smoke-check jobs a pull request
+  # runs. This job -- and therefore the release -- only succeeds if every
+  # matrix entry and both packaging jobs inside ci.yml succeed, which is what
+  # makes "verify" the all-or-nothing gate for the rest of this workflow.
+  verify:
+    name: Build and verify both platforms
+    needs: validate-tag
+    uses: ./.github/workflows/ci.yml
+
+  assemble-release:
+    name: Assemble the draft release
+    needs: [validate-tag, verify]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.validate-tag.outputs.version }}
+      DMG_NAME: Video-Analyse-${{ needs.validate-tag.outputs.version }}-arm64.dmg
+      INSTALLER_NAME: Video-Analyse-${{ needs.validate-tag.outputs.version }}-x64-setup.exe
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Download the macOS disk image
+        uses: actions/download-artifact@v8
+        with:
+          name: macos-arm64-dmg
+          path: release-assets
+
+      - name: Download the Windows installer
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-x64-installer
+          path: release-assets
+
+      - name: Verify both artifacts exist and carry the release version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Exact-name checks, not substring checks: a substring match on the
+          # version would let "0.1.0" pass inside a filename actually built
+          # for "10.1.0". Naming matches build_config.shared.macos_disk_image_name()
+          # and artifact_name("x64-setup"), which both platform build scripts use.
+          if [[ ! -f "release-assets/$DMG_NAME" ]]; then
+            echo "::error::Expected macOS artifact release-assets/$DMG_NAME was not produced by the macOS package job." >&2
+            exit 1
+          fi
+          if [[ ! -f "release-assets/$INSTALLER_NAME" ]]; then
+            echo "::error::Expected Windows artifact release-assets/$INSTALLER_NAME was not produced by the Windows package job." >&2
+            exit 1
+          fi
+
+          echo "Verified matching artifacts for version $VERSION:"
+          ls -l "release-assets/$DMG_NAME" "release-assets/$INSTALLER_NAME"
+
+      - name: Write release notes
+        shell: bash
+        run: |
+          cat > release-notes.md <<EOF
+          ## Video Analyse v${VERSION}
+
+          ### Platform requirements
+
+          - **macOS**: Apple Silicon (ARM64) running macOS 14 or newer.
+          - **Windows**: x64 Windows 11.
+
+          ### Downloads
+
+          - \`${DMG_NAME}\` -- macOS disk image containing Video Analyse.app
+          - \`${INSTALLER_NAME}\` -- Windows per-user installer (no administrator rights required)
+
+          ### First launch of unsigned software
+
+          Video Analyse is distributed without an Apple Developer ID identity or
+          notarization, and without a Windows code-signing certificate. Only
+          install a build downloaded from this Releases page.
+
+          **macOS**: open the DMG, drag **Video Analyse** into **Applications**,
+          then Control-click the installed app and choose **Open**, confirming the
+          warning dialog. On macOS 15+, if the dialog offers no way to continue,
+          use **System Settings -> Privacy & Security** and choose **Open Anyway**
+          next to the message naming Video Analyse. macOS remembers this decision
+          for later launches.
+
+          **Windows**: running the installer shows a Microsoft Defender SmartScreen
+          warning for an unrecognized app. Choose **More info**, then **Run
+          anyway**. The installer runs per-user, so Windows never asks for
+          administrator rights, adds Video Analyse to the Start Menu, and offers
+          an optional desktop shortcut.
+
+          ### Updating
+
+          Video Analyse has no automatic updater or update notifications. To move
+          to a newer version, download its installer from this Releases page:
+
+          - **Windows**: run the new installer; it upgrades the existing
+            installation in place and keeps one Start Menu and uninstall entry.
+          - **macOS**: open the new DMG and drag **Video Analyse** into
+            **Applications** again, replacing the previous app bundle.
+
+          Existing Analysis files remain readable after updating.
+
+          ### If this release turns out to be defective
+
+          Published release artifacts are immutable and are never replaced or
+          edited in place. A defect in this release is fixed by publishing a new
+          patch version (the next vMAJOR.MINOR.PATCH) rather than by altering
+          these assets; this release is marked accordingly rather than removed.
+          EOF
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            "release-assets/${DMG_NAME}" \
+            "release-assets/${INSTALLER_NAME}" \
+            --draft \
+            --title "Video Analyse ${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md
+
+  publish-release:
+    name: Publish the release
+    needs: [validate-tag, assemble-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Flip the draft release to published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false
