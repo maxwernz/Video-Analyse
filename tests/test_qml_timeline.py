@@ -25,6 +25,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 import timecode  # noqa: E402
 from analysis import Analysis, AnalysisDocument, Clip  # noqa: E402
+from app_runtime import register_bundled_fonts  # noqa: E402
 from playback import FakePlayback  # noqa: E402
 from workspace_view_model import WorkspaceViewModel  # noqa: E402
 
@@ -45,9 +46,38 @@ SHORT_CLIP_END_MS = 106_800
 TRACK_Y = 40
 
 
+class _InertRecoveryScheduler:
+    """A Recovery scheduler that never arms a real `QTimer`.
+
+    This surface is torn down at the end of every test, but the Qt event
+    loop is shared for the whole session, so a real `_TimerRecoveryScheduler`
+    left ticking past that teardown would still be live enough to fire into
+    whatever the view and view model happen to have become by the time it
+    does. Injecting this instead removes the only real Qt timer this fixture
+    would otherwise leave behind.
+    """
+
+    def schedule(self, run: object) -> None:
+        return None
+
+    def cancel(self) -> None:
+        return None
+
+
 @pytest.fixture(scope="session")
 def application() -> QApplication:
-    return QApplication.instance() or QApplication([])
+    instance = QApplication.instance() or QApplication([])
+    # The bundled monospace has to be registered before anything measures
+    # a timecode: `Theme.monoFamily` names a family Qt only knows after
+    # this call, and an unregistered name silently falls back to whatever
+    # the platform substitutes — a different width on every platform, so a
+    # field sized correctly for the real face reads as overflowing. The
+    # application registers these fonts before it shows a window; a test
+    # that builds its own `QApplication` has to do the same or it measures
+    # a face the analyst never sees.
+    register_bundled_fonts()
+    assert isinstance(instance, QApplication)
+    return instance
 
 
 def x_of(position_ms: int) -> int:
@@ -107,7 +137,11 @@ def short_clip(analysis: Analysis) -> Clip:
 
 @pytest.fixture
 def surface(application: QApplication, analysis: Analysis, short_clip: Clip):
-    workspace = WorkspaceViewModel(AnalysisDocument(analysis), FakePlayback())
+    workspace = WorkspaceViewModel(
+        AnalysisDocument(analysis),
+        FakePlayback(),
+        recovery_scheduler=_InertRecoveryScheduler(),
+    )
     workspace.refresh()
 
     view = QQuickView()
@@ -126,7 +160,14 @@ def surface(application: QApplication, analysis: Analysis, short_clip: Clip):
 
     yield Surface(view, workspace)
 
+    # Taken down rather than only closed and left to Python's garbage
+    # collector: a window's C++ object left to a deferred, GC-timed
+    # collection can stay alive — with everything parented to it, including
+    # any real Qt timer — for an indeterminate stretch of later tests.
     view.close()
+    view.setSource(QUrl())
+    view.deleteLater()
+    QGuiApplication.processEvents()
 
 
 # --- The grammar (ADR 0006) --------------------------------------------------

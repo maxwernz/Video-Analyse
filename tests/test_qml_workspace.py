@@ -36,6 +36,7 @@ from PySide6.QtCore import (
 )  # noqa: E402
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QFontDatabase  # noqa: E402
 from PySide6.QtQml import QQmlComponent, QQmlApplicationEngine  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 import icon_family  # noqa: E402
@@ -56,6 +57,7 @@ from application_workflow import (  # noqa: E402
 from main import build_workspace_context  # noqa: E402
 from qml_icons import IconProvider  # noqa: E402
 from qml_runtime import build_engine, quick_scene_path  # noqa: E402
+from workspace_presenter import WorkspacePresenter  # noqa: E402
 
 
 PROJECT_ROOT = Path(__file__).parents[1]
@@ -96,6 +98,7 @@ def test_the_application_ships_the_components_the_shell_is_made_of() -> None:
     assert {path.name for path in qml_components()} == {
         "ClipEditor.qml",
         "CategoryManager.qml",
+        "Dialogs.qml",
         "EmptyStage.qml",
         "Field.qml",
         "IconButton.qml",
@@ -438,7 +441,14 @@ def _shell_with(
     every binding has stopped.
     """
 
-    engine = build_engine(QML_ROOT, context_objects={"workspace": view_model})
+    # `Dialogs.qml`, part of the shell, binds straight to a `presenter`
+    # context object (issue #69). This one only has to satisfy the QML
+    # engine's bindings; `view_model` was built with whatever
+    # `WorkflowPresenter` the caller wanted for the actual decisions.
+    engine = build_engine(
+        QML_ROOT,
+        context_objects={"workspace": view_model, "presenter": WorkspacePresenter()},
+    )
     component = QQmlComponent(engine, QUrl.fromLocalFile(str(QML_ROOT / "Main.qml")))
     assert component.status() == QQmlComponent.Status.Ready, [
         error.toString() for error in component.errors()
@@ -446,6 +456,140 @@ def _shell_with(
     window = component.create()
     assert window is not None, [error.toString() for error in component.errors()]
     return engine, component, window
+
+
+def _dialog_probe(
+    application: QApplication, presenter: WorkspacePresenter
+) -> tuple[QQmlApplicationEngine, QQmlComponent, QObject]:
+    """A window with one ordinary workspace click target behind `Dialogs`.
+
+    The question dialog is deliberately made from QML primitives, rather than
+    a Qt Quick Controls `Popup`, so this is the seam that proves its scrim is
+    actually modal: a visible rectangle alone must not let a click reach the
+    workspace behind it.
+    """
+
+    engine = build_engine(QML_ROOT, context_objects={"presenter": presenter})
+    component = QQmlComponent(engine)
+    component.setData(
+        b'''import QtQuick
+import "."
+
+Window {
+    id: probe
+    width: 640
+    height: 480
+    visible: true
+    property int backgroundClicks: 0
+
+    MouseArea {
+        anchors.fill: parent
+        onClicked: probe.backgroundClicks += 1
+    }
+
+    Dialogs { anchors.fill: parent }
+}
+''',
+        QUrl.fromLocalFile(str(QML_ROOT / "dialog_probe.qml")),
+    )
+    assert component.status() == QQmlComponent.Status.Ready, [
+        error.toString() for error in component.errors()
+    ]
+    window = component.create()
+    assert window is not None, [error.toString() for error in component.errors()]
+    application.processEvents()
+    return engine, component, window
+
+
+def test_a_question_consumes_workspace_pointer_input_and_enter_chooses_its_default(
+    application: QApplication,
+) -> None:
+    """Questions preserve the old message box's modal and default-key rules."""
+
+    presenter = WorkspacePresenter()
+    engine, component, window = _dialog_probe(application, presenter)
+    answers: list[UnsavedChangesChoice] = []
+    presenter.ask_unsaved_changes(answers.append)
+    application.processEvents()
+
+    QTest.mouseClick(
+        window,  # type: ignore[arg-type]
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        QPoint(8, 8),
+    )
+    application.processEvents()
+    assert window.property("backgroundClicks") == 0
+    assert answers == []
+
+    QTest.keyClick(window, Qt.Key.Key_Return)  # type: ignore[arg-type]
+    application.processEvents()
+    assert answers == [UnsavedChangesChoice.SAVE]
+
+    window.setProperty("visible", False)
+    window.deleteLater()
+    application.processEvents()
+    del engine, component
+
+
+def test_the_destination_dialog_still_offers_the_suggested_name_with_no_start_folder(
+    application: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing start folder must not also blank the suggested name.
+
+    `_existing_start_directory` deliberately returns "" for a real but
+    unmounted location — an iCloud Documents folder is exactly the case it
+    exists to guard — which is exactly when a suggested name matters most.
+    `fileDialog.selectedFile` used to collapse to "" whenever the folder
+    did too (found by review), dropping a prefill the old `QFileDialog`
+    kept for free (`os.path.join("", name) == name`). The bare suggested
+    name, with no folder prefixed, should still reach the dialog.
+
+    This loads `Dialogs.qml`'s real source, with only its one call to
+    `fileDialog.open()` neutralised, rather than the file unmodified: a
+    genuine, if offscreen, `QtQuick.Dialogs.FileDialog.open()` call was
+    found by experiment to corrupt a *later* `QQmlApplicationEngine`'s
+    compilation of unrelated files (`Main.qml` failed to resolve
+    `MenuBar`'s own `onCommandRequested` afterwards) for the rest of the
+    process — a pre-existing hazard of this Qt version's native file-panel
+    backend under `offscreen`, not something this branch introduced or can
+    fix. Testing the real assignment logic without triggering that call is
+    the least-risk way to cover this branch at all.
+    """
+
+    import workspace_presenter as workspace_presenter_module
+
+    monkeypatch.setattr(workspace_presenter_module, "_documents_directory", lambda: "")
+
+    source = (QML_ROOT / "Dialogs.qml").read_text(encoding="utf-8")
+    assert "fileDialog.open()" in source, "Dialogs.qml's own open() call moved"
+    neutralised = source.replace("fileDialog.open()", "/* open() suppressed for test */")
+
+    presenter = WorkspacePresenter()
+    engine = build_engine(QML_ROOT, context_objects={"presenter": presenter})
+    component = QQmlComponent(engine)
+    component.setData(
+        neutralised.encode("utf-8"),
+        QUrl.fromLocalFile(str(QML_ROOT / "Dialogs.qml")),
+    )
+    assert component.status() == QQmlComponent.Status.Ready, [
+        error.toString() for error in component.errors()
+    ]
+    dialogs = component.create()
+    assert dialogs is not None, [error.toString() for error in component.errors()]
+    application.processEvents()
+
+    presenter.choose_analysis_destination("Spiel gegen Kiel.analysis", lambda _: None)
+    application.processEvents()
+
+    file_dialog = dialogs.findChild(QObject, "fileDialog")  # type: ignore[arg-type]
+    assert file_dialog is not None
+    selected = file_dialog.property("selectedFile")
+    assert selected.toString() == "Spiel gegen Kiel.analysis"
+
+    dialogs.deleteLater()
+    application.processEvents()
+    del engine, component
 
 
 class _AnswersEverything:
@@ -461,17 +605,29 @@ class _AnswersEverything:
         self.destination = destination
         self.source_video = source_video
 
-    def ask_unsaved_changes(self) -> UnsavedChangesChoice:
-        return UnsavedChangesChoice.DISCARD
+    def ask_unsaved_changes(self, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(UnsavedChangesChoice.DISCARD)
 
-    def choose_analysis_to_open(self) -> str | None:
-        return self.to_open
+    def choose_analysis_to_open(self, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(self.to_open)
 
-    def choose_analysis_destination(self, suggested_name: str) -> str | None:
-        return self.destination
+    def choose_analysis_destination(self, suggested_name: str, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(self.destination)
 
-    def choose_source_video(self) -> str | None:
-        return self.source_video
+    def choose_source_video(self, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(self.source_video)
+
+    def choose_replacement_media(self, display_name: str, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(None)
+
+    def confirm_source_video_replacement(self, display_name: str, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(False)
+
+    def ask_external_change_conflict(self, on_result) -> None:  # type: ignore[no-untyped-def]
+        raise AssertionError("unexpected external-change question")
+
+    def offer_recovered_analysis(self, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(False)
 
     def report_failure(self, title: str, message: str) -> None:
         raise AssertionError(f"{title}: {message}")
@@ -677,8 +833,8 @@ def test_closing_the_window_with_unsaved_work_asks_before_it_goes(
 class _RefusesToLetGo(_AnswersEverything):
     """Somebody who cancels the unsaved-changes question."""
 
-    def ask_unsaved_changes(self) -> UnsavedChangesChoice:
-        return UnsavedChangesChoice.CANCEL
+    def ask_unsaved_changes(self, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(UnsavedChangesChoice.CANCEL)
 
 
 # --- The Clip-editing state, as a state of the shell ------------------------

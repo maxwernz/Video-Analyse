@@ -44,7 +44,15 @@ VIDEO = "/videos/halbzeit-1.mp4"
 
 
 class RecordingPresenter:
-    """The person the workflow asks, written down instead of shown a dialog."""
+    """The person the workflow asks, written down instead of shown a dialog.
+
+    Every method answers its completion immediately, on the same call stack:
+    since issue #69 a real `WorkspacePresenter` cannot do that (the question
+    may now be a QML dialog, which is asynchronous by construction), but
+    `ApplicationWorkflow`'s continuation chain settles synchronously whenever
+    everything it asks does, which is all this suite — driven through
+    `_result` below — needs.
+    """
 
     def __init__(self) -> None:
         self.choice = UnsavedChangesChoice.CANCEL
@@ -58,26 +66,32 @@ class RecordingPresenter:
         self.suggested_names: list[str] = []
         self.failures: list[tuple[str, str]] = []
 
-    def ask_unsaved_changes(self) -> UnsavedChangesChoice:
+    def ask_unsaved_changes(self, on_result) -> None:  # type: ignore[no-untyped-def]
         self.questions += 1
-        return self.choice
+        on_result(self.choice)
 
-    def ask_external_change_conflict(self) -> ExternalChangeChoice:
-        return self.external_change_choice
+    def ask_external_change_conflict(self, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(self.external_change_choice)
 
-    def offer_recovered_analysis(self) -> bool:
+    def offer_recovered_analysis(self, on_result) -> None:  # type: ignore[no-untyped-def]
         self.recovery_offers += 1
-        return self.recovery_offer_accepted
+        on_result(self.recovery_offer_accepted)
 
-    def choose_analysis_to_open(self) -> str | None:
-        return self.analysis_to_open
+    def choose_analysis_to_open(self, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(self.analysis_to_open)
 
-    def choose_analysis_destination(self, suggested_name: str) -> str | None:
+    def choose_analysis_destination(self, suggested_name: str, on_result) -> None:  # type: ignore[no-untyped-def]
         self.suggested_names.append(suggested_name)
-        return self.destination
+        on_result(self.destination)
 
-    def choose_source_video(self) -> str | None:
-        return self.source_video
+    def choose_source_video(self, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(self.source_video)
+
+    def choose_replacement_media(self, display_name: str, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(None)
+
+    def confirm_source_video_replacement(self, display_name: str, on_result) -> None:  # type: ignore[no-untyped-def]
+        on_result(False)
 
     def report_failure(self, title: str, message: str) -> None:
         self.failures.append((title, message))
@@ -161,6 +175,21 @@ def _workspace(
     )
 
 
+def _result(call):  # type: ignore[no-untyped-def]
+    """Run a continuation-based `WorkspaceViewModel` command and read its outcome.
+
+    Every document command became fire-and-forget from QML's side with
+    issue #69 (its underlying `ApplicationWorkflow` call takes a completion
+    instead of returning). `RecordingPresenter` still answers every question
+    immediately, so the command still settles before this returns.
+    """
+
+    results: list[object] = []
+    call(results.append)
+    assert results, "the command's completion was never called"
+    return results[0]
+
+
 # --- What the analyst can see ---------------------------------------------
 
 
@@ -199,7 +228,7 @@ def test_saving_clears_the_dirty_marker(
     document.analysis.set_title("Spiel gegen Flensburg")
     presenter.destination = str(tmp_path / "spiel.analysis")
 
-    assert workspace.saveAnalysis() is True
+    assert _result(workspace.saveAnalysis) is True
 
     assert workspace.dirty is False
     assert workspace.windowTitle == f"Spiel gegen Flensburg — {APPLICATION_TITLE}"
@@ -231,7 +260,7 @@ def test_a_new_analysis_replaces_a_saved_one_without_a_question(
 ) -> None:
     workspace = _workspace(_document_with_a_video(), player, presenter)
 
-    assert workspace.newAnalysis() is True
+    assert _result(workspace.newAnalysis) is True
 
     assert presenter.questions == 0
     assert workspace.analysisTitle == UNTITLED_ANALYSIS_TITLE
@@ -246,7 +275,7 @@ def test_a_cancelled_question_keeps_the_analysis_and_its_unsaved_work(
     document.analysis.set_title("Spiel gegen Flensburg")
     presenter.choice = UnsavedChangesChoice.CANCEL
 
-    assert workspace.newAnalysis() is False
+    assert _result(workspace.newAnalysis) is False
 
     assert presenter.questions == 1
     assert workspace.analysisTitle == "Spiel gegen Flensburg"
@@ -261,7 +290,7 @@ def test_discarding_unsaved_work_lets_the_new_analysis_through(
     document.analysis.set_title("Spiel gegen Flensburg")
     presenter.choice = UnsavedChangesChoice.DISCARD
 
-    assert workspace.newAnalysis() is True
+    assert _result(workspace.newAnalysis) is True
 
     assert workspace.analysisTitle == UNTITLED_ANALYSIS_TITLE
 
@@ -276,7 +305,7 @@ def test_choosing_to_save_first_writes_the_analysis_before_replacing_it(
     destination = tmp_path / "spiel.analysis"
     presenter.destination = str(destination)
 
-    assert workspace.newAnalysis() is True
+    assert _result(workspace.newAnalysis) is True
 
     assert destination.is_file()
     assert workspace.analysisTitle == UNTITLED_ANALYSIS_TITLE
@@ -293,7 +322,7 @@ def test_a_cancelled_save_refuses_to_let_the_analysis_go(
     presenter.choice = UnsavedChangesChoice.SAVE
     presenter.destination = None
 
-    assert workspace.newAnalysis() is False
+    assert _result(workspace.newAnalysis) is False
 
     assert workspace.analysisTitle == "Spiel gegen Flensburg"
     assert workspace.dirty is True
@@ -327,7 +356,7 @@ def test_opening_an_analysis_asks_about_unsaved_work_before_the_file(
     presenter.choice = UnsavedChangesChoice.CANCEL
     presenter.analysis_to_open = str(_saved_analysis(tmp_path / "kiel.analysis"))
 
-    assert workspace.openAnalysis() is False
+    assert _result(workspace.openAnalysis) is False
 
     assert presenter.questions == 1
     assert workspace.analysisTitle == "Spiel gegen Flensburg"
@@ -339,7 +368,7 @@ def test_a_dismissed_file_dialog_leaves_the_analysis_alone(
     workspace = _workspace(_document_with_a_video(), player, presenter)
     presenter.analysis_to_open = None
 
-    assert workspace.openAnalysis() is False
+    assert _result(workspace.openAnalysis) is False
 
     assert workspace.analysisTitle == "Spiel gegen Kiel"
 
@@ -352,7 +381,7 @@ def test_an_opened_analysis_becomes_the_one_the_workspace_is_about(
         _saved_analysis(tmp_path / "kiel.analysis", "Spiel gegen Kiel")
     )
 
-    assert workspace.openAnalysis() is True
+    assert _result(workspace.openAnalysis) is True
 
     assert workspace.analysisTitle == "Spiel gegen Kiel"
     assert workspace.dirty is False
@@ -368,7 +397,7 @@ def test_a_file_that_cannot_be_read_is_reported_and_changes_nothing(
     broken.write_text("this is not an Analysis", encoding="utf-8")
     presenter.analysis_to_open = str(broken)
 
-    assert workspace.openAnalysis() is False
+    assert _result(workspace.openAnalysis) is False
 
     assert presenter.failures, "an unreadable file was opened in silence"
     assert workspace.analysisTitle == "Spiel gegen Kiel"
@@ -384,7 +413,7 @@ def test_saving_an_analysis_that_has_no_file_yet_asks_where_to_put_it(
     destination = tmp_path / "spiel.analysis"
     presenter.destination = str(destination)
 
-    assert workspace.saveAnalysis() is True
+    assert _result(workspace.saveAnalysis) is True
 
     assert destination.is_file()
     assert presenter.suggested_names == ["Spiel gegen Kiel.analysis"]
@@ -398,7 +427,7 @@ def test_saving_an_analysis_that_has_a_file_asks_nothing(
     workspace = _workspace(document, player, presenter)
     document.analysis.set_title("Spiel gegen Flensburg")
 
-    assert workspace.saveAnalysis() is True
+    assert _result(workspace.saveAnalysis) is True
 
     assert presenter.suggested_names == []
     assert workspace.dirty is False
@@ -414,7 +443,7 @@ def test_save_as_always_asks_and_writes_the_second_file(
     second = tmp_path / "kopie.analysis"
     presenter.destination = str(second)
 
-    assert workspace.saveAnalysisAs() is True
+    assert _result(workspace.saveAnalysisAs) is True
 
     assert first.is_file()
     assert second.is_file()
@@ -432,7 +461,7 @@ def test_a_save_that_cannot_be_written_is_reported_and_stays_dirty(
     not_a_directory.write_text("", encoding="utf-8")
     presenter.destination = str(not_a_directory / "spiel.analysis")
 
-    assert workspace.saveAnalysis() is False
+    assert _result(workspace.saveAnalysis) is False
 
     assert presenter.failures, "a failed save was reported to nobody"
     assert workspace.dirty is True
@@ -451,7 +480,7 @@ def test_choosing_the_first_source_video_turns_the_empty_stage_into_a_player(
     presenter.source_video = str(video)
     workspace = _workspace(AnalysisDocument.new(), player, presenter)
 
-    assert workspace.addSourceVideo() is True
+    assert _result(workspace.addSourceVideo) is True
 
     assert workspace.hasVideo is True
     assert player.location() == str(video)
@@ -468,7 +497,7 @@ def test_choosing_another_source_video_adds_it_without_interrupting_the_active_o
     second.write_bytes(f"not real media: {second.name}".encode())
     presenter.source_video = str(second)
 
-    assert workspace.addSourceVideo() is True
+    assert _result(workspace.addSourceVideo) is True
 
     assert [source.location for source in document.analysis.source_videos] == [
         VIDEO,
@@ -528,7 +557,7 @@ def test_a_saved_analysis_closes_without_a_question(
 ) -> None:
     workspace = _workspace(_document_with_a_video(), player, presenter)
 
-    assert workspace.requestClose() is True
+    assert _result(workspace.requestClose) is True
     assert presenter.questions == 0
 
 
@@ -540,7 +569,7 @@ def test_closing_with_unsaved_work_asks_first_and_can_be_cancelled(
     document.analysis.set_title("Spiel gegen Flensburg")
     presenter.choice = UnsavedChangesChoice.CANCEL
 
-    assert workspace.requestClose() is False
+    assert _result(workspace.requestClose) is False
 
     assert presenter.questions == 1
     assert workspace.dirty is True
@@ -554,7 +583,7 @@ def test_closing_with_unsaved_work_can_discard_it(
     document.analysis.set_title("Spiel gegen Flensburg")
     presenter.choice = UnsavedChangesChoice.DISCARD
 
-    assert workspace.requestClose() is True
+    assert _result(workspace.requestClose) is True
 
 
 def test_closing_with_unsaved_work_can_save_it_first(
@@ -567,7 +596,7 @@ def test_closing_with_unsaved_work_can_save_it_first(
     destination = tmp_path / "spiel.analysis"
     presenter.destination = str(destination)
 
-    assert workspace.requestClose() is True
+    assert _result(workspace.requestClose) is True
 
     assert destination.is_file()
 
@@ -592,7 +621,7 @@ def test_a_clean_close_discards_pending_and_stored_recovery_data(
     presenter.destination = str(tmp_path / "spiel.analysis")
     presenter.choice = UnsavedChangesChoice.SAVE
 
-    assert workspace.requestClose() is True
+    assert _result(workspace.requestClose) is True
     assert store.read() is None
 
 
@@ -609,7 +638,7 @@ def test_the_workspace_offers_recovery_data_found_at_startup(
         AnalysisDocument.new(), player, presenter, recovery_store=store
     )
 
-    assert workspace.offerRecoveryIfAvailable() is True
+    assert _result(workspace.offerRecoveryIfAvailable) is True
     assert presenter.recovery_offers == 1
     assert workspace.analysisTitle == "Wiederhergestellt"
     assert workspace.dirty is True
@@ -665,6 +694,6 @@ def test_a_workspace_built_without_a_person_to_ask_refuses_to_lose_work(
     workspace = WorkspaceViewModel(document, player)
     document.analysis.set_title("Spiel gegen Flensburg")
 
-    assert workspace.newAnalysis() is False
-    assert workspace.requestClose() is False
+    assert _result(workspace.newAnalysis) is False
+    assert _result(workspace.requestClose) is False
     assert workspace.analysisTitle == "Spiel gegen Flensburg"

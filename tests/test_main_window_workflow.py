@@ -81,6 +81,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -127,6 +128,13 @@ class RecordingPresenter:
     This is what replaces the patched `QFileDialog` and `QMessageBox` of the
     Widgets suite: every question and every report is recorded, so a case can
     still say "the analyst was told" without a window to say it in.
+
+    Every method answers through the same completion-based contract
+    `WorkspacePresenter` does — issue #69's async dialogs — by calling
+    `on_result` immediately, on the same call stack. That keeps every
+    assertion in this frozen suite unchanged: a command still settles
+    before the call that started it returns, exactly as it always did,
+    because nothing here actually waits for a person.
     """
 
     def __init__(self) -> None:
@@ -137,26 +145,32 @@ class RecordingPresenter:
         self.questions = 0
         self.failures: list[tuple[str, str]] = []
 
-    def ask_unsaved_changes(self) -> UnsavedChangesChoice:
+    def ask_unsaved_changes(
+        self, on_result: Callable[[UnsavedChangesChoice], None]
+    ) -> None:
         self.questions += 1
-        return self.choice
+        on_result(self.choice)
 
-    def ask_external_change_conflict(self):  # type: ignore[no-untyped-def]
+    def ask_external_change_conflict(
+        self, on_result: Callable[[object], None]
+    ) -> None:
         from analysis import ExternalChangeChoice
 
-        return ExternalChangeChoice.CANCEL
+        on_result(ExternalChangeChoice.CANCEL)
 
-    def offer_recovered_analysis(self) -> bool:
-        return False
+    def offer_recovered_analysis(self, on_result: Callable[[bool], None]) -> None:
+        on_result(False)
 
-    def choose_analysis_to_open(self) -> str | None:
-        return self.analysis_to_open
+    def choose_analysis_to_open(self, on_result: Callable[[str | None], None]) -> None:
+        on_result(self.analysis_to_open)
 
-    def choose_analysis_destination(self, suggested_name: str) -> str | None:
-        return self.destination
+    def choose_analysis_destination(
+        self, suggested_name: str, on_result: Callable[[str | None], None]
+    ) -> None:
+        on_result(self.destination)
 
-    def choose_source_video(self) -> str | None:
-        return self.source_video
+    def choose_source_video(self, on_result: Callable[[str | None], None]) -> None:
+        on_result(self.source_video)
 
     def report_failure(self, title: str, message: str) -> None:
         self.failures.append((title, message))

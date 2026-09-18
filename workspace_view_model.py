@@ -146,41 +146,92 @@ def _after(delay_ms: int, run: Callable[[], None]) -> None:
     QTimer.singleShot(delay_ms, run)
 
 
+def _ignore_bool(_result: bool) -> None:
+    return None
+
+
+def _command_result(
+    start: Callable[[Callable[[bool], None]], None],
+    on_done: Callable[[bool], None] | None,
+) -> bool:
+    """Start a continuation command and preserve the frozen Python test seam.
+
+    QML ignores this return value: its dialogs settle later through `on_done`.
+    The frozen main-workflow regression suite has an in-line recording
+    presenter, though, so its established direct calls still settle before
+    this returns. Reporting that immediate outcome keeps the contract intact
+    without pretending an asynchronous QML caller has an answer yet.
+
+    This is a different bridge from the one `application_workflow` used to
+    need and no longer does: that one (since removed) reconciled two
+    *presenter* shapes — a test double that returned a value against a
+    production contract that calls a completion. This one reconciles a
+    `@Slot(result=bool)`'s obligation to return something on the same call
+    stack with a command that may or may not have settled by the time it
+    does. The two are independent; removing the other did not remove the
+    need for this one.
+    """
+
+    result = False
+
+    def after(value: bool) -> None:
+        nonlocal result
+        result = value
+        if on_done is not None:
+            on_done(value)
+
+    start(after)
+    return result
+
+
 class _NobodyToAsk:
     """The presenter a workspace gets when it was built without one.
 
     A workspace can be built for the transport alone — the playback tests do
     exactly that — and such a workspace has no window to put a question in. It
     therefore answers every question the only way that cannot lose an
-    analyst's work: it refuses.
+    analyst's work: it refuses, immediately and on the same call stack —
+    there being nobody to ask is not a reason to make the caller wait.
     """
 
-    def ask_unsaved_changes(self) -> UnsavedChangesChoice:
-        return UnsavedChangesChoice.CANCEL
+    def ask_unsaved_changes(
+        self, on_result: Callable[[UnsavedChangesChoice], None]
+    ) -> None:
+        on_result(UnsavedChangesChoice.CANCEL)
 
-    def choose_analysis_to_open(self) -> str | None:
-        return None
+    def choose_analysis_to_open(
+        self, on_result: Callable[[str | None], None]
+    ) -> None:
+        on_result(None)
 
-    def choose_analysis_destination(self, suggested_name: str) -> str | None:
-        return None
+    def choose_analysis_destination(
+        self, suggested_name: str, on_result: Callable[[str | None], None]
+    ) -> None:
+        on_result(None)
 
-    def choose_source_video(self) -> str | None:
-        return None
+    def choose_source_video(self, on_result: Callable[[str | None], None]) -> None:
+        on_result(None)
 
-    def choose_replacement_media(self, display_name: str) -> str | None:
-        return None
+    def choose_replacement_media(
+        self, display_name: str, on_result: Callable[[str | None], None]
+    ) -> None:
+        on_result(None)
 
-    def confirm_source_video_replacement(self, display_name: str) -> bool:
-        return False
+    def confirm_source_video_replacement(
+        self, display_name: str, on_result: Callable[[bool], None]
+    ) -> None:
+        on_result(False)
 
     def report_failure(self, title: str, message: str) -> None:
         return None
 
-    def ask_external_change_conflict(self) -> ExternalChangeChoice:
-        return ExternalChangeChoice.CANCEL
+    def ask_external_change_conflict(
+        self, on_result: Callable[[ExternalChangeChoice], None]
+    ) -> None:
+        on_result(ExternalChangeChoice.CANCEL)
 
-    def offer_recovered_analysis(self) -> bool:
-        return False
+    def offer_recovered_analysis(self, on_result: Callable[[bool], None]) -> None:
+        on_result(False)
 
 
 class _TimerRecoveryScheduler:
@@ -293,6 +344,17 @@ class WorkspaceViewModel(QObject):
     #: unsaved-changes question is asked once and in one place.
     closeRequested = Signal()
 
+    #: What `requestClose` decided, once its (possibly QML-dialog-mediated)
+    #: unsaved-changes question has settled. `qml/Main.qml` is the one
+    #: listener that matters: a True here is what turns its provisionally
+    #: rejected `Window.close()` into a real one.
+    closeDecided = Signal(bool)
+
+    #: Whether the window may show Analysis-shaped content yet. False only
+    #: for the moment at startup between the window existing and
+    #: `offerRecoveryIfAvailable` settling; see that method's docstring.
+    contentReadyChanged = Signal()
+
     def __init__(
         self,
         document: AnalysisDocument,
@@ -338,6 +400,11 @@ class WorkspaceViewModel(QObject):
         # scheduler and the workflow underneath it are plain Python objects
         # — so it is safe to run here even mid-teardown.
         self.destroyed.connect(self._shutdown_recovery)
+        # True once `offerRecoveryIfAvailable` has settled, or immediately
+        # for a workspace nobody will ever call it on — the playback and
+        # document-action tests build one directly and read this straight
+        # through, with no startup sequence to wait out.
+        self._content_ready = True
         self._document = document
         self._template_store = self._workflow.template_store
         self._playback = playback
@@ -1308,27 +1375,53 @@ class WorkspaceViewModel(QObject):
 
         return self._workflow.window_title
 
+    @Property(bool, notify=contentReadyChanged)
+    def contentReady(self) -> bool:
+        """Whether the window may show Analysis-shaped content yet.
+
+        See `offerRecoveryIfAvailable`. True from construction for every
+        workspace that method is never called on.
+        """
+
+        return self._content_ready
+
+    #: These five commands, and `requestClose` below, used to return their
+    #: outcome synchronously: the workflow always knew whether New, Open,
+    #: Save or Close had happened before its call returned. Issue #69 broke
+    #: that — every one of them can end up asking a QML dialog for an
+    #: answer, and that dialog is asynchronous by construction — so each is
+    #: now fire-and-forget from QML's side. `on_done`, when given one, is a
+    #: Python-only completion: QML never passes it, because a `Slot()` is
+    #: invoked with exactly its declared arguments regardless of what
+    #: defaults the underlying method carries, but a test with a presenter
+    #: that answers in-line can pass one to observe the outcome without a
+    #: window or an event loop.
     @Slot(result=bool)
-    def newAnalysis(self) -> bool:
-        return self._workflow.new_analysis()
+    def newAnalysis(self, on_done: Callable[[bool], None] | None = None) -> bool:
+        return _command_result(self._workflow.new_analysis, on_done)
 
     @Slot(result=bool)
-    def openAnalysis(self) -> bool:
-        return self._workflow.open_analysis()
+    def openAnalysis(self, on_done: Callable[[bool], None] | None = None) -> bool:
+        return _command_result(self._workflow.open_analysis, on_done)
 
     @Slot(result=bool)
-    def saveAnalysis(self) -> bool:
-        return self._workflow.save()
+    def saveAnalysis(self, on_done: Callable[[bool], None] | None = None) -> bool:
+        return _command_result(self._workflow.save, on_done)
 
     @Slot(result=bool)
-    def saveAnalysisAs(self) -> bool:
-        return self._workflow.save_as()
+    def saveAnalysisAs(self, on_done: Callable[[bool], None] | None = None) -> bool:
+        return _command_result(self._workflow.save_as, on_done)
 
     @Slot(result=bool)
-    def addSourceVideo(self) -> bool:
+    def addSourceVideo(self, on_done: Callable[[bool], None] | None = None) -> bool:
         """Ask for one Source video and add it to this Analysis."""
 
-        return self._workflow.add_source_video() is not None
+        return _command_result(
+            lambda done: self._workflow.add_source_video(
+                lambda source_video: done(source_video is not None)
+            ),
+            on_done,
+        )
 
     @Slot(list, result=bool)
     def addDroppedSourceVideos(self, urls: list[object]) -> bool:
@@ -1432,29 +1525,37 @@ class WorkspaceViewModel(QObject):
             return False
         return self._workflow.remove_source_video(identity)
 
-    @Slot(str, result=bool)
-    def relinkSourceVideo(self, source_id: str) -> bool:
+    @Slot(str)
+    def relinkSourceVideo(
+        self, source_id: str, on_done: Callable[[bool], None] | None = None
+    ) -> None:
         """Ask for replacement media and relink it to an unavailable Source video.
 
         A verified match relinks immediately; a mismatch asks the analyst to
-        confirm through the native dialog `WorkspacePresenter` shows for it.
-        Either way, once this returns, the Active Source video is
+        confirm through the QML dialog `WorkspacePresenter` shows for it.
+        Either way, once the relink settles, the Active Source video is
         re-activated so a newly available video starts loading right away.
         """
 
+        done = on_done or _ignore_bool
         identity = _as_uuid(source_id)
         if identity is None:
-            return False
-        relinked = self._workflow.relink_source_video(identity)
-        if relinked:
-            if identity == self._active_source_id:
-                # Emits its own `documentChanged` and `playbackChanged`;
-                # nothing left to report beyond what it already does.
-                self._activate_source(identity)
-            else:
-                self._refresh_projections()
-                self.documentChanged.emit()
-        return relinked
+            done(False)
+            return
+        video_id = identity
+
+        def after(relinked: bool) -> None:
+            if relinked:
+                if video_id == self._active_source_id:
+                    # Emits its own `documentChanged` and `playbackChanged`;
+                    # nothing left to report beyond what it already does.
+                    self._activate_source(video_id)
+                else:
+                    self._refresh_projections()
+                    self.documentChanged.emit()
+            done(relinked)
+
+        self._workflow.relink_source_video(video_id, after)
 
     @Property(list, constant=True)
     def menus(self) -> list:
@@ -1510,30 +1611,63 @@ class WorkspaceViewModel(QObject):
         window.installEventFilter(self._menu_shortcut_filter)
 
     @Slot(result=bool)
-    def requestClose(self) -> bool:
-        """Whether the window may close, asking about unsaved work first.
+    def requestClose(self, on_done: Callable[[bool], None] | None = None) -> bool:
+        """Ask whether the window may close, asking about unsaved work first.
 
         Every way out of the application arrives here, so the question is
-        asked once and answered in one place. A close this returns True for
-        is a clean close, so any Recovery data left over from getting here
-        — already-saved edits, or work the analyst chose to discard — is
-        removed rather than offered back next launch.
+        asked once and answered in one place. The answer used to be this
+        method's return value; the unsaved-changes question it can lead to
+        is a QML dialog now, so it cannot be. It arrives instead through
+        `closeDecided`, which `qml/Main.qml` waits for before calling
+        `Window.close()` a second time — the first `close()` is always
+        provisionally rejected, because nothing here can answer the
+        question synchronously enough for `Window.onClosing` to accept or
+        reject the very close event that asked it. A close this settles as
+        True is a clean close, so any Recovery data left over from getting
+        here — already-saved edits, or work the analyst chose to discard —
+        is removed rather than offered back next launch.
         """
 
-        may_close = self._workflow.may_replace_analysis()
-        if may_close:
-            self._workflow.discard_recovery()
-        return may_close
+        def start(done: Callable[[bool], None]) -> None:
+            def after(may_close: bool) -> None:
+                if may_close:
+                    self._workflow.discard_recovery()
+                self.closeDecided.emit(may_close)
+                done(may_close)
 
-    @Slot(result=bool)
-    def offerRecoveryIfAvailable(self) -> bool:
+            self._workflow.may_replace_analysis(after)
+
+        return _command_result(start, on_done)
+
+    @Slot()
+    def offerRecoveryIfAvailable(
+        self, on_done: Callable[[bool], None] | None = None
+    ) -> None:
         """Offer Recovery data found from a previous, abnormal termination.
 
-        Meant to be called once, at startup, before anything else has had a
-        chance to touch the Analysis this session opened with.
+        Meant to be called once, at startup, before the window has drawn
+        anything the restored Analysis would replace. Because the question
+        is now a QML dialog — it has to be, per `WorkspacePresenter`'s
+        module docstring — the window has to exist first for that dialog to
+        have anywhere to draw itself, so the ordering this preserves is
+        narrower than it used to be: not "before the window is shown", but
+        "before the window's first Analysis-shaped content is uncovered".
+        `contentReady` is False until this settles, and `qml/Main.qml`
+        keeps the workspace behind the recovery dialog — background only,
+        nothing an analyst would call "the empty Analysis" — until then, so
+        nothing the recovery offer would have replaced is ever seen first.
         """
 
-        return self._workflow.recover_if_available()
+        done = on_done or _ignore_bool
+        self._content_ready = False
+        self.contentReadyChanged.emit()
+
+        def after(recovered: bool) -> None:
+            self._content_ready = True
+            self.contentReadyChanged.emit()
+            done(recovered)
+
+        self._workflow.recover_if_available(after)
 
     def _source_video_added(self, source_video: SourceVideo) -> None:
         """Show the first Source video; leave an existing review uninterrupted."""

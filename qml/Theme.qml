@@ -245,6 +245,13 @@ QtObject {
     // one surface that is deliberately in front of the window's own content.
     readonly property int menuLayer: 70
 
+    // A dialog draws over an open menu too: `WorkspacePresenter`'s questions
+    // and reports (issue #69) can be asked at any time, including while a
+    // menu happens to be open, and the dialog is always the more urgent of
+    // the two.
+    readonly property int dialogLayer: 80
+    readonly property int dialogWidth: 360
+
     // A Clip range: the Category colour at 40% alpha over the stage, at 62%
     // when it is the selected Clip, outlined in a lighter version of itself.
     // These are the only two colours in the application derived from a value

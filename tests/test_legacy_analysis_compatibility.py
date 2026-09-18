@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from analysis import AnalysisDocument, UnsupportedContentError
@@ -13,10 +14,18 @@ LEGACY_FIXTURE = Path(__file__).parent / "fixtures" / "legacy" / "cup-final.anal
 
 
 class _FixturePresenter:
-    """Records the one confirmation legacy media cannot supply on its own."""
+    """Records the one confirmation legacy media cannot supply on its own.
 
-    def confirm_source_video_replacement(self, display_name: str) -> bool:
-        return True
+    Answers through a continuation rather than a return value, because every
+    question the workflow asks is asynchronous now: the dialogs behind them
+    are QML items. Answering immediately is what lets this test read an
+    outcome without running an event loop.
+    """
+
+    def confirm_source_video_replacement(
+        self, display_name: str, on_result: Callable[[bool], None]
+    ) -> None:
+        on_result(True)
 
     def report_failure(self, title: str, message: str) -> None:
         raise AssertionError(f"{title}: {message}")
@@ -77,7 +86,11 @@ def test_legacy_fixture_restores_analytical_content_and_can_relink(
         _FixturePresenter(), document=document, media_probe=_FixtureMediaProbe()
     )
 
-    assert workflow.relink_source_video_file(source_video.id, replacement) is True
+    relinked_outcome: list[bool] = []
+    workflow.relink_source_video_file(
+        source_video.id, replacement, relinked_outcome.append
+    )
+    assert relinked_outcome == [True]
     relinked = workflow.analysis.source_video(source_video.id)
     assert relinked.location == str(replacement)
     assert workflow.document.resolve_source_video(source_video.id) == replacement
