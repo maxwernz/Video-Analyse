@@ -114,6 +114,25 @@ def test_cancelling_a_new_clip_leaves_the_analysis_unchanged(
     assert workspace.mode == "workspace"
 
 
+def test_a_pending_clip_cannot_move_to_another_source_video(
+    workspace: WorkspaceViewModel, document: AnalysisDocument, player: FakePlayback
+) -> None:
+    other = document.analysis.add_source_video(
+        "Halbzeit 2", "/videos/halbzeit-2.mp4", duration_ms=DURATION_MS
+    )
+    workspace.refresh()
+    player.seek(12_000)
+    workspace.markBoundary()
+
+    workspace.selectSourceVideo(str(other.id))
+
+    assert workspace.pendingActive is False
+    player.seek(18_000)
+    workspace.markBoundary()
+    assert workspace.pendingActive is True
+    assert document.analysis.clips == ()
+
+
 def test_the_same_editor_updates_an_existing_clip_as_one_change(
     workspace: WorkspaceViewModel, document: AnalysisDocument
 ) -> None:
